@@ -1,0 +1,80 @@
+# Hardhat
+cache/
+artifacts/
+typechain-types/
+coverage/
+coverage.json
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Solidity
+build/
+bin/
+abi/
+flatten/
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Debug logs
+logs/
+*.log
+
+# Testing
+.nyc_output/
+coverage/
+
+# Production
+dist/
+build/
+out/
+
+# Misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+.secret
+.privatekey
+
+# Gas reporter
+gasReporterOutput.json
+
+# Deployments
+deployments/hardhat/
+deployments/localhost/
+
+# Tenderly
+tenderly.yaml
+
+# Compiler files
+cache/
+cache_hardhat/
+
+# Contract size output
+.contract-sizes
+
+# Documentation
+docs/generated/
+
+# Temporary files
+*.tmp
+*.temp
+.temp/
