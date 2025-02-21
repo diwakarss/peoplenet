@@ -1,4 +1,3 @@
-// Copied from test helpers but with added utility functions
 const FacetCutAction = { Add: 0, Replace: 1, Remove: 2 };
 
 function getSelectors(contract) {
@@ -16,8 +15,6 @@ function getSelector(func) {
     const abiInterface = new ethers.utils.Interface([func]);
     return abiInterface.getSighash(Object.keys(abiInterface.functions)[0]);
 }
-
-// ... other utility functions ...
 
 module.exports = {
     FacetCutAction,

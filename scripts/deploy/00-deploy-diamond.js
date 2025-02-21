@@ -1,4 +1,5 @@
 const { ethers } = require("hardhat");
+const { getSelectors, FacetCutAction } = require("../utils/diamond.js");
 
 async function deployDiamond() {
     const accounts = await ethers.getSigners();

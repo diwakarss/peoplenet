@@ -4,16 +4,21 @@ const deployTokenFacet = require('./01-deploy-token-facet');
 async function deployAll() {
     console.log('Starting deployment...');
 
-    // Deploy Diamond and core facets
-    const { diamond } = await deployDiamond();
-    console.log('Diamond deployment completed');
+    try {
+        // Deploy Diamond and core facets
+        const { diamond } = await deployDiamond();
+        console.log('Diamond deployment completed');
 
-    // Deploy TokenFacet
-    await deployTokenFacet(diamond.address);
-    console.log('TokenFacet deployment completed');
+        // Deploy TokenFacet
+        await deployTokenFacet(diamond.address);
+        console.log('TokenFacet deployment completed');
 
-    console.log('All deployments completed successfully');
-    return diamond.address;
+        console.log('All deployments completed successfully');
+        return diamond.address;
+    } catch (error) {
+        console.error('Deployment failed:', error);
+        throw error;
+    }
 }
 
 if (require.main === module) {

@@ -1,5 +1,5 @@
 const { ethers } = require("hardhat");
-const { getSelectors, FacetCutAction } = require("../deploy scripts/utils/diamond.js");
+const { getSelectors, FacetCutAction } = require("../utils/diamond.js");
 
 async function deployTokenFacet(diamondAddress) {
     console.log('Deploying TokenFacet...');

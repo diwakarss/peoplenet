@@ -1,0 +1,857 @@
+PeopleNet: A Vision for a Decentralized Digital Society
+The PeopleNet Team
+August 10, 2024
+
+1
+
+Introduction
+
+However, its adoption has been slow, especially in
+developing countries like India. High entry barriers,
+In the digital age, blockchain technology has emerged lack of awareness, and technical complexities have
+as a beacon of hope, promising a future of decen- kept it out of reach for the average individual. Peotralization, security, and transparency. However, the pleNet aims to change this narrative by simplifying
+dream of a truly decentralized society, especially in re- blockchain technology and making it accessible to
+gions like India, remains distant. Enter PeopleNet, everyone.
+a project aimed at bridging this gap and bringing
+The project recognizes the challenges of the curblockchain to the masses.
+rent digital landscape, such as data privacy concerns,
+centralized control, and lack of transparency. By
+leveraging blockchain technology, PeopleNet seeks
+1.1 Vision
+to address these issues, offering a platform that is
+PeopleNet envisions a world where blockchain is ac- secure, transparent, and user-friendly.
+cessible to everyone. The primary vision is the mass
+Furthermore, the project understands the imporadoption of blockchain in India. By targeting India, tance of community involvement. By incentivizing
+with its diverse and vast population, PeopleNet aims good actors and penalizing bad ones, PeopleNet ento serve as a truly altruistic network for the greater sures a fair and just platform. The project also
+good.
+encourages boundary-less interactions, allowing users
+to connect, collaborate, and transact seamlessly.
+In conclusion, PeopleNet is not just a blockchain
+1.2 Mission
+project; it’s a movement. A movement to democratize
+The mission of PeopleNet is to create a digital society technology, empower individuals, and create a truly
+where individuals have full control over their data decentralized digital society.
+and financial transactions. In this society, democratic
+principles flourish in an autonomous, decentralized
+environment. The goal is to empower individuals, giv- 2
+Problem Statement
+ing them the tools and platform to interact, transact,
+The digital age, while bringing about unprecedented
+and govern without intermediaries.
+advancements and conveniences, has also ushered in
+a slew of challenges. Centralization, data monopolies,
+1.3 Goals and Milestones
+and a lack of genuine user control over personal data
+have become the norm rather than the exception.
+PeopleNet sets forth a significant milestone:
+These issues are particularly pronounced in develop• A Digital Democracy: A society where every ing nations like India, where the digital divide is still
+individual can participate in decision-making a pressing concern.
+processes, voice their opinions, and truly make
+a difference.
+2.1 Inaccessibility of Resources
+Blockchain technology has the potential to revolu- For the common man in India, the digital world often
+tionize various sectors, from finance to governance. remains an elusive realm. While urban centers see
+1
+
+rapid digitization, vast swathes of the rural landscape
+remain untouched by the digital revolution. This digital divide means that a significant portion of the
+population is denied access to the myriad opportunities that the online world offers.
+
+Tech Giants
+Data Storage
+Algorithms
+Advertisements
+Pro  ts
+
+Provides Targeted Data
+
+Accumulates wealth
+and user data.
+
+Pays for Ad Space
+
+Advertisers
+
+2.2
+
+Capitalism and Global Market
+Landscape
+
+Oers Services
+
+Targeted Ads
+Payment to Tech Giants
+
+Provides Data
+
+Shows Targeted Ads
+
+The global market landscape is predominantly capitalistic. While capitalism has its merits, it often leads
+to wealth accumulation in the hands of a few. This
+economic disparity is starkly evident in the digital
+realm, where tech giants hold disproportionate power
+and influence, often at the expense of the average
+user.
+
+Users
+Personal Data
+Interactions
+Preferences
+
+Often unaware
+of how their data is used.
+
+2.3
+
+Inequality and the Need for Fa- Figure 1: Flow of data and profits in the current
+digital ecosystem.
+cilitation
+
+The current digital ecosystem is rife with inequality. 3
+Current Ethereum EcosysWhether it’s in terms of access to resources, knowltem
+edge, or opportunities, the scales are often tipped
+in favor of a select few. There’s a pressing need Ethereum, since its inception, has been a trailblazer
+for a facilitator, a platform that levels the playing in the blockchain world, introducing the concept
+field, ensuring that everyone, irrespective of their of smart contracts and decentralized applications
+socio-economic background, has an equal shot at (DApps)[11]. However, as the platform grew in popleveraging the digital revolution.
+ularity, it began facing challenges that are inherent
+to its design and architecture.
+
+2.4
+
+The Absence of a Truly Altruistic 3.1 Scalability
+Network
+One of the most pressing issues facing Ethereum
+today is scalability[9]. As more and more transactions
+are processed on the network, the time taken to
+validate and add these transactions to the blockchain
+increases. This results in a bottleneck, slowing down
+the entire system and leading to increased transaction
+fees.
+
+Most digital platforms operate with profit as the
+primary motive. While there’s nothing inherently
+wrong with seeking profit, it often comes at the cost
+of user interests. The digital realm is in dire need
+of a truly altruistic network, one that places user
+interests at the forefront, operating not for profit but
+for the greater good.
+
+3.2
+
+Gas Fees
+
+In essence, the challenges are manifold. From bridging the digital divide to ensuring a more equitable Gas fees on Ethereum have become a significant condistribution of digital resources, the need for a trans- cern, especially during network congestion[1]. These
+formative solution has never been more urgent.
+fees are required to process and validate transactions
+2
+
+on the Ethereum network. However, during times is true without revealing any information about the
+of high demand, these fees can skyrocket, making statement itself.
+it prohibitively expensive for regular users to make
+transactions or interact with DApps.
+zkSNARK: ∀x, y, (P (x) = y) ⇐⇒ ∃w, Q(x, w) = y
+(1)
+3.3 Decentralization vs. Scalability
+Where: - P is the program. - x is the public input.
+The blockchain trilemma posits that it’s challenging - y is the public output. - w is the private witness
+to achieve scalability, security, and decentralization (or proof).
+all at once[8]. Ethereum, in its quest to maintain
+decentralization and security, has often faced scala- 4.2 Polygon’s Architecture
+bility issues. Solutions like Ethereum 2.0 and layer
+2 scaling are in the works to address this, but the Polygon’s architecture, particularly its emphasis on
+child chains and the root chain, offers a scalable
+trilemma remains a fundamental challenge.
+framework that can handle a vast number of transactions efficiently[16]. The child chains operate inde3.4 Transition to Proof-of-Stake
+pendently but are secured by the root chain, ensuring
+the system’s overall security.
+Ethereum’s transition from a Proof-of-Work (PoW)
+to a Proof-of-Stake (PoS) consensus mechanism is a
+monumental shift[6]. While PoS promises energy efficiency and scalability, the transition is complex and
+poses risks, especially concerning network security
+and validator centralization.
+In summary, while Ethereum has paved the way
+for decentralized applications and smart contracts, it
+faces challenges that need addressing for it to remain
+the leading platform for decentralized innovations.
+
+4
+
+Proposed Solution
+
+Figure 2: Polygon’s Root and Child Chain ArchitecThe challenges posed by the current Ethereum ecosys- ture.
+tem, especially concerning scalability, gas fees, and
+decentralization, necessitate an innovative solution.
+PeopleNet proposes a hybrid model, combining the 4.3 Hybrid Model: zkRollups + Polystrengths of zkRollups and Polygon’s architecture, to
+gon
+address these challenges.
+By integrating zkRollups into Polygon’s architecture,
+PeopleNet can achieve high scalability while ensur4.1 zkRollups
+ing security and decentralization. The zkRollups
+will handle transaction bundling, while Polygon’s arzkRollups is a layer 2 scaling solution that bundles
+chitecture will manage the hierarchical structure of
+multiple transfers into a single transaction, reducing
+chains.
+the strain on the Ethereum network[13]. The primary
+This hybrid model will allow for:
+advantage of zkRollups is its ability to maintain security by inheriting the underlying layer’s security
+• Efficient transaction processing.
+guarantees.
+The main idea behind zkRollups is the use of zero• Reduced gas fees.
+knowledge proofs. A zero-knowledge proof allows
+one party to prove to another party that a statement
+• Enhanced security through combined strengths.
+3
+
+4.4
+
+• zkSync: Offers scalability through zkRollups,
+with contracts handling bridging, batched transaction proofs, and validators.
+
+Incentivizing Good Actors
+
+One of the unique features of the proposed solution
+is its mechanism to reward good actors and penalize
+malicious ones. By integrating a reputation system,
+users can earn points for positive contributions and
+lose points for malicious activities.
+Rnew = Rold + ∆R
+
+• Proposed Architecture: The unique addition
+to the hybrid model, introducing Macro and Micro chain management, along with AAO factories
+and managers.
+
+(2)
+
+Where: - Rnew is the new reputation. - Rold is the 5.2 Interactions and Data Flow
+old reputation. - ∆R is the change in reputation
+5.2.1 Polygon
+based on user actions.
+Polygon’s RootChain contract serves as the primary
+entry and exit point for assets. It interacts with the
+DepositManager for deposits and the WithdrawManager for withdrawals. The respective managers then
+communicate with predicates to handle specific token
+types, like ERC20 and ERC721.
+People Net Hybrid Model
+
+User Transactions
+
+zkRollups
+
+«zkRollups»
+
+Zero-Knowledge Proofs
+
+Transaction Bundling
+
+Polygon Architecture
+
+«Polygon Architecture»
+
+Layer 2 Scaling
+
+Root Chain
+
+Child Chain 2
+
+Child Chain 1
+
+Child Chain N
+
+5.2.2
+
+Ethereum Mainnet
+
+zkSync
+
+zkSync’s primary bridge contracts, L1ERC20Bridge
+Figure 3: PeopleNet’s hybrid and Child Chain Archi- and L1WethBridge, interact with the DiamondProxy
+contract to handle asset bridging. The Diamondtecture.
+Proxy, in turn, sends batched transaction proofs to
+In conclusion, the proposed hybrid model offers the Plonk4Verifier and manages validator staking
+a robust solution to the challenges of the current through the ValidatorTimelock.
+Ethereum ecosystem. By leveraging the strengths
+of both zkRollups and Polygon, PeopleNet aims to 5.2.3 Proposed Architecture
+provide a scalable, secure, and decentralized platform
+The MacroChainManager contract serves as the prifor the masses.
+mary management point for the macro chains. It
+can request the creation of micro-chains through the
+MicroChainFactory and manage them via the Mi5 Architecture
+croChainManager. Similarly, the MacroAAOFactory
+The architecture of PeopleNet is a novel blend, draw- and Manager handle the creation and management of
+ing from the strengths of both Polygon’s multi-chain macro AAOs, while their micro counterparts handle
+framework and zkSync’s zkRollups. This section the micro AAOs.
+delves deeper into the structure and interactions of
+the proposed contracts, offering a comprehensive view 5.3 Unique Features of the Proposed
+of the system’s design.
+
+Architecture
+
+The proposed architecture introduces a chain-ofchains concept, where each AAO operates as its chain.
+The architecture is divided into three primary com- This hierarchical structure allows for efficient manponents:
+agement, scalability, and flexibility. The Macro and
+Micro managers and factories ensure that AAOs can
+• Polygon: Provides the foundational layer, with be created, managed, and operated seamlessly, offercontracts like RootChain, ChildChain, and vari- ing a dynamic environment for various decentralized
+ous managers and predicates.
+applications and platforms.
+
+5.1
+
+Contract Overview
+
+4
+
+Polygon
+
+zkSync
+«Polygon»
+
+ChildChain.sol
+
+Veri  er.sol
+
+RootChain.sol
+
+Sends deposit request
+
+DepositManager.sol
+
+Sends ERC20 token data
+
+ERC20Predicate.sol
+
+Proposed Architecture
+«zkSync»
+
+Sends withdrawal request
+
+L1WethBridge.sol
+
+Sends WETH bridge request
+
+WithdrawManager.sol
+
+«Proposed Architecture»
+L1ERC20Bridge.sol
+
+Sends ERC20 bridge request
+
+DiamondProxy.sol
+
+Sends ERC721 token data
+
+Sends batched transaction proofs
+
+Plonk4Veri erWithAccessToDNext.sol
+
+ERC721Predicate.sol
+
+MacroAAOFactory.sol
+
+Requests macro AAO creation
+
+MacroAAOManager.sol
+
+Sends validator staking data
+
+ValidatorTimelock.sol
+
+MacroChainManager.sol
+
+Requests micro-chain creation
+
+MicroChainFactory.sol
+
+Sends chain management data
+
+MicroChainManager.sol
+
+Requests micro AAO creation
+
+MicroAAOFactory.sol
+
+Sends micro AAO data
+
+MicroAAOManager.sol
+
+Figure 4: Interactions and Data Flow in PeopleNet’s Architecture.
+In conclusion, the architecture of PeopleNet is a 6.1 Foundational Principles
+testament to the power of combining established technologies to create a robust, scalable, and secure sys- AAOs are built upon three foundational principles:
+tem, with the flexibility to cater to a wide range of
+1. Autonomy: AAOs operate independently, free
+applications.
+from centralized control. Decisions are made
+collectively by the members, ensuring that the
+organization’s direction aligns with the collective
+6 AAO: Acentric Autonomous
+will.
+
+Organizations
+2. Decentralization: Unlike traditional organizations, AAOs are not bound by hierarchical
+structures. Power and decision-making are distributed among members, fostering a democratic
+environment.
+
+Acentric Autonomous Organizations (AAOs) form
+the backbone of the PeopleNet ecosystem, serving
+as multipurpose vehicles for online systems. These
+decentralized entities empower individuals and groups
+to create, manage, and operate their digital platforms
+with autonomy, transparency, and security.
+
+3. Transparency: All operations, transactions,
+and decisions within an AAO are recorded on
+the blockchain, ensuring complete transparency
+and accountability.
+
+AAO Structure
+
+Voting Mechanism
+
+Inuences
+
+6.2
+
+Functionalities and Features
+
+6.2.1
+
+Voting Mechanisms
+
+Reputation System
+
+AAOs incorporate decentralized voting mechanisms,
+allowing members to propose, discuss, and vote on
+various matters. This ensures that every member
+has a voice and that decisions reflect the collective
+consensus.
+
+A ects
+
+User Interaction
+
+Drives
+
+6.2.2
+
+Reputation Points
+
+Applications
+
+To incentivize positive contributions and deter malicious activities, AAOs employ a reputation system.
+Figure 5: Structure and interactions within an AAO.
+Members earn or lose reputation points based on
+their actions, ensuring a meritocratic environment.
+5
+
+6.2.3
+
+User Interaction
+
+within the network and is bridged with its Ethereum
+mainnet counterpart [17].
+
+AAOs are not just transactional entities; they are
+vibrant communities. Members can interact, collaborate, share knowledge, and build relationships,
+fostering a sense of belonging and community.
+
+6.3
+
+KAS (Layer 2) ↔ KAS (Ethereum mainnet) (3)
+This bridging mechanism ensures seamless integration with the broader Ethereum ecosystem, allowing
+for liquidity and interoperability [4].
+
+Applications of AAOs
+
+The versatility of AAOs means they can serve various
+purposes:
+
+7.2
+
+REP: Reputation Points
+
+• Governance: AAOs can act as decentralized The REP token stands for ”Reputation” and is a nongoverning bodies, making decisions on commu- transferable token earned by users based on their
+nity projects, resource allocation, and more.
+actions and contributions within the network [14].
+Positive actions, such as helpful contributions or suc• Entertainment: Artists and creators can form cessful project completions, earn REP, while maliAAOs to produce and distribute content, ensur- cious activities can lead to a loss of REP.
+ing fair compensation and creative freedom.
+• Communication: AAOs can serve as platforms
+for open discussions, debates, and knowledge
+sharing, free from censorship and external control.
+
+Positive Actions → Gain REP
+
+(4)
+
+Malicious Actions → Lose REP
+
+(5)
+
+The REP system ensures a meritocratic environment
+where users are incentivized to act in the best
+• Funding: Startups and projects can seek funding through AAOs, connecting directly with sup- interests of the community [18].
+porters and bypassing traditional financial intermediaries.
+7.3 PNT: Gasless Transactions
+In conclusion, AAOs represent a paradigm shift
+in how we conceive organizations. By prioritizing
+autonomy, decentralization, and transparency, they
+offer a blueprint for the future of online communities
+and platforms.
+
+PNT, or PeopleNet Token, is designed to facilitate
+zero-gas transactions within the network [7]. This
+ensures that users can interact and transact without worrying about fluctuating gas fees, making the
+platform more user-friendly and accessible.
+
+7
+
+Transaction on PeopleNet → Use PNT (Zero Gas)
+(6)
+
+Tokenomics
+
+The PeopleNet ecosystem introduces a unique token
+system designed to facilitate transactions, incentivize
+7.4 Distribution and Utility
+positive behavior, and ensure the smooth operation
+of the platform. The tokenomics revolves around The distribution of tokens will be carefully managed
+three primary tokens: KAS, REP, and PNT [12].
+to ensure fairness, sustainability, and to prevent centralization [3]. Early adopters, contributors, and
+community members will be rewarded, ensuring a
+7.1 KAS: The Primary Currency
+wide distribution from the outset.
+KAS serves as the main currency within the PeoFurthermore, the utility of each token is designed
+pleNet ecosystem. Pegged to the Indian Rupee, it to serve specific purposes within the ecosystem, from
+ensures stability and familiarity for the Indian user facilitating transactions to representing reputation
+base. The token is used for financial transactions and ensuring seamless interactions [15].
+6
+
+People Net Ecosystem
+Users
+Participate in AAOs
+Transact & Interact
+Earn Reputation
+
+Transact using KAS Earn/Lose REP based on actions
+
+KAS Token
+
+REP Token
+
+Pegged to Indian Rupee
+Bridged with Ethereum mainnet
+Used for nancial transactions
+
+Non-transferable
+Earned through positive actions
+Lost through malicious actions
+
+Main Currency
+of the Ecosystem
+
+Use for zero-gas transactions
+
+PNT Token
+
+Represents User's
+Reputation in the Ecosystem
+
+Facilitates zero-gas transactions
+Used within People Net
+
+Used for Gasless
+Transactions within People Net
+
+Figure 6: Token flow and interactions within the PeopleNet ecosystem.
+In conclusion, the tokenomics of PeopleNet is
+• Benefits: Earn REP tokens for their service,
+thoughtfully designed to ensure a balanced, fair, and
+enhancing their reputation within the ecosystem.
+efficient ecosystem, promoting positive behavior and
+facilitating seamless interactions.
+8.1.2 Contributors
+
+Participation of People
+
+Contributors add value to the network by offering
+services, creating content, or aiding in platform development.
+
+The PeopleNet ecosystem thrives on the active participation of its users. Unlike traditional systems where
+users are mere consumers, PeopleNet empowers individuals to take on various roles, contributing to the
+network’s growth, security, and functionality.
+
+• Responsibilities: Delivering quality services,
+adhering to community guidelines, and actively
+engaging with the community.
+
+8
+
+8.1
+
+Roles and Responsibilities
+
+8.1.1
+
+Arbitrators
+
+• Benefits: Earn KAS tokens for their contributions and services.
+8.1.3
+
+Proposers
+
+Proposers initiate new projects, ideas, or AAOs, drivArbitrators play a crucial role in resolving disputes
+ing innovation and growth within the ecosystem.
+within the network, especially concerning exit problems in plasma chains. They ensure that the network
+• Responsibilities: Presenting clear proposals,
+remains fair and just.
+gathering support, and executing the proposed
+ideas.
+• Responsibilities: Reviewing evidence, listening to involved parties, and making unbiased
+• Benefits: Gain support in the form of KAS
+decisions.
+tokens or services from other participants.
+7
+
+8.1.4
+
+Funders
+
+Funders provide the necessary financial support to
+projects or AAOs, ensuring their successful execution.
+
+responsibilities, the platform fosters a vibrant, dynamic, and self-sustaining community.
+
+9
+
+• Responsibilities: Evaluating proposals, allocating funds wisely, and monitoring project
+progress.
+
+Privacy and Data Security
+with PODs
+
+In the age of digital transformation, data privacy
+• Benefits: Potential returns on successful and security have become paramount [19]. With inprojects and an increase in REP tokens for posi- creasing concerns about data breaches, unauthorized
+tive funding decisions.
+access, and misuse of personal information, there’s
+a pressing need for a system that prioritizes user
+data protection. PeopleNet, with its innovative use
+8.1.5 Founders
+of Solid PODs, addresses these concerns head-on [2].
+Founders establish new AAOs, setting the vision,
+mission, and goals for the organization.
+
+9.1
+
+Understanding Solid PODs
+
+• Responsibilities: Leading the AAO, making
+Solid, an acronym for ”Social Linked Data”, is a web
+strategic decisions, and ensuring the AAO’s sucdecentralization project led by Prof. Tim Bernerscess.
+Lee [2]. Its primary objective is to allow users to
+• Benefits: Enhanced reputation within the have full control over their data. PODs, or ”Personal
+ecosystem and potential KAS token rewards for Online Data stores”, are where this data is stored.
+successful AAO management.
+• User Control: Each POD belongs to a user,
+ensuring they have complete control over their
+8.2 Empowering the Masses
+data.
+PeopleNet’s design ensures that every participant,
+regardless of their role, has a voice. The platform’s
+decentralized nature, combined with its reputation
+system, ensures that good actors are rewarded, while
+malicious actors are deterred. This creates a selfregulating ecosystem where participants are incentivized to act in the best interests of the community.
+People Net Ecosystem
+
+Arbitrators
+
+• Interoperability: PODs can be accessed by
+various apps with user permission, ensuring data
+portability and interoperability [5].
+
+9.2
+Contributors
+O  er services
+
+Initiate projects
+
+Earn REP tokens
+
+Earn KAS tokens
+
+Gain support
+
+PeopleNet takes the concept of Solid PODs and integrates it into its ecosystem to ensure maximum data
+privacy and security.
+
+Founders
+
+Provide nancial support
+
+Establish AAOs
+
+Earn returns and REP tokens
+
+Lead and earn rewards
+
+Implementation in PeopleNet
+
+Proposers
+
+Resolve disputes
+
+Funders
+
+• Decentralization: Data isn’t stored in centralized servers but in individual PODs, reducing
+the risk of mass data breaches [12].
+
+9.2.1
+
+All participants are empowered
+and have a voice in the ecosystem.
+
+Dual POD System
+
+Each user in PeopleNet is provided with two PODs:
+
+Figure 7: Flow of roles and interactions within the
+PeopleNet ecosystem.
+
+1. Cryptographic POD: Acts as a cryptographic
+key, enabling network access. Stored both online
+and encrypted on the user’s device [12].
+
+In conclusion, the active participation of people
+is the lifeblood of the PeopleNet ecosystem. By empowering individuals to take on various roles and
+
+2. Data POD: Contains all user data, including
+interactions, media, and potentially a full node
+of their personal chain in the future.
+8
+
+9.2.2
+
+Data Ownership and Control
+
+The vision of PeopleNet is not just about creating
+another blockchain platform. It’s about ushering
+All user-generated content, be it text, images, audio,
+in a new digital society where individuals are not
+or video, is stored in the Data POD. This ensures
+mere data points but active participants, shaping
+that users retain full ownership of their data, deciding
+their digital destinies. By prioritizing user autonomy,
+who can access it and for what purpose [10].
+decentralization, and transparency, PeopleNet seeks
+to redefine the very fabric of our online interactions.
+9.2.3 Enhanced Security
+The integration of Solid PODs ensures that users
+have
+unparalleled control over their data. The dual
+The decentralized nature of PODs, combined with
+encryption, ensures that user data is secure from POD system, with its emphasis on encryption and
+breaches [12]. Even if an attacker gains access to decentralization, offers a robust shield against data
+one POD, the data of other users remains uncompro- breaches and unauthorized access. The AAOs, with
+their democratic ethos, pave the way for a more
+mised.
+inclusive and participatory digital environment.
+People Net POD System
+But beyond these technical aspects, at its core,
+PeopleNet is about people. It’s about empowering
+Data POD
+Cryptographic POD
+the common man, bridging the digital divide, and
+Contains user data
+Enables network access
+ensuring that the fruits of the digital revolution are
+Interactions, media, etc.
+Stored online and o ine
+accessible to all, irrespective of socio-economic backgrounds. The project’s focus on India, with its diverse
+and vast population, underscores this commitment
+Decentralized & Encrypted
+to inclusivity.
+ensuring maximum data security.
+As we look to the future, the potential of PeopleNet
+is boundless. From revolutionizing online governance
+Figure 8: Structure and security layers of the Solid to fostering digital communities where creativity and
+collaboration thrive, the possibilities are endless. The
+PODs in PeopleNet.
+project’s emphasis on incentivizing positive contributions and penalizing malicious actors ensures a
+digital ecosystem that is both vibrant and secure.
+9.3 Conclusion
+In conclusion, PeopleNet represents a bold step toPeopleNet’s integration of Solid PODs signifies a wards a decentralized digital future. A future where
+paradigm shift in how user data is perceived and the power dynamics of the digital realm are upended,
+managed. Instead of being mere data points in a and users, not corporations, are in the driver’s seat.
+centralized database, users are empowered, owning, As the project unfolds, it promises to be a transformaand controlling their digital footprint. This not only tive force, heralding a new age of digital democracy,
+enhances privacy but also fosters trust, a critical empowerment, and innovation. The future is decencomponent for the widespread adoption of any digital tralized, and with PeopleNet, it’s in the hands of the
+people.
+platform [19].
+
+10
+
+Conclusion and the Future References
+[1] Massimo Bartoletti and Livio Pompianu.
+“Burning for Money? Strategies and Potential
+Solutions to the Ethereum Gas Crisis”. In:
+Journal of Computer Security (2019).
+
+As we stand on the precipice of a new digital era,
+the importance of decentralization, privacy, and user
+empowerment cannot be overstated. The challenges
+of the current digital landscape, from data monopolies to the erosion of individual privacy, necessitate
+a transformative solution. PeopleNet, with its innovative architecture, AAOs, and emphasis on usercentricity, offers a beacon of hope in this context.
+
+[2] Tim Berners-Lee and Kieron O’Hara. “Redecentralizing the web, for good this time”.
+In: Proceedings of the 29th ACM Conference
+
+9
+
+on Hypertext and Social Media. ACM. 2016, [15] Don Tapscott and Alex Tapscott. Blockchain
+pp. 4–4.
+revolution: how the technology behind bitcoin
+is changing money, business, and the world.
+[3] Joseph Bonneau et al. “SoK: Research perspecPenguin, 2016.
+tives and challenges for Bitcoin and cryptocurrencies”. In: (2015), pp. 104–121.
+
+[16] Polygon Team. “Polygon: A platform for
+Ethereum-compatible multi-chain networks”.
+[4] Vitalik Buterin et al. “Chain interoperabilIn: Whitepaper (2021).
+ity”. In: 2016. url: https : / / allquantor .
+at/blockchainbib/pdf/buterin2016chain. [17] Gavin Wood. “Ethereum: A secure decenpdf.
+tralised generalised transaction ledger”. In:
+(2014).
+url: https://ethereum.github.io/
+[5] George Danezis and Sarah Meiklejohn. “Cenyellowpaper/paper.pdf.
+trally banked cryptocurrencies”. In: (2016).
+[6] Thang N. Dinh and My T. Thai. “Proof of [18] Aviv Zohar. “Bitcoin: Under the hood”. In:
+Communications of the ACM 58.9 (2015),
+Stake Blockchain: Performance and Scalability
+pp. 104–113.
+for Groupware Communications”. In: IEEE INFOCOM 2018 - IEEE Conference on Computer [19] Shoshana Zuboff. “The age of surveillance capiCommunications (2018).
+talism: The fight for a human future at the new
+frontier of power”. In: Public Affairs (2019).
+[7] Jacob Eberhardt and Stefan Tai. “Or &#
+x201C; Where is my state? &# x201D;: Revisiting Ethereum storage”. In: Proceedings of
+the ACM Workshop on Blockchain, Cryptocurrencies and Contracts. 2017, pp. 31–36.
+[8] Adem Efe Gencer et al. “Decentralization in
+Bitcoin and Ethereum Networks”. In: Financial
+Cryptography and Data Security (2018).
+[9] Arthur Gervais et al. “On the Scalability and
+Security of Bitcoin”. In: Distributed Computing
+Systems (ICDCS), 2016 IEEE 36th International Conference on (2016).
+[10] Glenn Greenwald. “NSA collecting phone
+records of millions of Verizon customers daily”.
+In: The Guardian (2013).
+[11] Loi Luu et al. “Ethereum Smart Contracts:
+Security Vulnerabilities and Security Tools”.
+In: Journal of Computer Security (2016).
+[12] Satoshi Nakamoto. “Bitcoin: A peer-to-peer
+electronic cash system”. In: (2008). url: https:
+//bitcoin.org/bitcoin.pdf.
+[13] Team Rocket. “Scalable and Probabilistic Leaderless BFT Consensus through Metastability”.
+In: arXiv preprint arXiv:1902.06734 (2019).
+[14] Voshmgir Shermin. “A blockchain explanation
+your parents could understand”. In: 2018. url:
+https : / / taylorpearson . me / blockchain for-dummies/.
+
+10
+
+

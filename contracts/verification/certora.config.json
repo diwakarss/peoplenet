@@ -1,0 +1,32 @@
+{
+    "files": [
+        "contracts/verification/CryptoProperties.sol",
+        "contracts/library/LibAESGCM.sol",
+        "contracts/library/LibKeyManagement.sol",
+        "contracts/library/LibThresholdEncryption.sol"
+    ],
+    "verify": "CryptoProperties:contracts/verification/crypto_properties.spec",
+    "solc": "solc8.0",
+    "prover_args": [
+        "-optimisticFallback true",
+        "-mediumTimeout 1000"
+    ],
+    "optimistic_loop": true,
+    "loop_iter": 3,
+    "rule_sanity": true,
+    "msg": "Verifying cryptographic properties",
+    "cache": "${CERTORADIR}/cache",
+    "settings": {
+        "optimistic_loop": true,
+        "optimize": true,
+        "optimizer_steps": 1000,
+        "timeout": 3600,
+        "prover_args": [
+            "-smt_nonLinearArithmetic true",
+            "-smt_arrayTheory true"
+        ]
+    },
+    "multi_assert_check": true,
+    "send_only": false,
+    "debug": false
+}
