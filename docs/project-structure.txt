@@ -1,0 +1,111 @@
+peoplenet/
+├── contracts/
+│ ├── mocks/
+│ │ └── MockToken.sol
+│ ├── interfaces/
+│ │ ├── IERC173.sol
+│ │ ├── IDiamondCut.sol
+│ │ ├── IDiamondLoupe.sol
+│ │ ├── IInit.sol
+│ │ └── ITokenFaucet.sol
+│ ├── facets/
+│ │ ├── AccessControlContract.sol - to be built
+│ │ ├── AAOFacet.sol - to be built
+│ │ ├── AuditContract.sol - to be built
+│ │ ├── BridgeManager.sol - to be built
+│ │ ├── ConsentContract.sol - to be built
+│ │ ├── DataPrivacyFacet.sol - to be built
+│ │ ├── DiamondCutFacet.sol
+│ │ ├── DiamondLoupeFacet.sol
+│ │ ├── DisputeResolutionFacet.sol - to be built
+│ │ ├── EmergencyResponseContract.sol - to be built
+│ │ ├── FraudDetectionContract.sol - to be built
+│ │ ├── GovernanceFacet.sol - to be built
+│ │ ├── InteroperabilityFacet.sol - to be built
+│ │ ├── PolygonFacet.sol - to be built
+│ │ ├── SecurityFacet.sol - to be built
+│ │ ├── ServiceUtilityFacet.sol - to be built
+│ │ └── TokenFacet.sol
+│ ├── library/
+│ │ └── LibToken.sol
+│ │ └── LibAESGCM.sol
+│ │ └── LibErrors.sol
+│ │ └── LibKeyManagement.sol
+│ │ └── LibThresholdEncryption.sol
+│ ├── precompiles/
+│ │ └── ICryptoPrecompiles.sol
+│ ├── Verification/
+│ │ ├── CryptoProperties.sol
+│ │ ├── CryptoFormalVerification.sol
+│ │ ├── crypto_properties.spec
+│ │ ├── crypto_formal_verification.spec
+│ │ └── certora.config.json
+│ ├── diamond/
+│ │ ├── DiamondController.sol
+│ │ ├── DiamondInit.sol
+│ │ └── LibDiamond.sol
+│ ├── chain-management/ - to be built
+│ │ ├── MacroChainManager.sol - to be built
+│ │ ├── MicroChainFactory.sol - to be built
+│ │ └── MicroChainManager.sol - to be built
+│ ├── aao-management/ - to be built
+│ │ ├── MacroAAOFactory.sol - to be built
+│ │ ├── MacroAAOManager.sol - to be built
+│ │ ├── MicroAAOFactory.sol - to be built
+│ │ └── MicroAAOManager.sol - to be built
+│ ├── token-management/ - to be built
+│ │ ├── KASTokenContract.sol - to be built
+│ │ ├── REPTokenContract.sol - to be built
+│ │ └── PNTTokenContract.sol - to be built
+│ ├── polygon/ - to be built
+│ │ ├── ChildChain.sol - to be built
+│ │ ├── DepositManager.sol - to be built
+│ │ ├── ERC20Predicate.sol - to be built
+│ │ ├── ERC721Predicate.sol - to be built
+│ │ ├── PolygonZkSyncBridge.sol - to be built
+│ │ ├── RootChain.sol - to be built
+│ │ └── WithdrawManager.sol - to be built
+│ └── zksync/ - to be built
+│ ├── DiamondProxy.sol - to be built
+│ ├── L1ERC20Bridge.sol - to be built
+│ ├── L1WethBridge.sol - to be built
+│ ├── Plonk4VerifierWithAccessToDNext.sol - to be built
+│ ├── ProofGenerator.sol - to be built
+│ ├── StateTransitioner.sol - to be built
+│ ├── ValidatorTimelock.sol - to be built
+│ ├── Verifier.sol - to be built
+│ └── ZkSyncPolygonBridge.sol - to be built
+├── scripts/
+│ ├── deploy/
+│ │ ├── 00-deploy-diamond.js
+│ │ ├── 01-deploy-token-facet.js
+│ │ └── deploy-all.js
+│ ├── utils/
+│ │ └── diamond.js
+│ └── verify/
+│ └── verify-deployment.js
+├── test/
+│ ├── helpers/
+│ │ ├── diamond.js
+│ │ └── token.js
+│ ├── facets/
+│ │ └── TokenFacet.test.js
+│ ├── integration/
+│ │ └── TokenFacet.Integration.test.js
+│ └── diamond.test.js
+│ ├── verification/
+│ │ └── CryptoProperties.test.js
+│ │ ├── CryptoFormalVerification.test.js
+│ │ ├── helpers/
+│ │ └── setup.js
+├── docs/
+│ └── deployment/
+│ └── DEPLOYMENT.md
+│ └── facets/
+│ └── TokenFacet.md
+│ └── file-structure.txt
+│ └── litepaper.pdf
+│ └── project-context.txt
+│ ├── peoplenet-litepaper-latex/
+├── package.json
+└── hardhat.config.js

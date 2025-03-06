@@ -14,7 +14,7 @@ async function setupTest() {
     const libThresholdEncryption = await LibThresholdEncryption.deploy();
     await libThresholdEncryption.deployed();
 
-    // Deploy main contract with libraries
+    // Deploy CryptoProperties with libraries
     const CryptoProperties = await ethers.getContractFactory("CryptoProperties", {
         libraries: {
             LibAESGCM: libAESGCM.address,
@@ -25,11 +25,23 @@ async function setupTest() {
     const cryptoProperties = await CryptoProperties.deploy();
     await cryptoProperties.deployed();
 
+    // Deploy CryptoFormalVerification with libraries
+    const CryptoFormalVerification = await ethers.getContractFactory("CryptoFormalVerification", {
+        libraries: {
+            LibAESGCM: libAESGCM.address,
+            LibKeyManagement: libKeyManagement.address,
+            LibThresholdEncryption: libThresholdEncryption.address
+        }
+    });
+    const cryptoFormalVerification = await CryptoFormalVerification.deploy();
+    await cryptoFormalVerification.deployed();
+
     return {
         libAESGCM,
         libKeyManagement,
         libThresholdEncryption,
-        cryptoProperties
+        cryptoProperties,
+        cryptoFormalVerification
     };
 }
 

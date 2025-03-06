@@ -1,11 +1,15 @@
 {
     "files": [
         "contracts/verification/CryptoProperties.sol",
+        "contracts/verification/CryptoFormalVerification.sol",
         "contracts/library/LibAESGCM.sol",
         "contracts/library/LibKeyManagement.sol",
         "contracts/library/LibThresholdEncryption.sol"
     ],
-    "verify": "CryptoProperties:contracts/verification/crypto_properties.spec",
+    "verify": [
+        "CryptoProperties:contracts/verification/crypto_properties.spec",
+        "CryptoFormalVerification:contracts/verification/crypto_formal_verification.spec"
+    ],
     "solc": "solc8.0",
     "prover_args": [
         "-optimisticFallback true",
