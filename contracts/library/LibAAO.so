@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+/**
+ * @title LibAAO
+ * @dev Library for AAO storage and data structures
+ */
+library LibAAO {
+    bytes32 constant AAO_STORAGE_POSITION = keccak256("peoplenet.aao.storage");
+
+    enum ProposalStatus { Active, Executed, Rejected }
+    enum TaskStatus { Open, Assigned, PendingVerification, Completed, Rejected }
+
+    struct AAO {
+        uint256 id;
+        string topic;
+        address owner;
+        uint256 createdAt;
+        uint256 expiresAt; // 0 means no expiration
+        uint256 memberCount;
+        bool isActive;
+    }
+
+    struct Proposal {
+        uint256 id;
+        uint256 aaoId;
+        address proposer;
+        string text;
+        uint256 createdAt;
+        ProposalStatus status;
+        uint256 yesVotes;
+        uint256 noVotes;
+    }
+
+    struct Task {
+        uint256 id;
+        uint256 aaoId;
+        address creator;
+        string description;
+        uint256 reward;
+        uint256 createdAt;
+        uint256 completedAt;
+        address assignee;
+        TaskStatus status;
+    }
+
+    struct AAOStorage {
+        // AAO management
+        uint256 aaoCounter;
+        mapping(uint256 => AAO) aaos;
+        mapping(uint256 => mapping(address => bool)) aaoMembers;
+        mapping(uint256 => mapping(address => bool)) aaoAdmins;
+        
+        // Proposal management
+        uint256 proposalCounter;
+        mapping(uint256 => Proposal) proposals;
+        mapping(uint256 => mapping(address => bool)) hasVoted;
+        
+        // Task management
+        uint256 taskCounter;
+        mapping(uint256 => Task) tasks;
+    }
+
+    /**
+     * @dev Returns the AAO storage
+     * @return ds The storage struct
+     */
+    function aaoStorage() internal pure returns (AAOStorage storage ds) {
+        bytes32 position = AAO_STORAGE_POSITION;
+        assembly {
+            ds.slot := position
+        }
+    }
+}
