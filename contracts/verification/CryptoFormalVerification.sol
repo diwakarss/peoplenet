@@ -80,21 +80,21 @@ contract CryptoFormalVerification {
         assert(shares.length == totalShares);
         
         // Test reconstruction with minimum shares
-        bytes32[] memory minShares = new bytes32[](threshold);
+        LibKeyManagement.KeyShare[] memory minSharesStruct = new LibKeyManagement.KeyShare[](threshold);
         for (uint i = 0; i < threshold; i++) {
-            minShares[i] = shares[i].share;
+            minSharesStruct[i] = shares[i];
         }
         
-        bytes32 reconstructedMin = LibKeyManagement.combineShares(minShares, threshold);
+        bytes32 reconstructedMin = LibKeyManagement.combineShares(minSharesStruct, threshold);
         assert(secret == reconstructedMin);
         
         // Test reconstruction with all shares
-        bytes32[] memory allShares = new bytes32[](totalShares);
+        LibKeyManagement.KeyShare[] memory allSharesStruct = new LibKeyManagement.KeyShare[](totalShares);
         for (uint i = 0; i < totalShares; i++) {
-            allShares[i] = shares[i].share;
+            allSharesStruct[i] = shares[i];
         }
         
-        bytes32 reconstructedAll = LibKeyManagement.combineShares(allShares, threshold);
+        bytes32 reconstructedAll = LibKeyManagement.combineShares(allSharesStruct, threshold);
         assert(secret == reconstructedAll);
         
         return true;

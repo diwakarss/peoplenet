@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "../precompiles/ICryptoPrecompiles.sol";
-import "./LibErrors.sol";
+import { LibErrors } from "./LibErrors.sol";
 
 /// @title LibAESGCM
 /// @notice Formal verification properties:
@@ -21,6 +20,8 @@ library LibAESGCM {
         bytes authTag;         // Authentication tag
         bytes iv;             // Initialization vector
     }
+
+    address constant AES_GCM_PRECOMPILE = address(0x9);
 
 /// @notice Encrypts data using AES-GCM through precompile
     /// @param plaintext Data to encrypt
@@ -54,7 +55,7 @@ library LibAESGCM {
         );
 
         // Call precompile
-        (bool success, bytes memory result) = ICryptoPrecompiles.AES_GCM_PRECOMPILE.staticcall(input);
+        (bool success, bytes memory result) = AES_GCM_PRECOMPILE.staticcall(input);
         if (!success) {
             revert LibErrors.EncryptionFailed();
         }
@@ -85,54 +86,43 @@ library LibAESGCM {
         });
     }
 
-    /// @notice Decrypts AES-GCM encrypted data
-    /// @param encryptedData The encrypted data structure
-    /// @param key Decryption key
-    /// @return Decrypted plaintext
-    /// @custom:verify precondition key.length == KEY_SIZE
-    /// @custom:verify precondition encryptedData.iv.length == IV_SIZE
+    /**
+     * @dev Decrypts data using AES-GCM
+     * @param encryptedData The encrypted data
+     * @param key The encryption key
+     * @return The decrypted plaintext
+     */
     function decrypt(
         EncryptionResult memory encryptedData,
         bytes memory key
-    )
-        internal
-        view
-        returns (bytes memory)
-    {
+    ) internal view returns (bytes memory) {
         if (key.length != KEY_SIZE) {
             revert LibErrors.InvalidKeySize();
         }
-
+        
         // Prepare input for precompile
         bytes memory input = abi.encodePacked(
-            encryptedData.ciphertext,                // encrypted data
-            bytes32(0),                             // AAD (empty)
-            encryptedData.authTag,                  // auth tag
-            key,                                    // key
-            encryptedData.iv                        // IV
+            uint8(2),                  // decrypt mode
+            encryptedData.ciphertext,  // ciphertext
+            encryptedData.authTag,     // auth tag
+            bytes32(0),                // AAD (empty)
+            key,                       // key
+            encryptedData.iv           // IV
         );
 
         // Call precompile
-        (bool success, bytes memory result) = ICryptoPrecompiles.AES_GCM_PRECOMPILE.staticcall(input);
+        (bool success, bytes memory result) = AES_GCM_PRECOMPILE.staticcall(input);
         if (!success) {
             revert LibErrors.DecryptionFailed();
-        }
-
-        // Verify authentication
-        bool authentic;
-        assembly {
-            authentic := mload(add(result, 0x20))
-        }
-        if (!authentic) {
-            revert LibErrors.AuthenticationFailed();
         }
 
         // Extract plaintext
         bytes memory plaintext = new bytes(encryptedData.ciphertext.length);
         assembly {
-            let resultPtr := add(result, 0x40)
+            let resultPtr := add(result, 0x20)
             let plaintextPtr := add(plaintext, 0x20)
-            let length := mload(encryptedData.ciphertext)
+            let ciphertext := mload(add(encryptedData, 0x20))  // Get ciphertext pointer
+            let length := mload(ciphertext)  // Get ciphertext length
             for { let i := 0 } lt(i, length) { i := add(i, 0x20) } {
                 mstore(add(plaintextPtr, i), mload(add(resultPtr, i)))
             }

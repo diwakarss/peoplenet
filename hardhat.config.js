@@ -1,13 +1,16 @@
 require("@nomicfoundation/hardhat-toolbox");
-require("@nomiclabs/hardhat-ethers");
-require("@openzeppelin/hardhat-upgrades");
+require("@nomicfoundation/hardhat-ethers");
+// Temporarily comment out OpenZeppelin upgrades plugin that requires ethers v5
+// require("@openzeppelin/hardhat-upgrades");
 require("hardhat-deploy");
 require("hardhat-gas-reporter");
 require("solidity-coverage");
-require("@nomiclabs/hardhat-etherscan");
+// Comment out nomiclabs etherscan plugin as it conflicts with nomicfoundation verify
+// require("@nomiclabs/hardhat-etherscan");
 require("hardhat-contract-sizer");
-require("@matterlabs/hardhat-zksync-solc");
-require("@matterlabs/hardhat-zksync-deploy");
+// Temporarily comment out zkSync plugins
+// require("@matterlabs/hardhat-zksync-solc");
+// require("@matterlabs/hardhat-zksync-deploy");
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
@@ -37,12 +40,13 @@ module.exports = {
     polygon_mumbai: {
       url: process.env.POLYGON_MUMBAI_RPC_URL || "",
       accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
-    },
-    zkSync_testnet: {
-      url: process.env.ZKSYNC_TESTNET_URL || "",
-      ethNetwork: "goerli",
-      zksync: true,
     }
+    // Temporarily comment out zkSync network
+    // zkSync_testnet: {
+    //   url: process.env.ZKSYNC_TESTNET_URL || "",
+    //   ethNetwork: "goerli",
+    //   zksync: true,
+    // }
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS !== undefined,
@@ -50,14 +54,15 @@ module.exports = {
   },
   etherscan: {
     apiKey: process.env.ETHERSCAN_API_KEY,
-  },
-  zksolc: {
-    version: "1.3.13",
-    compilerSource: "binary",
-    settings: {
-      optimizer: {
-        enabled: true,
-      }
-    }
   }
+  // Temporarily comment out zksolc config
+  // zksolc: {
+  //   version: "1.3.13",
+  //   compilerSource: "binary",
+  //   settings: {
+  //     optimizer: {
+  //       enabled: true,
+  //     }
+  //   }
+  // }
 };

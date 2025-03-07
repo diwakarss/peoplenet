@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ITokenFacet } from "../interfaces/ITokenFacet.sol";
+
+// Extended interface for ERC20 tokens that includes decimals()
+interface IERC20Extended is IERC20 {
+    function decimals() external view returns (uint8);
+}
 
 library LibToken {
     bytes32 constant STORAGE_POSITION = keccak256("diamond.standard.token.storage");
@@ -65,7 +70,7 @@ library LibToken {
         }
 
         // Try to get token decimals to verify it's an ERC20
-        try IERC20(tokenAddress).decimals() returns (uint8) {
+        try IERC20Extended(tokenAddress).decimals() returns (uint8) {
             // Success - it's a valid ERC20 token
         } catch {
             revert InvalidToken(tokenAddress, "Not an ERC20 token");
@@ -91,7 +96,7 @@ library LibToken {
 
         validateToken(tokenAddress);
 
-        uint8 decimals = IERC20(tokenAddress).decimals();
+        uint8 decimals = IERC20Extended(tokenAddress).decimals();
 
         ts.tokenInfo[tokenAddress] = ITokenFacet.TokenInfo({
             name: name,

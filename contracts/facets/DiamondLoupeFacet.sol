@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import { LibDiamond } from "./LibDiamond.sol";
+import { LibDiamond } from "../diamond/LibDiamond.sol";
 import { IDiamondLoupe } from "../interfaces/IDiamondLoupe.sol";
 import { IERC165 } from "@openzeppelin/contracts/interfaces/IERC165.sol";
 

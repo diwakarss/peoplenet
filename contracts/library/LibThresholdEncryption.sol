@@ -110,10 +110,16 @@ library LibThresholdEncryption {
 
         bytes32 reconstructedKey = LibKeyManagement.combineShares(keyShares, threshold);
 
+        // Convert bytes32 to bytes memory for the decrypt function
+        bytes memory keyBytes = new bytes(32);
+        assembly {
+            mstore(add(keyBytes, 32), reconstructedKey)
+        }
+
         // Decrypt using reconstructed key
         return LibAESGCM.decrypt(
             shares[0].encryptedData,
-            abi.encodePacked(reconstructedKey)
+            keyBytes
         );
     }
 }

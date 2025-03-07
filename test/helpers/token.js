@@ -6,7 +6,6 @@ const TokenHelper = {
     async deployMockToken(name = "Mock Token", symbol = "MOCK", decimals = 18) {
         const MockToken = await ethers.getContractFactory("MockToken");
         const token = await MockToken.deploy(name, symbol, decimals);
-        await token.deployed();
         return token;
     },
 

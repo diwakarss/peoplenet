@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import { LibDiamond } from "../diamond/LibDiamond.sol";
-import { LibToken } from "../libraries/LibToken.sol";
+import { LibToken } from "../library/LibToken.sol";
 import { ITokenFacet } from "../interfaces/ITokenFacet.sol";
 import { IERC165 } from "@openzeppelin/contracts/interfaces/IERC165.sol";
 
@@ -10,7 +10,8 @@ contract TokenFacet is ITokenFacet, IERC165 {
     event TokenAdded(address indexed tokenAddress, string symbol);
     event TokenRemoved(address indexed tokenAddress);
 
-    struct TokenInfo {
+    // Using internal TokenInfo struct for local storage
+    struct InternalTokenInfo {
         bool isSupported;
         string symbol;
     }
@@ -18,7 +19,7 @@ contract TokenFacet is ITokenFacet, IERC165 {
     bytes32 constant STORAGE_POSITION = keccak256("peoplenet.token.storage");
 
     struct TokenStorage {
-        mapping(address => TokenInfo) supportedTokens;
+        mapping(address => InternalTokenInfo) supportedTokens;
         address[] tokenList;
     }
 
@@ -34,7 +35,7 @@ contract TokenFacet is ITokenFacet, IERC165 {
         TokenStorage storage ts = tokenStorage();
         require(!ts.supportedTokens[_tokenAddress].isSupported, "Token already supported");
         
-        ts.supportedTokens[_tokenAddress] = TokenInfo({
+        ts.supportedTokens[_tokenAddress] = InternalTokenInfo({
             isSupported: true,
             symbol: _symbol
         });
@@ -77,7 +78,10 @@ contract TokenFacet is ITokenFacet, IERC165 {
         override 
         returns (TokenInfo memory) 
     {
-        return LibToken.getTokenInfo(tokenAddress);
+        ITokenFacet.TokenInfo memory tokenInfo = LibToken.getTokenInfo(tokenAddress);
+        
+        // Return the interface TokenInfo directly
+        return tokenInfo;
     }
 
     /**

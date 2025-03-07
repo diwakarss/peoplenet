@@ -18,9 +18,10 @@ contract AAOFacet is IAAOFacet {
      */
     modifier onlyAAOOwnerOrAdmin(uint256 aaoId) {
         LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
         require(
-            aaoStorage.aaos[aaoId].owner == msg.sender || 
-            aaoStorage.aaoAdmins[aaoId][msg.sender],
+            aao.owner == msg.sender || 
+            aao.isAdmin[msg.sender],
             "AAOFacet: Not owner or admin"
         );
         _;
@@ -32,8 +33,9 @@ contract AAOFacet is IAAOFacet {
      */
     modifier onlyAAOMember(uint256 aaoId) {
         LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
         require(
-            aaoStorage.aaoMembers[aaoId][msg.sender],
+            aao.isMember[msg.sender],
             "AAOFacet: Not a member"
         );
         _;
@@ -51,24 +53,14 @@ contract AAOFacet is IAAOFacet {
     ) external override returns (uint256 aaoId) {
         LibDiamond.enforceIsContractOwner();
         
-        LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
-        
-        aaoId = aaoStorage.aaoCounter;
-        aaoStorage.aaoCounter++;
-        
-        aaoStorage.aaos[aaoId] = LibAAO.AAO({
-            id: aaoId,
-            topic: topic,
-            owner: msg.sender,
-            createdAt: block.timestamp,
-            expiresAt: duration == 0 ? 0 : block.timestamp + duration,
-            memberCount: 1,
-            isActive: true
-        });
-        
-        // Add creator as a member and admin
-        aaoStorage.aaoMembers[aaoId][msg.sender] = true;
-        aaoStorage.aaoAdmins[aaoId][msg.sender] = true;
+        // Use the LibAAO.createAAO helper function
+        aaoId = LibAAO.createAAO(
+            topic,
+            duration,
+            msg.sender,
+            true, // isMacro = true for AAOs created directly
+            0     // macroAAOId = 0 (not applicable for macro AAOs)
+        );
         
         emit AAOCreated(aaoId, topic, msg.sender, duration);
         return aaoId;
@@ -86,13 +78,14 @@ contract AAOFacet is IAAOFacet {
         uint256 newDuration
     ) external override onlyAAOOwnerOrAdmin(aaoId) {
         LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
         
-        require(aaoStorage.aaos[aaoId].isActive, "AAOFacet: AAO not active");
+        require(aao.active, "AAOFacet: AAO not active");
         
-        aaoStorage.aaos[aaoId].topic = newTopic;
+        aao.topic = newTopic;
         
         if (newDuration > 0) {
-            aaoStorage.aaos[aaoId].expiresAt = block.timestamp + newDuration;
+            aao.duration = newDuration;
         }
         
         emit AAOModified(aaoId, newTopic, newDuration);
@@ -104,10 +97,11 @@ contract AAOFacet is IAAOFacet {
      */
     function terminateAAO(uint256 aaoId) external override onlyAAOOwnerOrAdmin(aaoId) {
         LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
         
-        require(aaoStorage.aaos[aaoId].isActive, "AAOFacet: AAO not active");
+        require(aao.active, "AAOFacet: AAO not active");
         
-        aaoStorage.aaos[aaoId].isActive = false;
+        aao.active = false;
         
         emit AAOTerminated(aaoId, msg.sender);
     }
@@ -117,21 +111,8 @@ contract AAOFacet is IAAOFacet {
      * @param aaoId The ID of the AAO to join
      */
     function joinAAO(uint256 aaoId) external override {
-        LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
-        
-        require(aaoStorage.aaos[aaoId].isActive, "AAOFacet: AAO not active");
-        require(!aaoStorage.aaoMembers[aaoId][msg.sender], "AAOFacet: Already a member");
-        
-        // Check if AAO has expired
-        if (aaoStorage.aaos[aaoId].expiresAt > 0) {
-            require(
-                block.timestamp < aaoStorage.aaos[aaoId].expiresAt,
-                "AAOFacet: AAO expired"
-            );
-        }
-        
-        aaoStorage.aaoMembers[aaoId][msg.sender] = true;
-        aaoStorage.aaos[aaoId].memberCount++;
+        // Use the LibAAO.joinAAO helper function
+        LibAAO.joinAAO(aaoId, msg.sender);
         
         emit AAOMemberJoined(aaoId, msg.sender);
     }
@@ -141,19 +122,8 @@ contract AAOFacet is IAAOFacet {
      * @param aaoId The ID of the AAO to leave
      */
     function leaveAAO(uint256 aaoId) external override onlyAAOMember(aaoId) {
-        LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
-        
-        // Owner cannot leave their own AAO
-        require(aaoStorage.aaos[aaoId].owner != msg.sender, "AAOFacet: Owner cannot leave");
-        
-        aaoStorage.aaoMembers[aaoId][msg.sender] = false;
-        
-        // If user was an admin, remove admin status
-        if (aaoStorage.aaoAdmins[aaoId][msg.sender]) {
-            aaoStorage.aaoAdmins[aaoId][msg.sender] = false;
-        }
-        
-        aaoStorage.aaos[aaoId].memberCount--;
+        // Use the LibAAO.leaveAAO helper function
+        LibAAO.leaveAAO(aaoId, msg.sender);
         
         emit AAOMemberLeft(aaoId, msg.sender);
     }
@@ -168,12 +138,13 @@ contract AAOFacet is IAAOFacet {
         address member
     ) external override onlyAAOOwnerOrAdmin(aaoId) {
         LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
         
-        require(aaoStorage.aaos[aaoId].isActive, "AAOFacet: AAO not active");
-        require(aaoStorage.aaoMembers[aaoId][member], "AAOFacet: Not a member");
-        require(!aaoStorage.aaoAdmins[aaoId][member], "AAOFacet: Already an admin");
+        require(aao.active, "AAOFacet: AAO not active");
+        require(aao.isMember[member], "AAOFacet: Not a member");
+        require(!aao.isAdmin[member], "AAOFacet: Already an admin");
         
-        aaoStorage.aaoAdmins[aaoId][member] = true;
+        aao.isAdmin[member] = true;
         
         emit AAOAdminAssigned(aaoId, member);
     }
@@ -188,12 +159,13 @@ contract AAOFacet is IAAOFacet {
         address admin
     ) external override onlyAAOOwnerOrAdmin(aaoId) {
         LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
         
         // Cannot revoke owner's admin status
-        require(aaoStorage.aaos[aaoId].owner != admin, "AAOFacet: Cannot revoke owner admin");
-        require(aaoStorage.aaoAdmins[aaoId][admin], "AAOFacet: Not an admin");
+        require(aao.owner != admin, "AAOFacet: Cannot revoke owner admin");
+        require(aao.isAdmin[admin], "AAOFacet: Not an admin");
         
-        aaoStorage.aaoAdmins[aaoId][admin] = false;
+        aao.isAdmin[admin] = false;
         
         emit AAOAdminRevoked(aaoId, admin);
     }
@@ -206,9 +178,11 @@ contract AAOFacet is IAAOFacet {
     function awardREP(
         address userId,
         uint256 amount
-    ) external override onlyAAOOwnerOrAdmin(aaoId) {
+    ) external {
         // This would integrate with the REP token system
         // Implementation depends on how REP tokens are managed
+        // For now, we'll just emit the event with a default AAO ID
+        uint256 aaoId = 0; // Default AAO ID
         emit REPAwarded(aaoId, userId, amount);
     }
 
@@ -220,9 +194,11 @@ contract AAOFacet is IAAOFacet {
     function deductREP(
         address userId,
         uint256 amount
-    ) external override onlyAAOOwnerOrAdmin(aaoId) {
+    ) external {
         // This would integrate with the REP token system
         // Implementation depends on how REP tokens are managed
+        // For now, we'll just emit the event with a default AAO ID
+        uint256 aaoId = 0; // Default AAO ID
         emit REPDeducted(aaoId, userId, amount);
     }
 
@@ -253,21 +229,22 @@ contract AAOFacet is IAAOFacet {
         string calldata proposalText
     ) external override onlyAAOMember(aaoId) returns (uint256 proposalId) {
         LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
         
-        require(aaoStorage.aaos[aaoId].isActive, "AAOFacet: AAO not active");
+        require(aao.active, "AAOFacet: AAO not active");
         
-        proposalId = aaoStorage.proposalCounter;
-        aaoStorage.proposalCounter++;
+        proposalId = aaoStorage.proposalCount;
+        aaoStorage.proposalCount++;
         
         aaoStorage.proposals[proposalId] = LibAAO.Proposal({
             id: proposalId,
             aaoId: aaoId,
             proposer: msg.sender,
             text: proposalText,
-            createdAt: block.timestamp,
+            forVotes: 0,
+            againstVotes: 0,
             status: LibAAO.ProposalStatus.Active,
-            yesVotes: 0,
-            noVotes: 0
+            createdAt: block.timestamp
         });
         
         emit ProposalSubmitted(aaoId, proposalId, msg.sender, proposalText);
@@ -287,17 +264,18 @@ contract AAOFacet is IAAOFacet {
         
         LibAAO.Proposal storage proposal = aaoStorage.proposals[proposalId];
         uint256 aaoId = proposal.aaoId;
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
         
         require(proposal.status == LibAAO.ProposalStatus.Active, "AAOFacet: Proposal not active");
-        require(aaoStorage.aaoMembers[aaoId][msg.sender], "AAOFacet: Not a member");
+        require(aao.isMember[msg.sender], "AAOFacet: Not a member");
         require(!aaoStorage.hasVoted[proposalId][msg.sender], "AAOFacet: Already voted");
         
         aaoStorage.hasVoted[proposalId][msg.sender] = true;
         
         if (support) {
-            proposal.yesVotes++;
+            proposal.forVotes++;
         } else {
-            proposal.noVotes++;
+            proposal.againstVotes++;
         }
         
         emit VoteCast(aaoId, proposalId, msg.sender, support);
@@ -312,12 +290,13 @@ contract AAOFacet is IAAOFacet {
         
         LibAAO.Proposal storage proposal = aaoStorage.proposals[proposalId];
         uint256 aaoId = proposal.aaoId;
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
         
         require(proposal.status == LibAAO.ProposalStatus.Active, "AAOFacet: Proposal not active");
-        require(aaoStorage.aaoMembers[aaoId][msg.sender], "AAOFacet: Not a member");
+        require(aao.isMember[msg.sender], "AAOFacet: Not a member");
         
         // Simple majority voting
-        bool passed = proposal.yesVotes > proposal.noVotes;
+        bool passed = proposal.forVotes > proposal.againstVotes;
         
         if (passed) {
             proposal.status = LibAAO.ProposalStatus.Executed;
@@ -341,11 +320,12 @@ contract AAOFacet is IAAOFacet {
         uint256 rewardAmount
     ) external override onlyAAOMember(aaoId) returns (uint256 taskId) {
         LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
         
-        require(aaoStorage.aaos[aaoId].isActive, "AAOFacet: AAO not active");
+        require(aao.active, "AAOFacet: AAO not active");
         
-        taskId = aaoStorage.taskCounter;
-        aaoStorage.taskCounter++;
+        taskId = aaoStorage.taskCount;
+        aaoStorage.taskCount++;
         
         aaoStorage.tasks[taskId] = LibAAO.Task({
             id: taskId,
@@ -353,10 +333,11 @@ contract AAOFacet is IAAOFacet {
             creator: msg.sender,
             description: taskDescription,
             reward: rewardAmount,
-            createdAt: block.timestamp,
-            completedAt: 0,
             assignee: address(0),
-            status: LibAAO.TaskStatus.Open
+            status: LibAAO.TaskStatus.Open,
+            createdAt: block.timestamp,
+            assignedAt: 0,
+            completedAt: 0
         });
         
         emit BountyCreated(aaoId, taskId, msg.sender, taskDescription, rewardAmount);
@@ -372,12 +353,14 @@ contract AAOFacet is IAAOFacet {
         
         LibAAO.Task storage task = aaoStorage.tasks[taskId];
         uint256 aaoId = task.aaoId;
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
         
         require(task.status == LibAAO.TaskStatus.Open, "AAOFacet: Task not open");
-        require(aaoStorage.aaoMembers[aaoId][msg.sender], "AAOFacet: Not a member");
+        require(aao.isMember[msg.sender], "AAOFacet: Not a member");
         
         task.assignee = msg.sender;
         task.status = LibAAO.TaskStatus.Assigned;
+        task.assignedAt = block.timestamp;
         
         emit TaskAssigned(aaoId, taskId, msg.sender);
     }
@@ -408,11 +391,19 @@ contract AAOFacet is IAAOFacet {
     function verifyTask(
         uint256 taskId,
         bool approved
-    ) external override onlyAAOOwnerOrAdmin(task.aaoId) {
+    ) external override {
         LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
         
         LibAAO.Task storage task = aaoStorage.tasks[taskId];
         uint256 aaoId = task.aaoId;
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
+        
+        // Check if caller is owner or admin
+        require(
+            aao.owner == msg.sender || 
+            aao.isAdmin[msg.sender],
+            "AAOFacet: Not owner or admin"
+        );
         
         require(task.status == LibAAO.TaskStatus.PendingVerification, "AAOFacet: Task not pending verification");
         
@@ -436,8 +427,7 @@ contract AAOFacet is IAAOFacet {
      * @return AAO information
      */
     function getAAO(uint256 aaoId) external view override returns (LibAAO.AAO memory) {
-        LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
-        return aaoStorage.aaos[aaoId];
+        return LibAAO.getExternalAAO(aaoId);
     }
 
     /**
@@ -448,7 +438,8 @@ contract AAOFacet is IAAOFacet {
      */
     function isMember(uint256 aaoId, address member) external view override returns (bool) {
         LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
-        return aaoStorage.aaoMembers[aaoId][member];
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
+        return aao.isMember[member];
     }
 
     /**
@@ -459,7 +450,8 @@ contract AAOFacet is IAAOFacet {
      */
     function isAdmin(uint256 aaoId, address admin) external view override returns (bool) {
         LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
-        return aaoStorage.aaoAdmins[aaoId][admin];
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
+        return aao.isAdmin[admin];
     }
 
     /**
