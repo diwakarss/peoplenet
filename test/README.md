@@ -7,6 +7,7 @@ This directory contains the test suite for the PeopleNet project. The tests are 
 - `facets/`: Tests for individual facets of the Diamond contract
   - `AAOFacet.test.js`: Tests for the AAO (Arbitrary Action Object) facet
   - `AAOFactory.test.js`: Tests for the AAO factory functionality
+  - `AAOAdvanced.test.js`: Tests for advanced AAO functionality (proposals, voting, admin roles, micro AAOs, token integration)
   - `DiamondController.test.js`: Tests for the Diamond controller and basic AAO functionality
   - `TokenFacet.test.js`: Tests for the token facet
 
@@ -22,6 +23,29 @@ This directory contains the test suite for the PeopleNet project. The tests are 
   - `aao.js`: Helper functions for AAO-related tests
   - `diamond.js`: Helper functions for Diamond-related tests
   - `token.js`: Helper functions for token-related tests
+
+## Advanced AAO Functionality
+
+The `AAOAdvanced.test.js` file tests the following advanced AAO features:
+
+1. **Proposal Creation and Voting**:
+   - Creating proposals within an AAO
+   - Voting on proposals (for/against)
+   - Executing proposals after voting
+
+2. **Admin Role Management**:
+   - Assigning admin roles to AAO members
+   - Admin permissions and actions
+   - Revoking admin roles
+
+3. **Micro AAO Management**:
+   - Creating micro AAOs within a macro AAO
+   - Managing membership in micro AAOs
+   - Creating proposals in micro AAOs
+
+4. **Token Integration**:
+   - Registering tokens for use with AAOs
+   - Using tokens in AAO operations through proposals
 
 ## Running Tests
 
