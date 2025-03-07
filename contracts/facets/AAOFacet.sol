@@ -431,6 +431,49 @@ contract AAOFacet is IAAOFacet {
     }
 
     /**
+     * @dev Gets all AAOs created by a specific address
+     * @param creator The address of the creator
+     * @return Array of AAO IDs created by the address
+     */
+    function getAAOsByCreator(address creator) external view returns (uint256[] memory) {
+        LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
+        return aaoStorage.aaosByCreator[creator];
+    }
+
+    /**
+     * @dev Gets all AAOs where the address is a member
+     * @param member The address of the member
+     * @return Array of AAO IDs where the address is a member
+     */
+    function getAAOsByMember(address member) external view returns (uint256[] memory) {
+        LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
+        return aaoStorage.aaosByMember[member];
+    }
+
+    /**
+     * @dev Gets the number of members in an AAO
+     * @param aaoId The ID of the AAO
+     * @return The number of members
+     */
+    function getMembersCount(uint256 aaoId) external view returns (uint256) {
+        LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
+        return aao.members.length;
+    }
+
+    /**
+     * @dev Gets the macro AAO ID for a micro AAO
+     * @param aaoId The ID of the micro AAO
+     * @return The ID of the parent macro AAO
+     */
+    function getMacroAAOId(uint256 aaoId) external view returns (uint256) {
+        LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
+        require(!aao.isMacro, "AAOFacet: Not a micro AAO");
+        return aao.macroAAOId;
+    }
+
+    /**
      * @dev Checks if an address is a member of an AAO
      * @param aaoId The ID of the AAO
      * @param member The address to check

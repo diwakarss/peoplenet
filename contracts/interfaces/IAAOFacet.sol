@@ -58,6 +58,10 @@ interface IAAOFacet {
 
     // View Functions
     function getAAO(uint256 aaoId) external view returns (LibAAO.AAO memory);
+    function getAAOsByCreator(address creator) external view returns (uint256[] memory);
+    function getAAOsByMember(address member) external view returns (uint256[] memory);
+    function getMembersCount(uint256 aaoId) external view returns (uint256);
+    function getMacroAAOId(uint256 aaoId) external view returns (uint256);
     function isMember(uint256 aaoId, address member) external view returns (bool);
     function isAdmin(uint256 aaoId, address admin) external view returns (bool);
     function getProposal(uint256 proposalId) external view returns (LibAAO.Proposal memory);

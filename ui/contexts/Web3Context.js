@@ -1,11 +1,12 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { ethers } from 'ethers';
+import { BrowserProvider } from 'ethers';
 
 const Web3Context = createContext();
 
 export function Web3Provider({ children }) {
   const [account, setAccount] = useState(null);
   const [provider, setProvider] = useState(null);
+  const [signer, setSigner] = useState(null);
   const [chainId, setChainId] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -14,14 +15,17 @@ export function Web3Provider({ children }) {
   // Initialize provider from window.ethereum if available
   useEffect(() => {
     if (typeof window !== 'undefined' && window.ethereum) {
-      const ethersProvider = new ethers.providers.Web3Provider(window.ethereum);
+      const ethersProvider = new BrowserProvider(window.ethereum);
       setProvider(ethersProvider);
 
       // Check if already connected
       ethersProvider.listAccounts().then(accounts => {
         if (accounts.length > 0) {
-          setAccount(accounts[0]);
+          setAccount(accounts[0].address);
           setIsConnected(true);
+          ethersProvider.getSigner().then(signerInstance => {
+            setSigner(signerInstance);
+          });
           
           // Get chain ID
           ethersProvider.getNetwork().then(network => {
@@ -31,24 +35,31 @@ export function Web3Provider({ children }) {
       });
 
       // Listen for account changes
-      window.ethereum.on('accountsChanged', (accounts) => {
+      window.ethereum.on('accountsChanged', async (accounts) => {
         if (accounts.length > 0) {
           setAccount(accounts[0]);
           setIsConnected(true);
+          const signerInstance = await ethersProvider.getSigner();
+          setSigner(signerInstance);
         } else {
           setAccount(null);
           setIsConnected(false);
+          setSigner(null);
         }
       });
 
       // Listen for chain changes
-      window.ethereum.on('chainChanged', (chainIdHex) => {
+      window.ethereum.on('chainChanged', async (chainIdHex) => {
         const newChainId = parseInt(chainIdHex, 16);
         setChainId(newChainId);
         
         // Refresh provider on chain change
-        const updatedProvider = new ethers.providers.Web3Provider(window.ethereum);
+        const updatedProvider = new BrowserProvider(window.ethereum);
         setProvider(updatedProvider);
+        if (isConnected) {
+          const signerInstance = await updatedProvider.getSigner();
+          setSigner(signerInstance);
+        }
       });
     }
   }, []);
@@ -71,6 +82,8 @@ export function Web3Provider({ children }) {
       
       setAccount(accounts[0]);
       setIsConnected(true);
+      const signerInstance = await provider.getSigner();
+      setSigner(signerInstance);
       
       // Get chain ID
       const network = await provider.getNetwork();
@@ -87,6 +100,7 @@ export function Web3Provider({ children }) {
   const disconnectWallet = () => {
     setAccount(null);
     setIsConnected(false);
+    setSigner(null);
   };
 
   // Switch network function
@@ -112,6 +126,7 @@ export function Web3Provider({ children }) {
   const value = {
     account,
     provider,
+    signer,
     chainId,
     isConnected,
     isConnecting,

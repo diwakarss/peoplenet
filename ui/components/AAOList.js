@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import {
   Box,
   Heading,
@@ -20,13 +20,14 @@ import {
   TabPanels,
   Tab,
   TabPanel,
-  useToast
+  useToast,
+  HStack
 } from '@chakra-ui/react';
 import { useWeb3 } from '../contexts/Web3Context';
 import { getAAOFacet } from '../utils/contracts';
 
-const AAOList = ({ onSelectAAO }) => {
-  const { account, provider, isConnected } = useWeb3();
+const AAOList = forwardRef(({ onSelectAAO }, ref) => {
+  const { account, provider, signer, isConnected } = useWeb3();
   const [isLoading, setIsLoading] = useState(false);
   const [myAAOs, setMyAAOs] = useState([]);
   const [joinedAAOs, setJoinedAAOs] = useState([]);
@@ -41,7 +42,15 @@ const AAOList = ({ onSelectAAO }) => {
     setError(null);
     
     try {
-      const aaoFacet = getAAOFacet(provider);
+      const aaoFacet = getAAOFacet(signer || provider);
+      
+      // Check if the required functions exist
+      if (typeof aaoFacet.getAAOsByCreator !== 'function') {
+        console.error('Function getAAOsByCreator not found on AAOFacet');
+        setError('AAO functionality not available. The contract might not be properly deployed or initialized.');
+        setIsLoading(false);
+        return;
+      }
       
       // Get AAOs created by the user
       const userAAOs = await aaoFacet.getAAOsByCreator(account);
@@ -94,23 +103,28 @@ const AAOList = ({ onSelectAAO }) => {
     }
   };
 
+  // Expose loadAAOs function via ref
+  useImperativeHandle(ref, () => ({
+    loadAAOs
+  }));
+
   // Load AAOs on component mount and when account changes
   useEffect(() => {
     loadAAOs();
-  }, [isConnected, provider, account]);
+  }, [isConnected, provider, account, signer]);
 
   // Handle joining an AAO
   const handleJoinAAO = async (aaoId) => {
-    if (!isConnected) return;
+    if (!isConnected || !signer) return;
     
     try {
-      const aaoFacet = getAAOFacet(provider.getSigner());
+      const aaoFacet = getAAOFacet(signer);
       const tx = await aaoFacet.joinAAO(aaoId);
       await tx.wait();
       
       toast({
         title: 'Joined AAO',
-        description: `You have successfully joined AAO #${aaoId}`,
+        description: 'You have successfully joined the AAO',
         status: 'success',
         duration: 5000,
         isClosable: true,
@@ -121,7 +135,7 @@ const AAOList = ({ onSelectAAO }) => {
     } catch (err) {
       console.error('Error joining AAO:', err);
       toast({
-        title: 'Error joining AAO',
+        title: 'Error',
         description: err.message || 'Failed to join AAO',
         status: 'error',
         duration: 5000,
@@ -132,16 +146,16 @@ const AAOList = ({ onSelectAAO }) => {
 
   // Handle leaving an AAO
   const handleLeaveAAO = async (aaoId) => {
-    if (!isConnected) return;
+    if (!isConnected || !signer) return;
     
     try {
-      const aaoFacet = getAAOFacet(provider.getSigner());
+      const aaoFacet = getAAOFacet(signer);
       const tx = await aaoFacet.leaveAAO(aaoId);
       await tx.wait();
       
       toast({
         title: 'Left AAO',
-        description: `You have successfully left AAO #${aaoId}`,
+        description: 'You have successfully left the AAO',
         status: 'success',
         duration: 5000,
         isClosable: true,
@@ -152,7 +166,7 @@ const AAOList = ({ onSelectAAO }) => {
     } catch (err) {
       console.error('Error leaving AAO:', err);
       toast({
-        title: 'Error leaving AAO',
+        title: 'Error',
         description: err.message || 'Failed to leave AAO',
         status: 'error',
         duration: 5000,
@@ -239,143 +253,132 @@ const AAOList = ({ onSelectAAO }) => {
 
   return (
     <Box>
-      <Heading size="lg" mb={6}>Your AAOs</Heading>
+      <Heading size="lg" mb={6}>AAO Dashboard</Heading>
       
-      <Tabs colorScheme="blue">
-        <TabList>
-          <Tab>Created ({myAAOs.length})</Tab>
-          <Tab>Joined ({joinedAAOs.length})</Tab>
-          <Tab>Explore</Tab>
-        </TabList>
-        
-        <TabPanels>
-          {/* Created AAOs */}
-          <TabPanel>
-            {myAAOs.length === 0 ? (
-              <Text>You haven't created any AAOs yet.</Text>
-            ) : (
-              <Table variant="simple">
-                <Thead>
-                  <Tr>
-                    <Th>ID</Th>
-                    <Th>Topic</Th>
-                    <Th>Type</Th>
-                    <Th>Status</Th>
-                    <Th>Members</Th>
-                    <Th>Actions</Th>
-                  </Tr>
-                </Thead>
-                <Tbody>
-                  {myAAOs.map((aao) => (
-                    <Tr key={aao.id}>
-                      <Td>{aao.id}</Td>
-                      <Td>{aao.topic}</Td>
-                      <Td>
-                        <Badge colorScheme={aao.isMacro ? "purple" : "teal"}>
-                          {aao.isMacro ? "Macro" : "Micro"}
-                        </Badge>
-                      </Td>
-                      <Td>
-                        <Badge colorScheme={aao.active ? "green" : "red"}>
-                          {aao.active ? "Active" : "Inactive"}
-                        </Badge>
-                      </Td>
-                      <Td>{aao.membersCount}</Td>
-                      <Td>
-                        <Button 
-                          size="sm" 
-                          colorScheme="blue" 
-                          onClick={() => handleViewAAO(aao.id)}
-                        >
-                          View
-                        </Button>
-                      </Td>
+      {error && (
+        <Alert status="error" mb={4}>
+          <AlertIcon />
+          {error}
+        </Alert>
+      )}
+      
+      {isLoading ? (
+        <Flex justify="center" align="center" py={10}>
+          <Spinner size="xl" />
+        </Flex>
+      ) : (
+        <Tabs variant="enclosed" colorScheme="blue">
+          <TabList>
+            <Tab>My AAOs</Tab>
+            <Tab>Joined AAOs</Tab>
+          </TabList>
+          <TabPanels>
+            <TabPanel>
+              {myAAOs.length === 0 ? (
+                <Text>You haven't created any AAOs yet.</Text>
+              ) : (
+                <Table variant="simple">
+                  <Thead>
+                    <Tr>
+                      <Th>ID</Th>
+                      <Th>Topic</Th>
+                      <Th>Type</Th>
+                      <Th>Status</Th>
+                      <Th>Members</Th>
+                      <Th>Actions</Th>
                     </Tr>
-                  ))}
-                </Tbody>
-              </Table>
-            )}
-          </TabPanel>
-          
-          {/* Joined AAOs */}
-          <TabPanel>
-            {joinedAAOs.length === 0 ? (
-              <Text>You haven't joined any AAOs yet.</Text>
-            ) : (
-              <Table variant="simple">
-                <Thead>
-                  <Tr>
-                    <Th>ID</Th>
-                    <Th>Topic</Th>
-                    <Th>Type</Th>
-                    <Th>Status</Th>
-                    <Th>Members</Th>
-                    <Th>Actions</Th>
-                  </Tr>
-                </Thead>
-                <Tbody>
-                  {joinedAAOs.map((aao) => (
-                    <Tr key={aao.id}>
-                      <Td>{aao.id}</Td>
-                      <Td>{aao.topic}</Td>
-                      <Td>
-                        <Badge colorScheme={aao.isMacro ? "purple" : "teal"}>
-                          {aao.isMacro ? "Macro" : "Micro"}
-                        </Badge>
-                      </Td>
-                      <Td>
-                        <Badge colorScheme={aao.active ? "green" : "red"}>
-                          {aao.active ? "Active" : "Inactive"}
-                        </Badge>
-                      </Td>
-                      <Td>{aao.membersCount}</Td>
-                      <Td>
-                        <Flex gap={2}>
+                  </Thead>
+                  <Tbody>
+                    {myAAOs.map((aao) => (
+                      <Tr key={aao.id}>
+                        <Td>{aao.id}</Td>
+                        <Td>{aao.topic}</Td>
+                        <Td>
+                          <Badge colorScheme={aao.isMacro ? "blue" : "purple"}>
+                            {aao.isMacro ? "Macro" : "Micro"}
+                          </Badge>
+                        </Td>
+                        <Td>
+                          <Badge colorScheme={aao.active ? "green" : "red"}>
+                            {aao.active ? "Active" : "Inactive"}
+                          </Badge>
+                        </Td>
+                        <Td>{aao.membersCount}</Td>
+                        <Td>
                           <Button 
                             size="sm" 
                             colorScheme="blue" 
-                            onClick={() => handleViewAAO(aao.id)}
+                            onClick={() => onSelectAAO(aao)}
                           >
                             View
                           </Button>
-                          <Button 
-                            size="sm" 
-                            colorScheme="red" 
-                            onClick={() => handleLeaveAAO(aao.id)}
-                          >
-                            Leave
-                          </Button>
-                        </Flex>
-                      </Td>
+                        </Td>
+                      </Tr>
+                    ))}
+                  </Tbody>
+                </Table>
+              )}
+            </TabPanel>
+            <TabPanel>
+              {joinedAAOs.length === 0 ? (
+                <Text>You haven't joined any AAOs yet.</Text>
+              ) : (
+                <Table variant="simple">
+                  <Thead>
+                    <Tr>
+                      <Th>ID</Th>
+                      <Th>Topic</Th>
+                      <Th>Type</Th>
+                      <Th>Status</Th>
+                      <Th>Members</Th>
+                      <Th>Actions</Th>
                     </Tr>
-                  ))}
-                </Tbody>
-              </Table>
-            )}
-          </TabPanel>
-          
-          {/* Explore AAOs */}
-          <TabPanel>
-            <Text mb={4}>
-              This feature will allow you to discover and join public AAOs.
-            </Text>
-            <Alert status="info">
-              <AlertIcon />
-              AAO discovery feature coming soon!
-            </Alert>
-          </TabPanel>
-        </TabPanels>
-      </Tabs>
-      
-      <Button 
-        mt={6} 
-        colorScheme="blue" 
-        onClick={loadAAOs}
-      >
-        Refresh
-      </Button>
+                  </Thead>
+                  <Tbody>
+                    {joinedAAOs.map((aao) => (
+                      <Tr key={aao.id}>
+                        <Td>{aao.id}</Td>
+                        <Td>{aao.topic}</Td>
+                        <Td>
+                          <Badge colorScheme={aao.isMacro ? "blue" : "purple"}>
+                            {aao.isMacro ? "Macro" : "Micro"}
+                          </Badge>
+                        </Td>
+                        <Td>
+                          <Badge colorScheme={aao.active ? "green" : "red"}>
+                            {aao.active ? "Active" : "Inactive"}
+                          </Badge>
+                        </Td>
+                        <Td>{aao.membersCount}</Td>
+                        <Td>
+                          <HStack spacing={2}>
+                            <Button 
+                              size="sm" 
+                              colorScheme="blue" 
+                              onClick={() => onSelectAAO(aao)}
+                            >
+                              View
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              colorScheme="red" 
+                              onClick={() => handleLeaveAAO(aao.id)}
+                            >
+                              Leave
+                            </Button>
+                          </HStack>
+                        </Td>
+                      </Tr>
+                    ))}
+                  </Tbody>
+                </Table>
+              )}
+            </TabPanel>
+          </TabPanels>
+        </Tabs>
+      )}
     </Box>
   );
-};
+});
 
 export default AAOList; 

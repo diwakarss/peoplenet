@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { 
   Box, 
   Container, 
@@ -24,6 +24,8 @@ import { useWeb3 } from '../contexts/Web3Context';
 export default function Home() {
   const { account, provider, isConnected } = useWeb3();
   const [selectedAAO, setSelectedAAO] = useState(null);
+  const [tabIndex, setTabIndex] = useState(0);
+  const aaoListRef = useRef(null);
   const toast = useToast();
 
   const handleSelectAAO = (aao) => {
@@ -38,6 +40,14 @@ export default function Home() {
       duration: 5000,
       isClosable: true,
     });
+    
+    // Switch to the Dashboard tab
+    setTabIndex(0);
+    
+    // Refresh the AAO list
+    if (aaoListRef.current && aaoListRef.current.loadAAOs) {
+      aaoListRef.current.loadAAOs();
+    }
   };
 
   return (
@@ -66,7 +76,7 @@ export default function Home() {
             </Text>
           </Box>
         ) : (
-          <Tabs variant="enclosed" colorScheme="blue">
+          <Tabs variant="enclosed" colorScheme="blue" index={tabIndex} onChange={setTabIndex}>
             <TabList>
               <Tab>Dashboard</Tab>
               <Tab>Create AAO</Tab>
@@ -74,7 +84,7 @@ export default function Home() {
             </TabList>
             <TabPanels>
               <TabPanel>
-                <AAOList onSelectAAO={handleSelectAAO} />
+                <AAOList ref={aaoListRef} onSelectAAO={handleSelectAAO} />
               </TabPanel>
               <TabPanel>
                 <CreateAAO onSuccess={handleCreateSuccess} />

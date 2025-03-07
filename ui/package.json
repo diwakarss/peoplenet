@@ -10,10 +10,11 @@
     "export": "next export"
   },
   "dependencies": {
+    "@chakra-ui/icons": "^2.2.4",
     "@chakra-ui/react": "^2.8.2",
     "@emotion/react": "^11.11.3",
     "@emotion/styled": "^11.11.0",
-    "ethers": "^5.7.2",
+    "ethers": "^6.9.0",
     "framer-motion": "^10.16.16",
     "next": "^14.0.4",
     "peoplenet-ui": "file:",
