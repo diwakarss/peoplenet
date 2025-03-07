@@ -48,11 +48,11 @@ peoplenet/
 │ │ ├── MacroChainManager.sol - to be built
 │ │ ├── MicroChainFactory.sol - to be built
 │ │ └── MicroChainManager.sol - to be built
-│ ├── aao-management/ - to be built
-│ │ ├── MacroAAOFactory.sol - to be built
-│ │ ├── MacroAAOManager.sol - to be built
-│ │ ├── MicroAAOFactory.sol - to be built
-│ │ └── MicroAAOManager.sol - to be built
+│ ├── aao-management/ 
+│ │ ├── MacroAAOFactory.sol
+│ │ ├── MacroAAOManager.sol
+│ │ ├── MicroAAOFactory.sol 
+│ │ └── MicroAAOManager.sol 
 │ ├── token-management/ - to be built
 │ │ ├── KASTokenContract.sol - to be built
 │ │ ├── REPTokenContract.sol - to be built

@@ -1,23 +1,47 @@
 {
   "name": "peoplenet",
   "version": "1.0.0",
+  "description": "A blockchain-based infrastructure for a decentralized digital society",
+  "main": "index.js",
   "scripts": {
-    "deploy:local": "hardhat run scripts/deploy/deploy-all.js --network localhost",
-    "deploy:test": "hardhat run scripts/deploy/deploy-all.js --network hardhat",
-    "verify": "hardhat run scripts/verify/verify-deployment.js",
-    "test": "hardhat test",
-    "compile": "hardhat compile",
-    "node": "hardhat node"
+    "compile": "npx hardhat compile",
+    "test": "npx hardhat test",
+    "node": "npx hardhat node",
+    "deploy:local": "npx hardhat run scripts/deploy/deploy-all.js --network localhost",
+    "deploy:test": "npx hardhat run scripts/deploy/deploy-all.js --network hardhat",
+    "verify": "npx hardhat run scripts/verify/verify-deployment.js",
+    "clean": "npx hardhat clean"
   },
+  "keywords": [
+    "blockchain",
+    "ethereum",
+    "zksync",
+    "polygon",
+    "aao",
+    "decentralized"
+  ],
+  "author": "PeopleNet Team",
+  "license": "ISC",
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^3.0.0",
-    "@openzeppelin/contracts": "^4.9.0",
-    "hardhat": "^2.17.0",
+    "@certora/cli": "^4.0.0",
     "@ethereum-waffle/compiler": "^4.0.0-alpha.24",
+    "@matterlabs/hardhat-zksync-deploy": "^0.6.3",
+    "@matterlabs/hardhat-zksync-solc": "^0.4.0",
+    "@nomicfoundation/hardhat-toolbox": "^3.0.0",
+    "@nomiclabs/hardhat-ethers": "^2.2.0",
+    "@nomiclabs/hardhat-etherscan": "^3.1.7",
+    "@nomiclabs/hardhat-waffle": "^2.0.3",
+    "@openzeppelin/contracts": "^4.9.0",
+    "@openzeppelin/hardhat-upgrades": "^1.28.0",
+    "chai": "^4.3.6",
     "ethereum-waffle": "^3.4.4",
-    "@certora/cli": "^4.0.0"
+    "ethers": "^5.7.2",
+    "hardhat": "^2.17.0",
+    "hardhat-contract-sizer": "^2.10.0",
+    "hardhat-gas-reporter": "^1.0.9",
+    "solidity-coverage": "^0.8.4"
   },
   "dependencies": {
-    "peoplenet": "file:"
+    "hardhat-deploy": "^0.14.0"
   }
 }

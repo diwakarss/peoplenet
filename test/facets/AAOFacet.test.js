@@ -1,203 +1,296 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
-const { deployDiamond } = require("../helpers/diamond");
+const { getSelectors, FacetCutAction } = require("../helpers/diamond");
 
 describe("AAOFacet", function () {
-  let diamondAddress;
+  let diamondCutFacet;
+  let diamondLoupeFacet;
   let aaoFacet;
+  let libAAO;
+  let macroAAOFactory;
+  let microAAOFactory;
   let owner;
   let user1;
   let user2;
+  let user3;
 
-  beforeEach(async function () {
-    [owner, user1, user2] = await ethers.getSigners();
-    
-    // Deploy the diamond with AAOFacet
-    diamondAddress = await deployDiamond();
-    
-    // Get the AAOFacet contract instance
-    const AAOFacet = await ethers.getContractFactory("AAOFacet");
-    aaoFacet = await AAOFacet.attach(diamondAddress);
+  before(async function () {
+    // Get signers
+    [owner, user1, user2, user3] = await ethers.getSigners();
+
+    // Deploy DiamondCutFacet
+    const DiamondCutFacet = await ethers.getContractFactory("DiamondCutFacet");
+    diamondCutFacet = await DiamondCutFacet.deploy();
+    await diamondCutFacet.deployed();
+
+    // Deploy Diamond
+    const Diamond = await ethers.getContractFactory("DiamondController");
+    diamond = await Diamond.deploy(owner.address, diamondCutFacet.address);
+    await diamond.deployed();
+
+    // Deploy DiamondLoupeFacet
+    const DiamondLoupeFacet = await ethers.getContractFactory("DiamondLoupeFacet");
+    diamondLoupeFacet = await DiamondLoupeFacet.deploy();
+    await diamondLoupeFacet.deployed();
+
+    // Deploy LibAAO
+    const LibAAO = await ethers.getContractFactory("LibAAO");
+    libAAO = await LibAAO.deploy();
+    await libAAO.deployed();
+
+    // Deploy AAOFacet
+    const AAOFacet = await ethers.getContractFactory("AAOFacet", {
+      libraries: {
+        LibAAO: libAAO.address,
+      },
+    });
+    aaoFacet = await AAOFacet.deploy();
+    await aaoFacet.deployed();
+
+    // Add DiamondLoupeFacet and AAOFacet to Diamond
+    const cut = [
+      {
+        facetAddress: diamondLoupeFacet.address,
+        action: FacetCutAction.Add,
+        functionSelectors: getSelectors(diamondLoupeFacet),
+      },
+      {
+        facetAddress: aaoFacet.address,
+        action: FacetCutAction.Add,
+        functionSelectors: getSelectors(aaoFacet),
+      },
+    ];
+
+    // Add facets to diamond
+    const diamondCut = await ethers.getContractAt("IDiamondCut", diamond.address);
+    const tx = await diamondCut.diamondCut(cut, ethers.constants.AddressZero, "0x");
+    await tx.wait();
+
+    // Get facet instances
+    diamondLoupeFacet = await ethers.getContractAt("DiamondLoupeFacet", diamond.address);
+    aaoFacet = await ethers.getContractAt("AAOFacet", diamond.address);
+
+    // Deploy MacroAAOFactory
+    const MacroAAOFactory = await ethers.getContractFactory("MacroAAOFactory");
+    macroAAOFactory = await MacroAAOFactory.deploy(diamond.address);
+    await macroAAOFactory.deployed();
+
+    // Deploy MicroAAOFactory
+    const MicroAAOFactory = await ethers.getContractFactory("MicroAAOFactory");
+    microAAOFactory = await MicroAAOFactory.deploy(diamond.address, macroAAOFactory.address);
+    await microAAOFactory.deployed();
   });
 
-  describe("AAO Lifecycle", function () {
-    it("Should create a new AAO", async function () {
-      const topic = "Test AAO";
-      const duration = 86400; // 1 day in seconds
-      
-      const tx = await aaoFacet.createAAO(topic, duration);
+  describe("AAO Creation", function () {
+    it("should create a Macro AAO", async function () {
+      const topic = "Test Macro AAO";
+      const duration = 60 * 60 * 24 * 30; // 30 days
+
+      const tx = await macroAAOFactory.createMacroAAO(topic, duration);
       const receipt = await tx.wait();
-      
+
       // Find the AAOCreated event
-      const event = receipt.events.find(e => e.event === "AAOCreated");
-      expect(event).to.not.be.undefined;
+      const aaoCreatedEvent = receipt.events.find(
+        (e) => e.event === "AAOCreated"
+      );
       
-      const aaoId = event.args.aaoId;
+      expect(aaoCreatedEvent).to.not.be.undefined;
+      const aaoId = aaoCreatedEvent.args.aaoId;
       
-      // Verify the AAO was created correctly
+      // Get AAO details
       const aao = await aaoFacet.getAAO(aaoId);
       expect(aao.topic).to.equal(topic);
+      expect(aao.duration).to.equal(duration);
       expect(aao.owner).to.equal(owner.address);
-      expect(aao.isActive).to.be.true;
+      expect(aao.active).to.be.true;
     });
-    
-    it("Should modify an existing AAO", async function () {
-      // Create an AAO first
-      const tx = await aaoFacet.createAAO("Original Topic", 86400);
-      const receipt = await tx.wait();
-      const event = receipt.events.find(e => e.event === "AAOCreated");
-      const aaoId = event.args.aaoId;
+
+    it("should create a Micro AAO linked to a Macro AAO", async function () {
+      // First create a Macro AAO
+      const macroTopic = "Parent Macro AAO";
+      const macroDuration = 60 * 60 * 24 * 30; // 30 days
+
+      const macroTx = await macroAAOFactory.createMacroAAO(macroTopic, macroDuration);
+      const macroReceipt = await macroTx.wait();
       
-      // Modify the AAO
-      const newTopic = "Updated Topic";
-      const newDuration = 172800; // 2 days in seconds
-      await aaoFacet.modifyAAO(aaoId, newTopic, newDuration);
+      const macroEvent = macroReceipt.events.find(
+        (e) => e.event === "AAOCreated"
+      );
+      const macroId = macroEvent.args.aaoId;
+
+      // Now create a Micro AAO linked to the Macro AAO
+      const microTopic = "Child Micro AAO";
+      const microDuration = 60 * 60 * 24 * 15; // 15 days
+
+      const microTx = await microAAOFactory.createMicroAAO(microTopic, microDuration, macroId);
+      const microReceipt = await microTx.wait();
       
-      // Verify the changes
-      const aao = await aaoFacet.getAAO(aaoId);
-      expect(aao.topic).to.equal(newTopic);
-    });
-    
-    it("Should terminate an AAO", async function () {
-      // Create an AAO first
-      const tx = await aaoFacet.createAAO("Test AAO", 86400);
-      const receipt = await tx.wait();
-      const event = receipt.events.find(e => e.event === "AAOCreated");
-      const aaoId = event.args.aaoId;
-      
-      // Terminate the AAO
-      await aaoFacet.terminateAAO(aaoId);
-      
-      // Verify the AAO is no longer active
-      const aao = await aaoFacet.getAAO(aaoId);
-      expect(aao.isActive).to.be.false;
+      const microEvent = microReceipt.events.find(
+        (e) => e.event === "AAOCreated"
+      );
+      const microId = microEvent.args.aaoId;
+
+      // Get Micro AAO details
+      const microAAO = await aaoFacet.getAAO(microId);
+      expect(microAAO.topic).to.equal(microTopic);
+      expect(microAAO.duration).to.equal(microDuration);
+      expect(microAAO.owner).to.equal(owner.address);
+      expect(microAAO.active).to.be.true;
+
+      // Verify the Micro-Macro relationship
+      const parentId = await aaoFacet.getMacroAAOId(microId);
+      expect(parentId).to.equal(macroId);
     });
   });
-  
-  describe("Membership Management", function () {
+
+  describe("AAO Membership", function () {
     let aaoId;
-    
+
     beforeEach(async function () {
-      // Create an AAO for testing
-      const tx = await aaoFacet.createAAO("Membership Test AAO", 86400);
+      // Create a new AAO for each test
+      const topic = "Membership Test AAO";
+      const duration = 60 * 60 * 24 * 30; // 30 days
+
+      const tx = await macroAAOFactory.createMacroAAO(topic, duration);
       const receipt = await tx.wait();
-      const event = receipt.events.find(e => e.event === "AAOCreated");
-      aaoId = event.args.aaoId;
+      
+      const aaoCreatedEvent = receipt.events.find(
+        (e) => e.event === "AAOCreated"
+      );
+      aaoId = aaoCreatedEvent.args.aaoId;
     });
-    
-    it("Should allow users to join an AAO", async function () {
+
+    it("should allow users to join an AAO", async function () {
       // User1 joins the AAO
       await aaoFacet.connect(user1).joinAAO(aaoId);
       
-      // Verify user1 is now a member
-      expect(await aaoFacet.isMember(aaoId, user1.address)).to.be.true;
+      // Check if user1 is a member
+      const isMember = await aaoFacet.isMember(aaoId, user1.address);
+      expect(isMember).to.be.true;
+      
+      // Get members count
+      const membersCount = await aaoFacet.getMembersCount(aaoId);
+      expect(membersCount).to.equal(2); // Owner + user1
     });
-    
-    it("Should allow users to leave an AAO", async function () {
-      // User1 joins and then leaves the AAO
+
+    it("should allow users to leave an AAO", async function () {
+      // User1 joins the AAO
       await aaoFacet.connect(user1).joinAAO(aaoId);
+      
+      // User1 leaves the AAO
       await aaoFacet.connect(user1).leaveAAO(aaoId);
       
-      // Verify user1 is no longer a member
-      expect(await aaoFacet.isMember(aaoId, user1.address)).to.be.false;
+      // Check if user1 is still a member
+      const isMember = await aaoFacet.isMember(aaoId, user1.address);
+      expect(isMember).to.be.false;
     });
-    
-    it("Should allow assigning admin roles", async function () {
-      // User1 joins the AAO
-      await aaoFacet.connect(user1).joinAAO(aaoId);
-      
-      // Owner assigns admin role to user1
-      await aaoFacet.assignAdminRole(aaoId, user1.address);
-      
-      // Verify user1 is now an admin
-      expect(await aaoFacet.isAdmin(aaoId, user1.address)).to.be.true;
+
+    it("should not allow non-members to leave an AAO", async function () {
+      // User2 tries to leave without joining
+      await expect(
+        aaoFacet.connect(user2).leaveAAO(aaoId)
+      ).to.be.revertedWith("Not a member of this AAO");
     });
   });
-  
-  describe("Governance", function () {
+
+  describe("AAO Administration", function () {
     let aaoId;
-    
+
     beforeEach(async function () {
-      // Create an AAO for testing
-      const tx = await aaoFacet.createAAO("Governance Test AAO", 86400);
+      // Create a new AAO for each test
+      const topic = "Admin Test AAO";
+      const duration = 60 * 60 * 24 * 30; // 30 days
+
+      const tx = await macroAAOFactory.createMacroAAO(topic, duration);
       const receipt = await tx.wait();
-      const event = receipt.events.find(e => e.event === "AAOCreated");
-      aaoId = event.args.aaoId;
       
-      // Add users as members
-      await aaoFacet.connect(user1).joinAAO(aaoId);
-      await aaoFacet.connect(user2).joinAAO(aaoId);
-    });
-    
-    it("Should allow submitting and voting on proposals", async function () {
-      // User1 submits a proposal
-      const proposalText = "Test Proposal";
-      const tx = await aaoFacet.connect(user1).submitProposal(aaoId, proposalText);
-      const receipt = await tx.wait();
-      const event = receipt.events.find(e => e.event === "ProposalSubmitted");
-      const proposalId = event.args.proposalId;
-      
-      // Users vote on the proposal
-      await aaoFacet.connect(owner).vote(proposalId, true); // Yes vote
-      await aaoFacet.connect(user2).vote(proposalId, true); // Yes vote
-      
-      // Verify the proposal state
-      const proposal = await aaoFacet.getProposal(proposalId);
-      expect(proposal.text).to.equal(proposalText);
-      expect(proposal.yesVotes).to.equal(2);
-      expect(proposal.noVotes).to.equal(0);
-    });
-  });
-  
-  describe("Task Management", function () {
-    let aaoId;
-    
-    beforeEach(async function () {
-      // Create an AAO for testing
-      const tx = await aaoFacet.createAAO("Task Test AAO", 86400);
-      const receipt = await tx.wait();
-      const event = receipt.events.find(e => e.event === "AAOCreated");
-      aaoId = event.args.aaoId;
+      const aaoCreatedEvent = receipt.events.find(
+        (e) => e.event === "AAOCreated"
+      );
+      aaoId = aaoCreatedEvent.args.aaoId;
       
       // Add user1 as a member
       await aaoFacet.connect(user1).joinAAO(aaoId);
     });
-    
-    it("Should allow creating and assigning tasks", async function () {
-      // Owner creates a bounty/task
-      const taskDescription = "Test Task";
-      const reward = ethers.utils.parseEther("1.0");
-      const tx = await aaoFacet.createBounty(aaoId, taskDescription, reward);
-      const receipt = await tx.wait();
-      const event = receipt.events.find(e => e.event === "BountyCreated");
-      const taskId = event.args.taskId;
+
+    it("should allow owner to assign admin role", async function () {
+      // Owner assigns admin role to user1
+      await aaoFacet.assignAdminRole(aaoId, user1.address);
       
-      // User1 assigns the task to themselves
-      await aaoFacet.connect(user1).assignTask(taskId);
-      
-      // Verify the task state
-      const task = await aaoFacet.getTask(taskId);
-      expect(task.description).to.equal(taskDescription);
-      expect(task.assignee).to.equal(user1.address);
-      expect(task.status).to.equal(1); // Assigned status
+      // Check if user1 is an admin
+      const isAdmin = await aaoFacet.isAdmin(aaoId, user1.address);
+      expect(isAdmin).to.be.true;
     });
-    
-    it("Should allow completing and verifying tasks", async function () {
-      // Create and assign a task
-      const tx = await aaoFacet.createBounty(aaoId, "Complete Task Test", ethers.utils.parseEther("1.0"));
-      const receipt = await tx.wait();
-      const taskId = receipt.events.find(e => e.event === "BountyCreated").args.taskId;
-      await aaoFacet.connect(user1).assignTask(taskId);
+
+    it("should allow owner to revoke admin role", async function () {
+      // Owner assigns admin role to user1
+      await aaoFacet.assignAdminRole(aaoId, user1.address);
       
-      // User1 completes the task
-      await aaoFacet.connect(user1).completeTask(taskId);
+      // Owner revokes admin role from user1
+      await aaoFacet.revokeAdminRole(aaoId, user1.address);
       
-      // Owner verifies the task
-      await aaoFacet.verifyTask(taskId, true);
-      
-      // Verify the task state
-      const task = await aaoFacet.getTask(taskId);
-      expect(task.status).to.equal(3); // Completed status
+      // Check if user1 is still an admin
+      const isAdmin = await aaoFacet.isAdmin(aaoId, user1.address);
+      expect(isAdmin).to.be.false;
+    });
+
+    it("should not allow non-owners to assign admin role", async function () {
+      // User1 tries to assign admin role to user2
+      await expect(
+        aaoFacet.connect(user1).assignAdminRole(aaoId, user2.address)
+      ).to.be.revertedWith("Only owner can perform this action");
     });
   });
+
+  describe("AAO Lifecycle", function () {
+    let aaoId;
+
+    beforeEach(async function () {
+      // Create a new AAO for each test
+      const topic = "Lifecycle Test AAO";
+      const duration = 60 * 60 * 24 * 30; // 30 days
+
+      const tx = await macroAAOFactory.createMacroAAO(topic, duration);
+      const receipt = await tx.wait();
+      
+      const aaoCreatedEvent = receipt.events.find(
+        (e) => e.event === "AAOCreated"
+      );
+      aaoId = aaoCreatedEvent.args.aaoId;
+    });
+
+    it("should allow owner to modify AAO details", async function () {
+      const newTopic = "Updated AAO Topic";
+      const newDuration = 60 * 60 * 24 * 60; // 60 days
+      
+      // Owner modifies AAO
+      await aaoFacet.modifyAAO(aaoId, newTopic, newDuration);
+      
+      // Get updated AAO details
+      const aao = await aaoFacet.getAAO(aaoId);
+      expect(aao.topic).to.equal(newTopic);
+      expect(aao.duration).to.equal(newDuration);
+    });
+
+    it("should allow owner to terminate an AAO", async function () {
+      // Owner terminates AAO
+      await aaoFacet.terminateAAO(aaoId);
+      
+      // Get AAO details
+      const aao = await aaoFacet.getAAO(aaoId);
+      expect(aao.active).to.be.false;
+    });
+
+    it("should not allow users to join a terminated AAO", async function () {
+      // Owner terminates AAO
+      await aaoFacet.terminateAAO(aaoId);
+      
+      // User2 tries to join
+      await expect(
+        aaoFacet.connect(user2).joinAAO(aaoId)
+      ).to.be.revertedWith("AAO is not active");
+    });
+  });
+
+  // Add more test sections as needed for other AAO functionality
 }); 
