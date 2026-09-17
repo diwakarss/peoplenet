@@ -189,9 +189,11 @@
     by.appendChild(el("b", null, p.proposerLabel));
     by.appendChild(document.createTextNode(" · " + R.formatTime(p.createdAt)));
     head.appendChild(by);
+    var fmt = p.format || R.parseProposalText(p.text);
+    if (fmt.legacy) head.appendChild(el("span", "chip chip-legacy", "legacy format"));
     card.appendChild(head);
 
-    card.appendChild(el("p", "proposal-text", p.text));
+    card.appendChild(renderProposalBody(fmt));
 
     var total = Math.max(p.forVotes + p.againstVotes, aao.members.length, 1);
     var tally = el("div", "tally");
@@ -272,6 +274,194 @@
     }
 
     return block;
+  }
+
+  // --- the proposal body (27.1) ------------------------------------------
+
+  // Title and plain English first, because that is what a person reads. The
+  // technical part, the risk and the effort sit behind one fold -- one click,
+  // and nothing folded inside it.
+  function renderProposalBody(fmt) {
+    var body = el("div", "proposal-body");
+
+    if (fmt.legacy) {
+      body.appendChild(el("p", "proposal-text", fmt.raw));
+      return body;
+    }
+
+    var doc = fmt.doc;
+    if (doc.title) body.appendChild(el("h3", "proposal-title", doc.title));
+    if (doc.summary) body.appendChild(el("p", "proposal-summary", doc.summary));
+    if (doc.why) {
+      var why = el("p", "proposal-why");
+      why.appendChild(el("span", "field-label", "Why"));
+      why.appendChild(document.createTextNode(doc.why));
+      body.appendChild(why);
+    }
+
+    var hasDetail = ["technical", "risk", "effort"].some(function (f) {
+      return doc[f] && String(doc[f]).trim();
+    });
+    if (hasDetail) {
+      var fold = el("details", "proposal-details");
+      fold.appendChild(el("summary", null, "Details"));
+      var dl = el("dl", "detail-list");
+      [["technical", "Technical"], ["risk", "Risk"], ["effort", "Effort"]].forEach(function (pair) {
+        var value = doc[pair[0]];
+        if (!value || !String(value).trim()) return;
+        dl.appendChild(el("dt", null, pair[1]));
+        dl.appendChild(el("dd", pair[0] === "technical" ? "detail-technical" : null, value));
+      });
+      fold.appendChild(dl);
+      body.appendChild(fold);
+    }
+
+    if (Array.isArray(doc.refs) && doc.refs.length) {
+      var refs = el("p", "proposal-refs");
+      refs.appendChild(el("span", "field-label", "Refs"));
+      doc.refs.forEach(function (ref, i) {
+        if (i) refs.appendChild(document.createTextNode(" · "));
+        if (R.isUrl(ref)) {
+          var link = el("a", "ref-link", ref);
+          link.href = ref;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          refs.appendChild(link);
+        } else {
+          refs.appendChild(el("span", "ref-plain", ref));
+        }
+      });
+      body.appendChild(refs);
+    }
+
+    if (fmt.valid && !fmt.valid.ok) {
+      body.appendChild(el("p", "proposal-warn",
+        "This proposal is missing: " + fmt.valid.errors.join("; ")));
+    }
+
+    return body;
+  }
+
+  // --- filing a proposal from the page (27.6a) ---------------------------
+
+  var newProposal = { busy: false, error: null, filed: null, open: false };
+
+  function renderNewProposalForm() {
+    var fold = el("details", "new-proposal");
+    // The fold's state is ours, not the DOM's: a redraw must not close a form
+    // the Director is halfway through.
+    fold.open = newProposal.open || Boolean(newProposal.error || newProposal.busy);
+    fold.addEventListener("toggle", function () { newProposal.open = fold.open; });
+    fold.appendChild(el("summary", null, "File a new proposal"));
+
+    var form = el("form", "np-form");
+    var fields = [
+      ["title", "Title", "One line.", false, true],
+      ["summary", "Summary", "Two to four sentences, plain English, for a person.", true, true],
+      ["why", "Why", "The reason, in plain English.", true, true],
+      ["technical", "Technical", "The details. Free form, kept whole.", true, false],
+      ["risk", "Risk", "One line.", false, false],
+      ["effort", "Effort", "One line.", false, false],
+      ["refs", "Refs", "Tickets, commits, incidents, spec entries. One per line.", true, false]
+    ];
+
+    fields.forEach(function (spec) {
+      var name = spec[0], label = spec[1], hint = spec[2], multiline = spec[3], required = spec[4];
+      var row = el("label", "np-row");
+      var head = el("span", "np-label", label);
+      if (required) head.appendChild(el("span", "np-required", "required"));
+      row.appendChild(head);
+      var input = el(multiline ? "textarea" : "input", "np-input");
+      if (!multiline) input.type = "text";
+      if (multiline) input.rows = name === "technical" ? 4 : 2;
+      input.name = name;
+      input.placeholder = hint;
+      input.setAttribute("data-draft", "np:" + name);
+      input.value = newProposal[name] || "";
+      input.addEventListener("input", function () { newProposal[name] = input.value; });
+      row.appendChild(input);
+      form.appendChild(row);
+    });
+
+    var actions = el("div", "np-actions");
+    var submit = el("button", "np-send", newProposal.busy ? "filing…" : "File proposal");
+    submit.type = "submit";
+    submit.disabled = newProposal.busy;
+    actions.appendChild(submit);
+    actions.appendChild(el("span", "np-note", "Filed on AAO 0 from the Director's account."));
+    form.appendChild(actions);
+
+    if (newProposal.error) form.appendChild(el("p", "err", newProposal.error));
+    if (newProposal.filed) {
+      form.appendChild(el("p", "np-filed",
+        "Filed as proposal " + newProposal.filed.id + " in block " + newProposal.filed.blockNumber + "."));
+    }
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      fileProposal();
+    });
+
+    fold.appendChild(form);
+    return fold;
+  }
+
+  function draftDocument() {
+    var doc = {
+      title: (newProposal.title || "").trim(),
+      summary: (newProposal.summary || "").trim(),
+      why: (newProposal.why || "").trim(),
+      technical: (newProposal.technical || "").trim(),
+      risk: (newProposal.risk || "").trim(),
+      effort: (newProposal.effort || "").trim(),
+      refs: String(newProposal.refs || "").split(/\r?\n/).map(function (r) { return r.trim(); }).filter(Boolean),
+      from: "director",
+      filed_at: new Date().toISOString()
+    };
+    Object.keys(doc).forEach(function (k) {
+      if (doc[k] === "" || (Array.isArray(doc[k]) && !doc[k].length)) delete doc[k];
+    });
+    return doc;
+  }
+
+  // The same validation the scripts use -- one rule, not two.
+  async function fileProposal() {
+    var doc = draftDocument();
+    var result = R.validateProposalDoc(doc);
+    if (!result.ok) {
+      newProposal.error = "Not ready to file: " + result.errors.join("; ");
+      newProposal.filed = null;
+      render(lastData);
+      return;
+    }
+
+    newProposal.busy = true;
+    newProposal.error = null;
+    newProposal.filed = null;
+    render(lastData);
+
+    try {
+      var signer = await signerFor(R.DIRECTOR);
+      var contract = R.getContract(ethers, signer);
+      var tx = await contract.submitProposal(R.AAO_ID, JSON.stringify(doc));
+      var receipt = await tx.wait();
+      var id = null;
+      for (var i = 0; i < receipt.logs.length; i++) {
+        try {
+          var parsed = contract.interface.parseLog(receipt.logs[i]);
+          if (parsed && parsed.name === "ProposalSubmitted") id = Number(parsed.args.proposalId);
+        } catch (e) { /* a log from another facet */ }
+      }
+      newProposal.filed = { id: id === null ? "?" : id, blockNumber: receipt.blockNumber };
+      ["title", "summary", "why", "technical", "risk", "effort", "refs"].forEach(function (f) {
+        newProposal[f] = "";
+      });
+    } catch (e) {
+      newProposal.error = readableError(e);
+    } finally {
+      newProposal.busy = false;
+    }
+    await refresh();
   }
 
   // --- the question channel (27.2) ---------------------------------------
@@ -534,6 +724,10 @@
     byId("proposal-count").textContent = shown.length === all.length
       ? "(" + all.length + ")"
       : "(" + shown.length + " of " + all.length + ")";
+
+    var filing = byId("file-proposal");
+    filing.textContent = "";
+    filing.appendChild(renderNewProposalForm());
 
     var host = byId("proposals");
     host.textContent = "";

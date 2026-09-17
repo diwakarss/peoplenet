@@ -102,8 +102,14 @@ async function main() {
       : "no votes yet";
     const casting = R.castingVoteState(p);
     console.log("");
-    console.log(`  #${p.id}  ${p.statusLabel}  by ${p.proposerLabel}  ${R.formatTime(p.createdAt)}`);
-    console.log(`      ${String(p.text).slice(0, 96)}`);
+    console.log(
+      `  #${p.id}  ${p.statusLabel}  by ${p.proposerLabel}  ${R.formatTime(p.createdAt)}` +
+      (p.format.legacy ? "  [legacy format]" : "")
+    );
+    console.log(`      ${R.proposalHeadline(p).slice(0, 96)}`);
+    if (!p.format.legacy && p.format.doc.summary) {
+      console.log(`      ${String(p.format.doc.summary).slice(0, 96)}`);
+    }
     console.log(`      for     ${bar(p.forVotes, total)} ${p.forVotes}`);
     console.log(`      against ${bar(p.againstVotes, total)} ${p.againstVotes}`);
     console.log(`      voted:  ${voters}`);
@@ -272,6 +278,67 @@ async function main() {
         `proposal ${p.id}: the log says ${record.support ? "for" : "against"}, the chain says the opposite`
       );
     }
+  });
+
+  // --- the proposal format (27.1) ---------------------------------------
+
+  check("every proposal reads as either a 27.1 document or legacy free text", () => {
+    for (const p of proposals) {
+      const fmt = p.format;
+      assert.ok(fmt, `proposal ${p.id} was not parsed`);
+      assert.strictEqual(typeof fmt.legacy, "boolean");
+      if (fmt.legacy) {
+        assert.strictEqual(fmt.doc, null, `proposal ${p.id} is legacy but carries a document`);
+        assert.ok(fmt.raw.length > 0, `proposal ${p.id} is legacy and empty`);
+      } else {
+        assert.ok(fmt.doc && typeof fmt.doc === "object", `proposal ${p.id} has no document`);
+      }
+    }
+  });
+
+  check("every 27.1 proposal has a title, a summary and a why", () => {
+    for (const p of proposals) {
+      if (p.format.legacy) continue;
+      assert.ok(
+        p.format.valid.ok,
+        `proposal ${p.id}: ${p.format.valid.errors.join("; ")}`
+      );
+    }
+  });
+
+  check("the free-text proposals already on chain are left alone", () => {
+    const legacy = proposals.filter((p) => p.format.legacy).map((p) => p.id);
+    assert.ok(legacy.length >= 1, "expected the pre-27.1 proposals to still be here");
+    // They were filed 0..N before the format landed, so they are the low ids.
+    legacy.forEach((id, i) => {
+      assert.strictEqual(id, i, `legacy proposal ids are not contiguous from 0 (${legacy.join(",")})`);
+    });
+  });
+
+  check("every proposal has a headline a person can read", () => {
+    for (const p of proposals) {
+      const headline = R.proposalHeadline(p);
+      assert.ok(headline && headline !== "(no text)", `proposal ${p.id} has no headline`);
+      assert.ok(headline.length <= 110, `proposal ${p.id} headline is ${headline.length} characters`);
+    }
+  });
+
+  check("the proposal validator refuses what the scripts must refuse", () => {
+    assert.strictEqual(R.validateProposalDoc(null).ok, false);
+    assert.strictEqual(R.validateProposalDoc("free text").ok, false);
+    assert.strictEqual(R.validateProposalDoc({ title: "t", summary: "s" }).ok, false);
+    assert.strictEqual(R.validateProposalDoc({ title: "t", why: "w" }).ok, false);
+    assert.strictEqual(R.validateProposalDoc({ summary: "s", why: "w" }).ok, false);
+    assert.strictEqual(R.validateProposalDoc({ title: " ", summary: "s", why: "w" }).ok, false);
+    assert.strictEqual(R.validateProposalDoc({ title: "t", summary: "s", why: "w", refs: "no" }).ok, false);
+    assert.strictEqual(R.validateProposalDoc({ title: "t", summary: "s", why: "w" }).ok, true);
+  });
+
+  check("free text is read as legacy, not as a broken document", () => {
+    assert.strictEqual(R.parseProposalText("2026-09-17 builder S1: do a thing").legacy, true);
+    assert.strictEqual(R.parseProposalText("{not json").legacy, true);
+    assert.strictEqual(R.parseProposalText('{"unrelated":1}').legacy, true);
+    assert.strictEqual(R.parseProposalText('{"title":"t","summary":"s","why":"w"}').legacy, false);
   });
 
   // --- the question channel and the protocol (27.2, 27.5) ---------------

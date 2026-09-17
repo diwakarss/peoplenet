@@ -186,6 +186,7 @@
         id: num(p.id),
         aaoId: num(p.aaoId),
         text: p.text,
+        format: parseProposalText(p.text),
         proposer: p.proposer,
         proposerLabel: labelFor(p.proposer),
         forVotes: num(p.forVotes),
@@ -209,6 +210,76 @@
     var proposals = await readProposals(contract, aaoId);
     var blockNumber = await provider.getBlockNumber();
     return { aao: aao, proposals: proposals, blockNumber: blockNumber };
+  }
+
+  // --- the proposal format (27.1) ----------------------------------------
+
+  // A proposal's on-chain text is a JSON document. Everything a person reads
+  // first is plain English; the technical part sits underneath.
+  var PROPOSAL_FIELDS =
+    ["title", "summary", "why", "technical", "risk", "effort", "refs", "from", "filed_at"];
+  var PROPOSAL_REQUIRED = ["title", "summary", "why"];
+
+  // Refuse a proposal nobody could read: no title, no plain-English summary, no
+  // reason. The filing scripts call this before they spend a transaction.
+  function validateProposalDoc(doc) {
+    var errors = [];
+    if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
+      return { ok: false, errors: ["a proposal must be a JSON object"] };
+    }
+    PROPOSAL_REQUIRED.forEach(function (field) {
+      if (typeof doc[field] !== "string" || !doc[field].trim()) {
+        errors.push(field + " is required and must be a non-empty string");
+      }
+    });
+    if (doc.refs !== undefined && !Array.isArray(doc.refs)) {
+      errors.push("refs must be an array when present");
+    }
+    ["technical", "risk", "effort", "from", "filed_at"].forEach(function (field) {
+      if (doc[field] !== undefined && doc[field] !== null && typeof doc[field] !== "string") {
+        errors.push(field + " must be a string when present");
+      }
+    });
+    return { ok: errors.length === 0, errors: errors };
+  }
+
+  // Read a proposal's on-chain text. Proposals filed as free text before 27.1
+  // are rendered exactly as they were written and marked legacy; nothing is
+  // re-filed to make the page tidier.
+  function parseProposalText(text) {
+    var raw = typeof text === "string" ? text : String(text || "");
+    var trimmed = raw.trim();
+    if (!trimmed || trimmed.charAt(0) !== "{") {
+      return { legacy: true, raw: raw, doc: null, valid: null };
+    }
+    var doc;
+    try {
+      doc = JSON.parse(trimmed);
+    } catch (e) {
+      return { legacy: true, raw: raw, doc: null, valid: null };
+    }
+    if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
+      return { legacy: true, raw: raw, doc: null, valid: null };
+    }
+    // JSON carrying none of the format's fields is not a 27.1 document; show it
+    // as written rather than inventing headings for it.
+    var recognised = PROPOSAL_FIELDS.some(function (f) { return doc[f] !== undefined; });
+    if (!recognised) return { legacy: true, raw: raw, doc: null, valid: null };
+
+    return { legacy: false, raw: raw, doc: doc, valid: validateProposalDoc(doc) };
+  }
+
+  // The one line that stands for a proposal in a list, a tree or a notification.
+  function proposalHeadline(proposal) {
+    var parsed = (proposal && proposal.format) || parseProposalText(proposal && proposal.text);
+    if (!parsed.legacy && parsed.doc && parsed.doc.title) return String(parsed.doc.title);
+    var line = String(parsed.raw || "").split(/\r?\n/)[0].trim();
+    if (!line) return "(no text)";
+    return line.length > 110 ? line.slice(0, 109) + "…" : line;
+  }
+
+  function isUrl(ref) {
+    return /^https?:\/\//i.test(String(ref || ""));
   }
 
   // --- Wren's reasons ----------------------------------------------------
@@ -326,6 +397,12 @@
     ROLES: ROLES,
     AAO_ABI: AAO_ABI,
     STATUS: STATUS,
+    PROPOSAL_FIELDS: PROPOSAL_FIELDS,
+    PROPOSAL_REQUIRED: PROPOSAL_REQUIRED,
+    validateProposalDoc: validateProposalDoc,
+    parseProposalText: parseProposalText,
+    proposalHeadline: proposalHeadline,
+    isUrl: isUrl,
     WREN_VOTES_PATH: WREN_VOTES_PATH,
     parseWrenVotesJsonl: parseWrenVotesJsonl,
     indexWrenVotes: indexWrenVotes,
