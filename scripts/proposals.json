@@ -1,7 +1,6 @@
 [
- "2026-09-17 builder S8: one shared redact.py so postman_client.mask_text, permission_gate's payload card and metis_ask's envelope apply a single 'never print credentials' rule.",
- "2026-09-17 builder S9: the Postman approval card shows the diff a put_request would make (changed request beside the current one), not only the ask sentence.",
- "2026-09-17 builder S10: pin the newman version used by npx and name it on the approval card so an approved run is reproducible and has no silent network dependency.",
- "2026-09-17 builder S11: write each ===POSTMAN RUN=== block to the ticket's case page as a section so what was sent to stage is part of the record.",
- "2026-09-17 builder S12: group the eleven-item tray into State / Panels / Session so the Postman item is not hidden under Dump threads."
+ "2026-09-17 builder S13: schedule a capture of exactly the 90 linked-but-uncaptured articles kba_links.missing_links names (khoros-classic 43, alpha 24, kayako 23) instead of a broad re-sync.",
+ "2026-09-17 builder S14: one shared page_body() that strips metadata sections (Linked articles, Related) before any body measurement (verbatim_fragment, page_text scoring, search_symptom text pass).",
+ "2026-09-17 builder S15: kba_sync distils from art[:12000] while the verbatim threshold is 11000 bytes; raise the slice to the threshold so mid-size articles are not distilled from a truncated source.",
+ "2026-09-17 builder S16: run the D56 linked-articles backfill at the end of every kba_sync run so the lists stay current as articles change."
 ]
