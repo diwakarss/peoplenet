@@ -51,7 +51,11 @@
   // Wren's translations of the legacy proposals (27.10), keyed by proposal id.
   var translations = {};
 
-  var drafts = {};
+  // The Director's one-field drafts (27.12), awaiting Wren.
+  var drafts = [];
+
+  // What the Director has typed into a question box but not yet sent, per proposal.
+  var questionDrafts = {};
   var asking = {};
   var newProposal = { busy: false, error: null, filed: null, open: false };
 
@@ -381,122 +385,82 @@
     return body;
   }
 
-  // --- filing a proposal from the page (27.6a) ---------------------------
+  // --- one field to file (27.12) -----------------------------------------
 
+  // One field and one button. No title, no why, no format -- the page must not
+  // stand between the Director having the thought and writing it down. The draft
+  // lands in governance/drafts.jsonl; Wren completes it into the 27.1 shape with
+  // scripts/wren-file-draft.js, keeping these words as the summary's first
+  // sentence.
+  //
   // The container in the organisation bar is already the one click, so this
   // returns the form itself -- a fold inside a fold is not allowed (27.6a).
   function renderNewProposalForm(data) {
     var form = el("form", "np-form");
-    var fields = [
-      ["title", "Title", "One line.", false, true],
-      ["summary", "Summary", "Two to four sentences, plain English, for a person.", true, true],
-      ["why", "Why", "The reason, in plain English.", true, true],
-      ["technical", "Technical", "The details. Free form, kept whole.", true, false],
-      ["risk", "Risk", "One line.", false, false],
-      ["effort", "Effort", "One line.", false, false],
-      ["refs", "Refs", "Tickets, commits, incidents, spec entries. One per line.", true, false]
-    ];
 
-    fields.forEach(function (spec) {
-      var name = spec[0], label = spec[1], hint = spec[2], multiline = spec[3], required = spec[4];
-      var row = el("label", "np-row");
-      var head = el("span", "np-label", label);
-      if (required) head.appendChild(el("span", "np-required", "required"));
-      row.appendChild(head);
-      var input = el(multiline ? "textarea" : "input", "np-input");
-      if (!multiline) input.type = "text";
-      if (multiline) input.rows = name === "technical" ? 4 : 2;
-      input.name = name;
-      input.placeholder = hint;
-      input.setAttribute("data-draft", "np:" + name);
-      input.value = newProposal[name] || "";
-      input.addEventListener("input", function () { newProposal[name] = input.value; });
-      row.appendChild(input);
-      form.appendChild(row);
-    });
+    var row = el("label", "np-row");
+    row.appendChild(el("span", "np-label", "What should change?"));
+    var box = el("textarea", "np-input");
+    box.rows = 4;
+    box.name = "draft";
+    box.placeholder = "In your own words. Wren turns it into a proposal and files it on the chain.";
+    box.setAttribute("data-draft", "np:draft");
+    box.value = newProposal.text || "";
+    box.disabled = newProposal.busy;
+    box.addEventListener("input", function () { newProposal.text = box.value; });
+    row.appendChild(box);
+    form.appendChild(row);
 
     var actions = el("div", "np-actions");
-    var submit = el("button", "np-send", newProposal.busy ? "filing…" : "File proposal");
+    var submit = el("button", "np-send", newProposal.busy ? "sending…" : "Send to Wren");
     submit.type = "submit";
     submit.disabled = newProposal.busy;
     actions.appendChild(submit);
     actions.appendChild(el("span", "np-note",
-      "Filed on " + data.aao.topic + " from the Director's account."));
+      "Goes to " + data.aao.topic + " as a draft. Wren files it on the chain."));
     form.appendChild(actions);
 
     if (newProposal.error) form.appendChild(el("p", "err", newProposal.error));
-    if (newProposal.filed) {
-      form.appendChild(el("p", "np-filed",
-        "Filed as proposal " + newProposal.filed.id + " in block " + newProposal.filed.blockNumber + "."));
-    }
+    if (newProposal.filed) form.appendChild(el("p", "np-filed", newProposal.filed));
 
     form.addEventListener("submit", function (event) {
       event.preventDefault();
-      fileProposal();
+      sendDraft();
     });
 
     return form;
   }
 
-  function draftDocument() {
-    var doc = {
-      title: (newProposal.title || "").trim(),
-      summary: (newProposal.summary || "").trim(),
-      why: (newProposal.why || "").trim(),
-      technical: (newProposal.technical || "").trim(),
-      risk: (newProposal.risk || "").trim(),
-      effort: (newProposal.effort || "").trim(),
-      refs: String(newProposal.refs || "").split(/\r?\n/)
-        .map(function (r) { return r.trim(); }).filter(Boolean),
-      from: "director",
-      filed_at: new Date().toISOString()
-    };
-    Object.keys(doc).forEach(function (k) {
-      if (doc[k] === "" || (Array.isArray(doc[k]) && !doc[k].length)) delete doc[k];
-    });
-    return doc;
-  }
-
-  // The same validation the scripts use -- one rule, not two.
-  async function fileProposal() {
-    var doc = draftDocument();
-    var result = R.validateProposalDoc(doc);
-    if (!result.ok) {
-      newProposal.error = "Not ready to file: " + result.errors.join("; ");
-      newProposal.filed = null;
+  async function sendDraft() {
+    var text = String(newProposal.text || "").trim();
+    if (!text) {
+      newProposal.error = "Write what should change first.";
       render(lastData);
       return;
     }
-
     newProposal.busy = true;
     newProposal.error = null;
     newProposal.filed = null;
     render(lastData);
-
     try {
-      var signer = await signerFor(R.DIRECTOR);
-      var contract = R.getContract(ethers, signer);
-      // The organisation the Director chose, not the one last painted: a switch
-      // still in flight must not misfile the proposal.
-      var tx = await contract.submitProposal(selectedAaoId, JSON.stringify(doc));
-      var receipt = await tx.wait();
-      var id = null;
-      for (var i = 0; i < receipt.logs.length; i++) {
-        try {
-          var parsed = contract.interface.parseLog(receipt.logs[i]);
-          if (parsed && parsed.name === "ProposalSubmitted") id = Number(parsed.args.proposalId);
-        } catch (e) { /* a log from another facet */ }
-      }
-      newProposal.filed = { id: id === null ? "?" : id, blockNumber: receipt.blockNumber };
-      ["title", "summary", "why", "technical", "risk", "effort", "refs"].forEach(function (f) {
-        newProposal[f] = "";
+      var response = await window.fetch("/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text, aaoId: selectedAaoId })
       });
+      var result = await response.json().catch(function () { return {}; });
+      if (!response.ok || result.ok === false) {
+        throw new Error((result.errors || ["HTTP " + response.status]).join("; "));
+      }
+      newProposal.text = "";
+      newProposal.filed = "Sent. It shows as “draft, awaiting Wren” until she files it.";
     } catch (e) {
-      newProposal.error = readableError(e);
+      newProposal.error = "Could not send the draft: " + (e.message || e);
     } finally {
       newProposal.busy = false;
     }
-    await refresh();
+    await refreshThreads();
+    render(lastData);
   }
 
   function currentAaoId() {
@@ -601,10 +565,10 @@
     var input = el("input", "ask-input");
     input.type = "text";
     input.placeholder = "Ask Wren about this proposal…";
-    input.value = drafts[p.id] || "";
+    input.value = questionDrafts[p.id] || "";
     input.setAttribute("data-draft", String(p.id));
     input.disabled = Boolean(asking[p.id]);
-    input.addEventListener("input", function () { drafts[p.id] = input.value; });
+    input.addEventListener("input", function () { questionDrafts[p.id] = input.value; });
 
     var button = el("button", "ask-send", asking[p.id] ? "sending…" : "Ask");
     button.type = "submit";
@@ -614,7 +578,7 @@
     box.appendChild(button);
     box.addEventListener("submit", function (event) {
       event.preventDefault();
-      ask(p.id, drafts[p.id] || input.value, "question");
+      ask(p.id, questionDrafts[p.id] || input.value, "question");
     });
     return box;
   }
@@ -639,7 +603,7 @@
     if (!again.disabled) {
       again.addEventListener("click", function () {
         ask(p.id,
-          drafts[p.id] || "This proposal is not it. Please file a revised one that links this.",
+          questionDrafts[p.id] || "This proposal is not it. Please file a revised one that links this.",
           "request-new-proposal");
       });
     }
@@ -682,7 +646,7 @@
       if (!response.ok || result.ok === false) {
         throw new Error((result.errors || ["HTTP " + response.status]).join("; "));
       }
-      drafts[proposalId] = "";
+      questionDrafts[proposalId] = "";
     } catch (e) {
       stateFor(proposalId).error = "Could not send the question: " + (e.message || e);
     } finally {
@@ -1279,16 +1243,44 @@
 
   // What the flow is showing right now: this organisation's proposals and drafts
   // through the current filter, pinned ones first.
+  // The Director's drafts that Wren has not filed yet, for this organisation.
+  // They are the Director's own words, and they belong at the front of the flow:
+  // an unfiled draft is the one thing the Director cannot act on themselves.
+  function openDrafts(aaoId) {
+    var filed = {};
+    drafts.forEach(function (r) {
+      if (r.draft && (r.state === "filed" || r.proposalId !== undefined)) filed[r.draft] = r;
+    });
+    return drafts
+      .filter(function (r) {
+        if (r.text === undefined || r.state === "filed") return false;
+        if (filed[r.id]) return false;
+        var on = r.aaoId === undefined || r.aaoId === null ? R.AAO_ID : Number(r.aaoId);
+        return on === Number(aaoId);
+      })
+      .sort(function (a, b) { return String(a.at) < String(b.at) ? -1 : 1; });
+  }
+
   function visibleCards(data) {
     if (!data) return [];
-    var test = filterByKey(filterKey).test;
-    var cards = data.proposals.filter(test).map(function (p) {
+    var f = filterByKey(filterKey);
+    var cards = data.proposals.filter(f.test).map(function (p) {
       return { kind: "proposal", id: p.id, key: "p" + p.id, proposal: p };
     });
-    return cards.sort(function (a, b) {
-      var pinned = (pinnedFirst(b) ? 1 : 0) - (pinnedFirst(a) ? 1 : 0);
+    cards.sort(function (a, b) {
+      var pinned = (pinnedFirst(b.proposal) ? 1 : 0) - (pinnedFirst(a.proposal) ? 1 : 0);
       return pinned !== 0 ? pinned : a.id - b.id;
     });
+
+    // A draft is not on the chain and has no status, so it shows under the
+    // filters that mean "still open to me", and under all.
+    if (f.key === "mine" || f.key === "all") {
+      var draftCards = openDrafts(data.aao.id).map(function (d) {
+        return { kind: "draft", id: -1, key: "d" + d.id, draft: d };
+      });
+      cards = draftCards.concat(cards);
+    }
+    return cards;
   }
 
   // Filled in by 27.12: a trigger that fired pins its proposal to the front.
@@ -1338,8 +1330,10 @@
   }
 
   function renderPager(cards, at) {
+    // The card says what it is: a draft is not a proposal yet.
+    var noun = at >= 0 && cards[at] && cards[at].kind === "draft" ? "draft" : "proposal";
     byId("counter").textContent = cards.length
-      ? "proposal " + (at + 1) + " of " + cards.length
+      ? noun + " " + (at + 1) + " of " + cards.length
       : "nothing to show";
     byId("prev").disabled = at <= 0;
     byId("next").disabled = at < 0 || at >= cards.length - 1;
@@ -1369,7 +1363,43 @@
 
     var card = cards[at];
     cursorId = card.key;
-    host.appendChild(renderProposal(card.proposal, data.aao, at));
+    host.appendChild(card.kind === "draft"
+      ? renderDraft(card.draft)
+      : renderProposal(card.proposal, data.aao, at));
+  }
+
+  // A draft is the Director's own words waiting on Wren. It gets a card in the
+  // flow so it cannot be forgotten, and it carries no vote buttons: there is
+  // nothing on the chain to vote on yet.
+  function renderDraft(d) {
+    var card = el("article", "proposal proposal-draft");
+    card.id = "d-" + d.id;
+
+    var head = el("div", "proposal-head");
+    head.appendChild(el("span", "pid", d.id));
+    head.appendChild(el("span", "chip chip-draft", "draft, awaiting Wren"));
+    var by = el("span", "by");
+    by.appendChild(document.createTextNode("by "));
+    by.appendChild(el("b", null, "Director"));
+    by.appendChild(document.createTextNode(" · " + R.formatTime(Math.floor(new Date(d.at).getTime() / 1000))));
+    head.appendChild(by);
+    card.appendChild(head);
+
+    var body = el("div", "proposal-body");
+    body.appendChild(el("p", "proposal-summary pre-wrap", d.text));
+    card.appendChild(body);
+
+    card.appendChild(el("p", "draft-note",
+      "Wren turns this into a proposal and files it on the chain, keeping these words as the " +
+      "summary's first sentence. Until then there is nothing to vote on."));
+
+    var how = el("details", "proposal-details");
+    how.appendChild(el("summary", null, "How it gets filed"));
+    how.appendChild(el("p", "detail-technical",
+      "node scripts/wren-file-draft.js " + d.id + " --title \"...\" --why \"...\""));
+    card.appendChild(how);
+
+    return card;
   }
 
   function render(data) {
@@ -1434,16 +1464,19 @@
       var all = await Promise.all([
         fetchJson("/questions.json"),
         fetchJson("/answers.json"),
-        fetchJson("/messages.json")
+        fetchJson("/messages.json"),
+        fetchJson("/drafts.json")
       ]);
       questions = all[0];
       answers = all[1];
       messages = all[2];
+      drafts = all[3];
       threadError = null;
     } catch (e) {
       questions = [];
       answers = [];
       messages = [];
+      drafts = [];
       threadError = e && e.message ? e.message : String(e);
     }
     // The translations are read the same way and are just as non-fatal: without
@@ -1460,7 +1493,7 @@
 
   function signature() {
     return questions.length + ":" + answers.length + ":" + messages.length +
-      ":" + Object.keys(translations).length + ":" + (threadError || "");
+      ":" + drafts.length + ":" + Object.keys(translations).length + ":" + (threadError || "");
   }
 
   // A refresh asked for while one is in flight must not be dropped: dropping it
@@ -1571,7 +1604,7 @@
     render: render,
     data: function () { return lastData; },
     wrenVotes: function () { return wrenVotes; },
-    threads: function () { return { questions: questions, answers: answers, messages: messages, error: threadError }; },
+    threads: function () { return { questions: questions, answers: answers, messages: messages, drafts: drafts, error: threadError }; },
     refreshThreads: refreshThreads,
     ask: ask,
     setView: setView,

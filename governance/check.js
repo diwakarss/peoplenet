@@ -87,7 +87,7 @@ async function main() {
   // The question channel (27.2). An empty log is the normal state until the
   // Director asks something, so the assertion is on the endpoint, not the count.
   const channel = {};
-  for (const route of ["/questions.json", "/answers.json", "/messages.json"]) {
+  for (const route of ["/questions.json", "/answers.json", "/messages.json", "/drafts.json"]) {
     try {
       const response = await fetch(PAGE_URL + route, { cache: "no-store" });
       const body = await response.json();
@@ -136,7 +136,7 @@ async function main() {
 
   console.log("");
   console.log(`wren-votes.json  ${wrenError ? `UNAVAILABLE (${wrenError})` : `${wrenRecords.length} records from ${PAGE_URL}${R.WREN_VOTES_PATH}`}`);
-  for (const route of ["/questions.json", "/answers.json", "/messages.json"]) {
+  for (const route of ["/questions.json", "/answers.json", "/messages.json", "/drafts.json"]) {
     const got = channel[route];
     console.log(`${route.padEnd(16)} ${got.error ? `UNAVAILABLE (${got.error})` : `${got.records.length} records`}`);
   }
@@ -476,6 +476,64 @@ async function main() {
       assert.notStrictEqual(t.title, p.format.raw,
         `translation ${p.id} is just a copy of the chain text`);
     }
+  });
+
+  // --- the Director's drafts (27.12) -------------------------------------
+
+  const draftRecords = channel["/drafts.json"].records || [];
+  const originalDrafts = draftRecords.filter((r) => r.text !== undefined);
+  const filedDrafts = draftRecords.filter((r) => r.state === "filed");
+
+  check("GET /drafts.json is served", () => {
+    const got = channel["/drafts.json"];
+    assert.strictEqual(got.error, null, `/drafts.json did not answer (${got.error})`);
+    assert.ok(got.ok && Array.isArray(got.records), "/drafts.json did not return an array");
+  });
+
+  check("every draft carries the Director's text and nothing more is demanded", () => {
+    originalDrafts.forEach((d, i) => {
+      assert.ok(typeof d.id === "string" && d.id, `draft ${i} has no id`);
+      assert.ok(typeof d.text === "string" && d.text.trim(), `draft ${d.id} has no text`);
+      assert.strictEqual(d.from, "director", `draft ${d.id} is from ${d.from}`);
+      assert.ok(typeof d.at === "string" && d.at, `draft ${d.id} has no timestamp`);
+      assert.ok(Number.isInteger(d.aaoId), `draft ${d.id} names no organisation`);
+    });
+  });
+
+  check("a filed draft points at a proposal that exists", () => {
+    const byId = new Map(allProposals.map((p) => [p.id, p]));
+    filedDrafts.forEach((r) => {
+      assert.ok(
+        originalDrafts.some((d) => d.id === r.draft),
+        `filed record ${r.id} names draft ${r.draft}, which is not in the log`
+      );
+      assert.ok(Number.isInteger(r.proposalId), `filed record ${r.id} has no proposal id`);
+      assert.ok(byId.get(r.proposalId), `filed record ${r.id} names proposal ${r.proposalId}, which does not exist`);
+    });
+  });
+
+  check("a filed draft's words survived into the summary's first sentence", () => {
+    const byId = new Map(allProposals.map((p) => [p.id, p]));
+    filedDrafts.forEach((r) => {
+      const draft = originalDrafts.filter((d) => d.id === r.draft)[0];
+      const proposal = byId.get(r.proposalId);
+      if (!draft || !proposal || proposal.format.legacy) return;
+      const words = String(draft.text).trim().replace(/\s+/g, " ").replace(/[.!?]$/, "");
+      assert.strictEqual(
+        String(proposal.format.doc.summary).indexOf(words), 0,
+        `proposal ${r.proposalId} does not start with the Director's own words from ${draft.id}`
+      );
+    });
+  });
+
+  check("the drafts log is append-only: a draft line is never rewritten", () => {
+    // Every id appears at most once as an original; filing adds a record, it
+    // does not edit one.
+    const seenDraftIds = new Set();
+    originalDrafts.forEach((d) => {
+      assert.ok(!seenDraftIds.has(d.id), `draft ${d.id} appears twice as an original`);
+      seenDraftIds.add(d.id);
+    });
   });
 
   // --- the question channel and the protocol (27.2, 27.5) ---------------

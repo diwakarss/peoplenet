@@ -32,7 +32,8 @@ const LOGS = {
   "/wren-votes.json": "wren-votes.jsonl",
   "/questions.json": "questions.jsonl",
   "/answers.json": "answers.jsonl",
-  "/messages.json": "messages.jsonl"
+  "/messages.json": "messages.jsonl",
+  "/drafts.json": "drafts.jsonl"
 };
 
 // Wren's plain-English translations of the legacy proposals (27.10). Served
@@ -204,6 +205,38 @@ function postMessage(req, res) {
   });
 }
 
+// POST /drafts -- the Director files a proposal with one free-text field
+// (27.12). No title, no why, no format: the page must not stand between having
+// the thought and writing it down. Wren completes it into the 27.1 shape with
+// scripts/wren-file-draft.js and puts it on the chain, keeping these words as
+// the summary's first sentence.
+function postDraft(req, res) {
+  readBody(req, (err, body) => {
+    if (err) return send(res, err.status || 400, err.message);
+
+    const text = typeof body.text === "string" ? body.text.trim() : "";
+    if (!text) return sendJson(res, 400, { ok: false, errors: ["text is required"] });
+
+    const draft = {
+      id: P.newId("draft"),
+      text: text,
+      from: "director",
+      at: new Date().toISOString(),
+      aaoId: body.aaoId === undefined ? R.AAO_ID : Number(body.aaoId),
+      state: "awaiting-wren"
+    };
+    if (!Number.isInteger(draft.aaoId)) {
+      return sendJson(res, 400, { ok: false, errors: ["aaoId must be an organisation id"] });
+    }
+
+    appendLog("drafts.jsonl", draft, (writeErr) => {
+      if (writeErr) return send(res, 500, "Could not append to drafts.jsonl: " + writeErr.code);
+      console.log(`draft ${draft.id} on AAO ${draft.aaoId}: ${firstLine(text, 70)}`);
+      sendJson(res, 201, { ok: true, draft: draft });
+    });
+  });
+}
+
 function firstLine(text, max) {
   const line = String(text).split(/\r?\n/)[0].trim();
   const limit = max || 100;
@@ -247,6 +280,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST") {
     if (pathname === "/questions") return postQuestion(req, res);
     if (pathname === "/messages") return postMessage(req, res);
+    if (pathname === "/drafts") return postDraft(req, res);
     return send(res, 404, "No such endpoint: POST " + pathname);
   }
 
@@ -272,6 +306,7 @@ server.listen(PORT, HOST, () => {
   });
   console.log(`  POST ${base}/questions`.padEnd(48) + "questions.jsonl  <- the Director asks");
   console.log(`  POST ${base}/messages`.padEnd(48) + "messages.jsonl   <- any agent, 27.5 shape");
+  console.log(`  POST ${base}/drafts`.padEnd(48) + "drafts.jsonl     <- one field, Wren completes it");
   console.log(`  GET  ${base}${TRANSLATIONS_ROUTE}`.padEnd(48) + "translations.json  read-only");
   console.log("");
   console.log("Ctrl-C to stop.");
