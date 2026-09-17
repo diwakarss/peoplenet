@@ -1124,3 +1124,36 @@ button.casting:not(:disabled), button.close-tie:not(:disabled) {
 }
 
 .stage-empty b { color: var(--ink); font-weight: 600; }
+
+/* --- the answer-pending line (the Director's near-zero-delay ask) -------- */
+
+.qa-pending {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-wrap: wrap;
+  color: var(--ink-soft);
+  font-style: normal;
+}
+
+.pending-dot {
+  color: var(--accent);
+  font-size: 9px;
+  animation: pending-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pending-pulse {
+  0%, 100% { opacity: .25; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pending-dot { animation: none; opacity: .8; }
+}
+
+.pending-seconds {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  font-weight: 600;
+}

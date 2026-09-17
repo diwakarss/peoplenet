@@ -12,6 +12,27 @@ import "../diamond/LibDiamond.sol";
  * @custom:version 1.0.0
  */
 contract AAOFacet is IAAOFacet {
+    // Add a mapping to track approved factory addresses
+    mapping(address => bool) public approvedFactories;
+    
+    /**
+     * @dev Adds a factory to the approved list
+     * @param factory The address of the factory to approve
+     */
+    function addApprovedFactory(address factory) external {
+        LibDiamond.enforceIsContractOwner();
+        approvedFactories[factory] = true;
+    }
+    
+    /**
+     * @dev Removes a factory from the approved list
+     * @param factory The address of the factory to remove
+     */
+    function removeApprovedFactory(address factory) external {
+        LibDiamond.enforceIsContractOwner();
+        approvedFactories[factory] = false;
+    }
+
     /**
      * @dev Modifier to ensure only the AAO owner or admin can perform certain actions
      * @param aaoId The ID of the AAO
@@ -51,13 +72,17 @@ contract AAOFacet is IAAOFacet {
         string calldata topic,
         uint256 duration
     ) external override returns (uint256 aaoId) {
-        LibDiamond.enforceIsContractOwner();
+        // Allow either the contract owner or approved factories to create AAOs
+        require(
+            msg.sender == LibDiamond.contractOwner() || approvedFactories[msg.sender],
+            "AAOFacet: Not authorized to create AAO"
+        );
         
         // Use the LibAAO.createAAO helper function
         aaoId = LibAAO.createAAO(
             topic,
             duration,
-            msg.sender,
+            tx.origin, // Use tx.origin as the owner when called from a factory
             true, // isMacro = true for AAOs created directly
             0     // macroAAOId = 0 (not applicable for macro AAOs)
         );
@@ -265,7 +290,16 @@ contract AAOFacet is IAAOFacet {
         LibAAO.Proposal storage proposal = aaoStorage.proposals[proposalId];
         uint256 aaoId = proposal.aaoId;
         LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
-        
+
+        // A proposal id that was never filed reads back as a zero struct, whose
+        // status is Active(0). Without this line a vote on such an id is
+        // accepted, hasVoted is set against it, and the real vote is later
+        // refused with "Already voted" -- which is how a vote was lost on id 27.
+        // createdAt is set by submitProposal and is never zero for a filed
+        // proposal, so it is the existence flag; no new storage is needed, which
+        // matters because this facet is replaced by a diamondCut onto a Diamond
+        // that already holds state.
+        require(proposal.createdAt != 0, "AAOFacet: Proposal does not exist");
         require(proposal.status == LibAAO.ProposalStatus.Active, "AAOFacet: Proposal not active");
         require(aao.isMember[msg.sender], "AAOFacet: Not a member");
         require(!aaoStorage.hasVoted[proposalId][msg.sender], "AAOFacet: Already voted");
@@ -291,10 +325,14 @@ contract AAOFacet is IAAOFacet {
         LibAAO.Proposal storage proposal = aaoStorage.proposals[proposalId];
         uint256 aaoId = proposal.aaoId;
         LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
-        
+
+        // The same guard as vote(): without it, executing an unfiled id would
+        // write a status onto a proposal that does not exist, and the id would
+        // then be unusable when someone actually filed it.
+        require(proposal.createdAt != 0, "AAOFacet: Proposal does not exist");
         require(proposal.status == LibAAO.ProposalStatus.Active, "AAOFacet: Proposal not active");
         require(aao.isMember[msg.sender], "AAOFacet: Not a member");
-        
+
         // Simple majority voting
         bool passed = proposal.forVotes > proposal.againstVotes;
         
@@ -515,5 +553,37 @@ contract AAOFacet is IAAOFacet {
     function getTask(uint256 taskId) external view override returns (LibAAO.Task memory) {
         LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
         return aaoStorage.tasks[taskId];
+    }
+
+    /**
+     * @dev Gets all micro AAO IDs for a macro AAO
+     * @param macroAAOId The ID of the macro AAO
+     * @return Array of micro AAO IDs
+     */
+    function getMicroAAOsByMacroId(uint256 macroAAOId) external view returns (uint256[] memory) {
+        LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[macroAAOId];
+        require(aao.isMacro, "AAOFacet: Not a macro AAO");
+        return aaoStorage.microAAOsByMacroId[macroAAOId];
+    }
+
+    /**
+     * @dev Gets all members of an AAO
+     * @param aaoId The ID of the AAO
+     * @return Array of member addresses
+     */
+    function getMembers(uint256 aaoId) external view returns (address[] memory) {
+        LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
+        LibAAO.AAOInternal storage aao = aaoStorage.aaoById[aaoId];
+        return aao.members;
+    }
+
+    /**
+     * @dev Gets the total number of AAOs
+     * @return The total number of AAOs
+     */
+    function aaoCount() external view returns (uint256) {
+        LibAAO.AAOStorage storage aaoStorage = LibAAO.aaoStorage();
+        return aaoStorage.aaoCount;
     }
 }

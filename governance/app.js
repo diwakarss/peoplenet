@@ -548,6 +548,32 @@
     return answers.filter(function (a) { return a.question === questionId; });
   }
 
+  // "4 seconds" / "1 min 12 s" / "2 h 5 min", from the moment the question was
+  // posted. Written out rather than as a raw count so it reads as a wait.
+  function elapsedSince(record) {
+    var raw = record.at || record.ts;
+    var started = raw ? new Date(raw).getTime() : NaN;
+    if (isNaN(started)) return "just now";
+    var seconds = Math.max(0, Math.round((Date.now() - started) / 1000));
+    if (seconds < 60) return seconds + (seconds === 1 ? " second" : " seconds");
+    var minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return minutes + " min " + (seconds % 60) + " s";
+    var hours = Math.floor(minutes / 60);
+    return hours + " h " + (minutes % 60) + " min";
+  }
+
+  // Only the number moves, so tick it in place rather than redrawing the card --
+  // a redraw every second would fight the Director's typing.
+  function tickPending() {
+    var nodes = document.querySelectorAll(".qa-pending .pending-seconds");
+    if (!nodes.length) return;
+    var open = [];
+    questions.forEach(function (q) { if (!answersTo(q.id).length) open.push(q); });
+    for (var i = 0; i < nodes.length && i < open.length; i++) {
+      nodes[i].textContent = elapsedSince(open[i]);
+    }
+  }
+
   function timeOf(record) {
     var raw = record.at || record.ts;
     if (!raw) return "";
@@ -594,8 +620,17 @@
 
     var replies = answersTo(q.id);
     if (!replies.length) {
-      item.appendChild(el("p", "qa-waiting",
-        isRequest ? "Sent to the proposer. Awaiting a revised proposal." : "Waiting for Wren…"));
+      // The Director must never mistake silence for absence. The line says the
+      // question landed and counts the seconds, so the wait is a number rather
+      // than a doubt.
+      var pending = el("p", "qa-waiting qa-pending");
+      pending.appendChild(el("span", "pending-dot", "●"));
+      pending.appendChild(document.createTextNode(
+        isRequest
+          ? "Sent to the proposer. Awaiting a revised proposal — "
+          : "Answer pending. Wren has it — "));
+      pending.appendChild(el("b", "pending-seconds", elapsedSince(q)));
+      item.appendChild(pending);
       return item;
     }
 
@@ -1883,6 +1918,8 @@
   // The question channel is the impatient one: two seconds, so the only delay
   // the Director feels between asking and reading the answer is Wren's own.
   setInterval(pollThreads, 2000);
+  // The pending counter ticks on its own second, without a redraw.
+  setInterval(tickPending, 1000);
 
   // Debugging handle: the live provider and contract, plus the render path, so
   // the page can be driven from a console or a CDP session.

@@ -31,11 +31,15 @@
   // the loose ones. "closed: solved by the build" must not read as "built".
   var STATES = [
     {
+      // "closed:" is the marker; what follows is how it was closed. 27.12(3)
+      // says "solved by", but "superseded by" closes a proposal just as truly,
+      // and a state reader that only knows one phrasing leaves the card blank
+      // for the other. The word after the colon is kept and shown.
       key: "closed",
       label: "Closed by a build",
       chip: "closed",
-      match: /^\s*closed\s*:\s*solved by\b/i,
-      hint: 'starts "closed: solved by <item>"'
+      match: /^\s*closed\s*:/i,
+      hint: 'starts "closed: solved by <item>" or "closed: superseded by <item>"'
     },
     {
       key: "waiting",
@@ -104,18 +108,36 @@
 
   // Which proposal a message is about. The 27.5 shape carries it in refs
   // ("proposal 17"); messages the page writes also set a proposal field.
+  // Four shapes, because four writers produce them and none should have to know
+  // about the others: scripts/wren-decide.js sets a `proposal` field, the page
+  // sets one too, and a message posted straight to POST /messages carries only
+  // refs. In refs the id may be written "proposal 31", "proposal:31",
+  // "proposal #31", "#31", or as the bare number 31. A message whose proposal
+  // cannot be read is a decision that never reaches the card -- which is how a
+  // waiting proposal stayed in the Director's queue.
   function proposalOf(message) {
     if (!message) return null;
+
     if (message.proposal !== undefined && message.proposal !== null && message.proposal !== "") {
       var direct = Number(message.proposal);
       if (Number.isInteger(direct)) return direct;
     }
+
     var refs = Array.isArray(message.refs) ? message.refs : [];
     for (var i = 0; i < refs.length; i++) {
-      var m = /^\s*proposal\s+(\d+)\s*$/i.exec(textOf(refs[i]));
-      if (m) return Number(m[1]);
+      var id = proposalFromRef(refs[i]);
+      if (id !== null) return id;
     }
     return null;
+  }
+
+  // "proposal 31" | "proposal:31" | "proposal #31" | "#31" | 31 | "31"
+  function proposalFromRef(ref) {
+    if (typeof ref === "number" && Number.isInteger(ref) && ref >= 0) return ref;
+    var text = textOf(ref).trim();
+    if (!text) return null;
+    var m = /^(?:proposal\s*[:#]?\s*|#)?(\d+)$/i.exec(text);
+    return m ? Number(m[1]) : null;
   }
 
   function isLater(a, aIndex, b, bIndex) {
@@ -166,12 +188,18 @@
     return Boolean(adoption && adoption.state.key === "closed");
   }
 
-  // "closed: solved by the shared mtime_cache helper." -> the item that solved it.
+  // "closed: solved by the shared mtime_cache helper." -> "the shared
+  // mtime_cache helper". Also reads "superseded by", and falls back to whatever
+  // follows the colon, so a close is never shown as a bare chip with no reason.
   function solvedBy(adoption) {
     if (!isClosedByBuild(adoption)) return null;
-    var m = /closed\s*:\s*solved by\s+(.+)$/i.exec(adoption.text);
+    var m = /closed\s*:\s*(?:solved|superseded|replaced|fixed)\s+by\s+(.+)$/i.exec(adoption.text);
+    if (!m) m = /closed\s*:\s*(.+)$/i.exec(adoption.text);
     if (!m) return null;
-    return m[1].trim().replace(/[.\s]+$/, "");
+    var what = m[1].trim().replace(/[.\s]+$/, "");
+    // One clause is a label; a paragraph is not.
+    var firstSentence = what.split(/(?<=[.!?])\s/)[0].replace(/[.!?]\s*$/, "");
+    return firstSentence.length > 80 ? firstSentence.slice(0, 79) + "…" : firstSentence;
   }
 
   // "waiting: kept open on the Director's request..." -> the reason, without the
@@ -187,6 +215,7 @@
     UNKNOWN: UNKNOWN,
     stateOf: stateOf,
     proposalOf: proposalOf,
+    proposalFromRef: proposalFromRef,
     indexDecisions: indexDecisions,
     historyFor: historyFor,
     adoptionOf: adoptionOf,

@@ -310,6 +310,58 @@ describe("governance tie-break", function () {
     });
   });
 
+  // The contract-side guard, proposed as proposal 28 and executed by the
+  // Director. Without it a vote on an id nobody had filed was accepted, set
+  // hasVoted against the zero struct, and the real vote was then refused with
+  // "Already voted" -- which is how a vote was lost on id 27.
+  describe("a proposal that does not exist", function () {
+    const UNFILED = 99999;
+
+    it("reads back as a zero struct whose status looks Active", async function () {
+      const ghost = await aao.getProposal(UNFILED);
+      expect(Number(ghost.createdAt)).to.equal(0);
+      expect(Number(ghost.status)).to.equal(ACTIVE);   // this is the trap
+      expect(ghost.text).to.equal("");
+      expect(ghost.proposer).to.equal(ethers.ZeroAddress);
+    });
+
+    it("refuses a vote on it", async function () {
+      await expect(aao.connect(director).vote(UNFILED, true))
+        .to.be.revertedWith("AAOFacet: Proposal does not exist");
+      await expect(aao.connect(wren).vote(UNFILED, false))
+        .to.be.revertedWith("AAOFacet: Proposal does not exist");
+    });
+
+    it("refuses to execute it", async function () {
+      await expect(aao.connect(director).executeProposal(UNFILED))
+        .to.be.revertedWith("AAOFacet: Proposal does not exist");
+    });
+
+    it("leaves the id clean, so a real proposal can still be voted on", async function () {
+      // The whole point: a refused vote must not have set hasVoted anywhere.
+      const id = await submit("Filed after someone tried to vote on an empty id.");
+      await aao.connect(director).vote(id, true);
+      await aao.connect(wren).vote(id, true);
+      expect(Number((await aao.getProposal(id)).forVotes)).to.equal(2);
+    });
+
+    it("refuses a non-member too, rather than letting anything through", async function () {
+      await expect(aao.connect(outsider).vote(UNFILED, true)).to.be.reverted;
+      await expect(aao.connect(outsider).executeProposal(UNFILED)).to.be.reverted;
+    });
+
+    it("does not change how a filed proposal behaves", async function () {
+      const id = await submit("An ordinary proposal, unaffected by the guard.");
+      expect(Number((await aao.getProposal(id)).createdAt)).to.be.greaterThan(0);
+      await aao.connect(director).vote(id, true);
+      await expect(aao.connect(director).vote(id, false))
+        .to.be.revertedWith("AAOFacet: Already voted");
+      await expect(aao.connect(director).executeProposal(id))
+        .to.emit(aao, "ProposalExecuted")
+        .withArgs(aaoId, id, true);
+    });
+  });
+
   describe("who may act at all", function () {
     it("refuses a vote from a non-member", async function () {
       const id = await submit("An outsider should not be able to touch this.");
