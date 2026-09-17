@@ -72,4 +72,18 @@ npm run export
 
 ## License
 
-This project is licensed under the MIT License. 
+This project is licensed under the MIT License.
+
+## The governance page
+
+Separate from this Next.js dashboard, `governance/` holds a static one-page view
+of AAO 0 for local governance: every proposal, its tally, who voted, and the
+Director's vote / casting-vote / execute buttons. No wallet, no build step, no
+framework -- ethers v6 from a CDN over a loopback static server.
+
+```bash
+npm run governance    # http://127.0.0.1:8787
+```
+
+The three roles and the tie rule are documented in
+[`governance/README.md`](../governance/README.md).
