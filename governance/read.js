@@ -31,11 +31,24 @@
   var WREN = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";     // account 1, the architect session
   var CASTING = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";  // account 2, the Director's casting vote
 
+  // The widget-builder sub-AAO (27.4) adds two more: the builder that writes the
+  // code and the widget that reports on its own behaviour.
+  var BUILDER = "0x90F79bf6EB2c4f870365E785982E1f101E93b906"; // account 3
+  var WIDGET = "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65";  // account 4
+
   var ROLES = [
     { key: "director", label: "Director", address: DIRECTOR, ordinary: true },
     { key: "wren", label: "Wren", address: WREN, ordinary: true },
-    { key: "casting", label: "Casting vote", address: CASTING, ordinary: false }
+    { key: "casting", label: "Casting vote", address: CASTING, ordinary: false },
+    { key: "builder", label: "Builder", address: BUILDER, ordinary: true },
+    { key: "widget", label: "Widget", address: WIDGET, ordinary: true }
   ];
+
+  // What each AAO is for, in one line, for the tree and the AAO list.
+  var AAO_NOTES = {
+    "trilogy widget": "Where the Director decides what the widget should become.",
+    "widget-builder": "Where the widget, its builder and Wren work out what to propose."
+  };
 
   // Minimal human-readable ABI: exactly the AAOFacet surface the page touches.
   var AAO_ABI = [
@@ -44,6 +57,7 @@
     "function getMembers(uint256 aaoId) view returns (address[])",
     "function getMembersCount(uint256 aaoId) view returns (uint256)",
     "function isMember(uint256 aaoId, address member) view returns (bool)",
+    "function aaoCount() view returns (uint256)",
     "function joinAAO(uint256 aaoId)",
     "function submitProposal(uint256 aaoId, string proposalText) returns (uint256)",
     "function vote(uint256 proposalId, bool support)",
@@ -201,15 +215,41 @@
     return out;
   }
 
-  // One shot for the page: the AAO, its proposals, and the block they were read at.
+  // Every AAO on the chain, in id order, each with its members and its
+  // plain-English line. The page's AAO list and the structure tree both use it.
+  async function readAAOs(contract) {
+    var count = num(await contract.aaoCount());
+    var out = [];
+    for (var id = 0; id < count; id++) {
+      var aao = await readAAO(contract, id);
+      aao.note = AAO_NOTES[aao.topic] || "";
+      out.push(aao);
+    }
+    return out;
+  }
+
+  // One shot for the page: every AAO, one of them read in full with its
+  // proposals, and the block it was all read at.
   async function readGovernance(ethers, provider, options) {
     var opts = options || {};
     var contract = getContract(ethers, provider, opts.diamond);
+    var aaos = await readAAOs(contract);
     var aaoId = opts.aaoId === undefined ? AAO_ID : opts.aaoId;
-    var aao = await readAAO(contract, aaoId);
+    if (!aaos.some(function (a) { return a.id === aaoId; })) aaoId = aaos.length ? aaos[0].id : AAO_ID;
+    var aao = aaos.filter(function (a) { return a.id === aaoId; })[0] || await readAAO(contract, aaoId);
     var proposals = await readProposals(contract, aaoId);
     var blockNumber = await provider.getBlockNumber();
-    return { aao: aao, proposals: proposals, blockNumber: blockNumber };
+    return { aaos: aaos, aao: aao, proposals: proposals, blockNumber: blockNumber };
+  }
+
+  // Every proposal on every AAO, for the tree and the search.
+  async function readAllProposals(contract, aaos) {
+    var out = [];
+    for (var i = 0; i < aaos.length; i++) {
+      var list = await readProposals(contract, aaos[i].id);
+      list.forEach(function (p) { out.push(p); });
+    }
+    return out;
   }
 
   // --- the proposal format (27.1) ----------------------------------------
@@ -394,7 +434,12 @@
     DIRECTOR: DIRECTOR,
     WREN: WREN,
     CASTING: CASTING,
+    BUILDER: BUILDER,
+    WIDGET: WIDGET,
     ROLES: ROLES,
+    AAO_NOTES: AAO_NOTES,
+    readAAOs: readAAOs,
+    readAllProposals: readAllProposals,
     AAO_ABI: AAO_ABI,
     STATUS: STATUS,
     PROPOSAL_FIELDS: PROPOSAL_FIELDS,

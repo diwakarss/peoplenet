@@ -20,7 +20,9 @@ describe("governance tie-break", function () {
   let director;       // account 0: deployer, AAO creator
   let wren;           // account 1: the architect session's ordinary vote
   let casting;        // account 2: the Director's casting vote
-  let outsider;       // account 3: never a member
+  let outsider;       // account 5: never a member of anything
+  // Accounts 3 and 4 are the builder and the widget, and they belong to the
+  // widget-builder sub-AAO below -- so the outsider cannot be one of them.
   let aaoId;
   let tieProposal;    // votes 1-1
   let clearProposal;  // votes 2-0
@@ -40,7 +42,11 @@ describe("governance tie-break", function () {
   }
 
   before(async function () {
-    [director, wren, casting, outsider] = await ethers.getSigners();
+    const signers = await ethers.getSigners();
+    director = signers[0];
+    wren = signers[1];
+    casting = signers[2];
+    outsider = signers[5];
 
     // Fresh diamond with just the AAO facet on it.
     const DiamondCutFacet = await ethers.getContractFactory("DiamondCutFacet");
@@ -204,6 +210,103 @@ describe("governance tie-break", function () {
         .to.emit(aao, "ProposalExecuted")
         .withArgs(aaoId, clearProposal, true);
       expect(Number((await aao.getProposal(clearProposal)).status)).to.equal(EXECUTED);
+    });
+  });
+
+  // The chain half of 27.4. The message stream is files, and governance/check.js
+  // covers that; what belongs here is who is on the sub-AAO and what that
+  // membership lets them do.
+  describe("the widget-builder sub-AAO", function () {
+    let subId;
+    let builder;
+    let widget;
+
+    before(async function () {
+      const signers = await ethers.getSigners();
+      builder = signers[3];
+      widget = signers[4];
+
+      const tx = await aao.connect(director).createAAO("widget-builder", 3600);
+      const receipt = await tx.wait();
+      const created = receipt.logs
+        .map((l) => { try { return aao.interface.parseLog(l); } catch (e) { return null; } })
+        .find((p) => p && p.name === "AAOCreated");
+      subId = Number(created.args.aaoId);
+
+      // joinAAO is open, so each account joins for itself.
+      await aao.connect(wren).joinAAO(subId);
+      await aao.connect(builder).joinAAO(subId);
+      await aao.connect(widget).joinAAO(subId);
+    });
+
+    it("has the four members 27.4 names, and nobody else", async function () {
+      const members = await aao.getMembers(subId);
+      expect(members.length).to.equal(4);
+      expect(members[0]).to.equal(director.address); // the creator is first
+      expect(members).to.include(wren.address);
+      expect(members).to.include(builder.address);
+      expect(members).to.include(widget.address);
+      expect(await aao.isMember(subId, outsider.address)).to.equal(false);
+    });
+
+    it("is a separate organisation: membership does not leak either way", async function () {
+      expect(await aao.isMember(subId, casting.address)).to.equal(false);
+      expect(await aao.isMember(aaoId, builder.address)).to.equal(false);
+      expect(await aao.isMember(aaoId, widget.address)).to.equal(false);
+    });
+
+    it("lets the widget file and vote on a proposal about its own behaviour", async function () {
+      const tx = await aao.connect(widget).submitProposal(
+        subId,
+        JSON.stringify({
+          title: "Stop answering while the citation cache is stale",
+          summary: "When a source file changes mid-turn the widget should re-read it rather than quote the copy it cached.",
+          why: "It quoted text that no longer existed, which a person then read as current.",
+          from: "widget"
+        })
+      );
+      const receipt = await tx.wait();
+      const log = receipt.logs
+        .map((l) => { try { return aao.interface.parseLog(l); } catch (e) { return null; } })
+        .find((p) => p && p.name === "ProposalSubmitted");
+      const id = Number(log.args.proposalId);
+
+      const filed = await aao.getProposal(id);
+      expect(Number(filed.aaoId)).to.equal(subId);
+      expect(filed.proposer).to.equal(widget.address);
+
+      await aao.connect(widget).vote(id, true);
+      await aao.connect(builder).vote(id, true);
+      expect(Number((await aao.getProposal(id)).forVotes)).to.equal(2);
+    });
+
+    it("refuses a proposal from someone who is not on it", async function () {
+      await expect(aao.connect(casting).submitProposal(subId, "not a member here"))
+        .to.be.revertedWith("AAOFacet: Not a member");
+    });
+
+    it("reads back through the page's data layer with the right labels", async function () {
+      const sub = await R.readAAO(aao, subId);
+      expect(sub.topic).to.equal("widget-builder");
+      const labels = sub.members.map((m) => m.label).sort();
+      expect(labels).to.deep.equal(["Builder", "Director", "Widget", "Wren"]);
+      expect(R.AAO_NOTES[sub.topic]).to.be.a("string");
+
+      // The page lists both organisations, in id order.
+      const all = await R.readAAOs(aao);
+      expect(all.map((a) => a.topic)).to.include("widget-builder");
+      expect(all.map((a) => a.id)).to.deep.equal(all.map((a, i) => i));
+    });
+
+    it("keeps the widget's proposal in the 27.1 format the page can render", async function () {
+      const proposals = await R.readProposals(aao, subId);
+      expect(proposals.length).to.be.greaterThan(0);
+      const mine = proposals.filter((p) => R.sameAddress(p.proposer, widget.address))[0];
+      expect(mine, "the widget's proposal").to.exist;
+      expect(mine.format.legacy).to.equal(false);
+      expect(mine.format.valid.ok).to.equal(true);
+      expect(R.proposalHeadline(mine)).to.equal("Stop answering while the citation cache is stale");
+      expect(mine.proposerLabel).to.equal("Widget");
     });
   });
 

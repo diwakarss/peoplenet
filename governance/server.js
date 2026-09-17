@@ -31,7 +31,8 @@ const PORT = Number(process.env.GOVERNANCE_PORT || 8787);
 const LOGS = {
   "/wren-votes.json": "wren-votes.jsonl",
   "/questions.json": "questions.jsonl",
-  "/answers.json": "answers.jsonl"
+  "/answers.json": "answers.jsonl",
+  "/messages.json": "messages.jsonl"
 };
 
 const MAX_BODY = 64 * 1024; // a question is a sentence, not a payload
@@ -176,6 +177,26 @@ function postQuestion(req, res) {
   });
 }
 
+// POST /messages -- any agent posts a protocol message (27.5): the widget an
+// incident, the builder a status, anyone a decision. Validated by the same
+// protocol.js the page and the scripts use; a message without a subject and a
+// summary is refused with the reasons, not silently dropped.
+function postMessage(req, res) {
+  readBody(req, (err, body) => {
+    if (err) return send(res, err.status || 400, err.message);
+
+    const message = P.normalise(body, { idPrefix: body && body.type ? body.type : "msg" });
+    const check = P.validate(message);
+    if (!check.ok) return sendJson(res, 400, { ok: false, errors: check.errors });
+
+    appendLog("messages.jsonl", message, (writeErr) => {
+      if (writeErr) return send(res, 500, "Could not append to messages.jsonl: " + writeErr.code);
+      console.log(`message ${message.id} ${message.from} -> ${message.to} [${message.type}] ${firstLine(message.subject, 70)}`);
+      sendJson(res, 201, { ok: true, message: message });
+    });
+  });
+}
+
 function firstLine(text, max) {
   const line = String(text).split(/\r?\n/)[0].trim();
   const limit = max || 100;
@@ -204,6 +225,7 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "POST") {
     if (pathname === "/questions") return postQuestion(req, res);
+    if (pathname === "/messages") return postMessage(req, res);
     return send(res, 404, "No such endpoint: POST " + pathname);
   }
 
@@ -227,6 +249,7 @@ server.listen(PORT, HOST, () => {
     console.log(`  GET  ${base}${route}`.padEnd(48) + LOGS[route]);
   });
   console.log(`  POST ${base}/questions`.padEnd(48) + "questions.jsonl  <- the Director asks");
+  console.log(`  POST ${base}/messages`.padEnd(48) + "messages.jsonl   <- any agent, 27.5 shape");
   console.log("");
   console.log("Ctrl-C to stop.");
 });

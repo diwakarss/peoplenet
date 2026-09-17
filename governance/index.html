@@ -3,72 +3,128 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PeopleNet governance &mdash; trilogy widget</title>
+  <title>PeopleNet &mdash; governance</title>
   <link rel="stylesheet" href="style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>&#x1F5F3;</text></svg>">
 </head>
 <body>
   <main class="page">
 
-    <header class="head">
-      <h1 id="aao-topic">Loading&hellip;</h1>
-      <p class="head-sub">
-        AAO <span id="aao-id">&mdash;</span> on the local PeopleNet chain
-        &middot; diamond <code id="diamond">&mdash;</code>
+    <header class="masthead">
+      <p class="masthead-org">PeopleNet</p>
+      <h1 class="masthead-title">Governance</h1>
+      <p class="masthead-sub">
+        Local chain &middot; id <span id="chain-id">&mdash;</span> &middot;
+        Diamond <code id="diamond">&mdash;</code>
       </p>
       <div class="status-line">
         <span id="conn" class="chip chip-wait">connecting</span>
         <span class="muted">block <span id="block">&mdash;</span></span>
         <span class="muted" id="refreshed"></span>
+        <button type="button" id="notify-toggle" class="notify-toggle" hidden>Enable notifications</button>
       </div>
     </header>
 
     <p class="banner" role="note">
-      <strong>Local chain, public keys.</strong>
+      <strong>Notice.</strong>
       This page talks to a Hardhat node on 127.0.0.1:8545 and signs with that node&rsquo;s own
       unlocked default accounts &mdash; the well-known Hardhat test keys, worthless anywhere else.
       No private key is held, entered, or shown here, and nothing on this page reaches a real network.
     </p>
 
-    <section class="card" id="aao-card">
-      <h2>The AAO</h2>
-      <dl class="facts">
-        <dt>Topic</dt><dd id="fact-topic">&mdash;</dd>
-        <dt>Creator</dt><dd id="fact-creator">&mdash;</dd>
-        <dt>Created</dt><dd id="fact-created">&mdash;</dd>
-        <dt>Members</dt><dd id="fact-members">&mdash;</dd>
-      </dl>
-      <ul class="members" id="members"></ul>
-      <p class="rule">
-        One member, one vote. <code>executeProposal</code> passes a proposal only on
-        <em>for &gt; against</em>, so a 1&ndash;1 tie rejects. The tie-break lives in membership:
-        the Director&rsquo;s casting vote is a third member whose vote this page offers
-        <strong>only</strong> when the Director and Wren have both voted and are tied.
-      </p>
+    <nav class="views" id="views" aria-label="Sections">
+      <button type="button" class="view-tab" data-view="governance">1. Governance</button>
+      <button type="button" class="view-tab" data-view="structure">2. Structure</button>
+      <button type="button" class="view-tab" data-view="search">3. Search</button>
+    </nav>
+
+    <!-- 1. Governance ------------------------------------------------- -->
+    <section class="view" id="view-governance">
+
+      <section class="block">
+        <h2 class="block-head"><span class="num">1.1</span> Organisations</h2>
+        <div class="aao-tabs" id="aao-tabs"></div>
+      </section>
+
+      <section class="block">
+        <h2 class="block-head"><span class="num">1.2</span> This organisation</h2>
+        <dl class="facts">
+          <dt>Topic</dt><dd id="fact-topic">&mdash;</dd>
+          <dt>Purpose</dt><dd id="fact-note">&mdash;</dd>
+          <dt>Creator</dt><dd id="fact-creator">&mdash;</dd>
+          <dt>Created</dt><dd id="fact-created">&mdash;</dd>
+          <dt>Members</dt><dd id="fact-members">&mdash;</dd>
+        </dl>
+        <ol class="members" id="members"></ol>
+        <p class="rule">
+          One member, one vote. <code>executeProposal</code> passes a proposal only on
+          <em>for &gt; against</em>, so a 1&ndash;1 tie rejects. The tie-break lives in membership:
+          the Director&rsquo;s casting vote is a third member whose vote this page offers
+          <strong>only</strong> when the Director and Wren have both voted and are tied.
+        </p>
+      </section>
+
+      <section class="block" id="stream-block">
+        <h2 class="block-head"><span class="num">1.3</span> Message stream <span class="count" id="stream-count"></span></h2>
+        <p class="block-note">
+          Questions, answers and agent messages on this organisation, oldest first.
+        </p>
+        <ol class="stream" id="stream"></ol>
+      </section>
+
+      <section class="block">
+        <div class="list-head">
+          <h2 class="block-head"><span class="num">1.4</span> Proposals <span class="count" id="proposal-count"></span></h2>
+          <label class="filter">
+            <input type="checkbox" id="hide-closed">
+            <span>Hide closed</span>
+          </label>
+        </div>
+        <div id="file-proposal"></div>
+        <ol id="proposals" class="proposal-list"></ol>
+      </section>
+
     </section>
 
-    <section>
-      <div class="list-head">
-        <h2 class="section-head">Proposals <span class="count" id="proposal-count"></span></h2>
-        <label class="filter">
-          <input type="checkbox" id="hide-closed">
-          <span>Hide closed</span>
-        </label>
-      </div>
-      <div id="file-proposal"></div>
-      <div id="proposals"></div>
+    <!-- 2. Structure -------------------------------------------------- -->
+    <section class="view" id="view-structure" hidden>
+      <section class="block">
+        <h2 class="block-head"><span class="num">2.1</span> The whole tree</h2>
+        <p class="block-note">
+          PeopleNet down to the bottommost record, each line in plain English.
+          Every branch opens in place; nothing here is more than one click away.
+        </p>
+        <div id="tree" class="tree"></div>
+      </section>
+    </section>
+
+    <!-- 3. Search ----------------------------------------------------- -->
+    <section class="view" id="view-search" hidden>
+      <section class="block">
+        <h2 class="block-head"><span class="num">3.1</span> Search everything</h2>
+        <p class="block-note">
+          Organisations, proposals, vote reasons, questions, answers and agent messages.
+        </p>
+        <form class="search-form" id="search-form">
+          <input type="search" id="search-input" class="search-input"
+                 placeholder="Search proposals, reasons, questions, answers&hellip;" autocomplete="off">
+        </form>
+        <div id="search-results" class="search-results"></div>
+      </section>
     </section>
 
     <p class="foot">
-      Wren votes through <code>node scripts/wren-vote.js &lt;id&gt; for|against "reason"</code>, never from this page.
-      Reasons are appended to <code>governance/wren-votes.jsonl</code> and read back here from
-      <code>/wren-votes.json</code> &mdash; the reason is Wren&rsquo;s argument, the tally is the chain&rsquo;s.
+      <span class="num">&mdash;</span>
+      Wren votes through <code>node scripts/wren-vote.js &lt;id&gt; for|against "reason"</code> and answers
+      through <code>node scripts/wren-answer.js &lt;question-id&gt; "answer"</code>, never from this page.
+      The files under <code>governance/</code> are the record.
     </p>
 
   </main>
 
   <!-- ethers v6, pinned. UMD build, so it defines window.ethers before app.js runs. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.5/ethers.umd.min.js"></script>
+  <script src="protocol.js"></script>
   <script src="read.js"></script>
   <script src="app.js"></script>
 </body>

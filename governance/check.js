@@ -59,7 +59,9 @@ async function main() {
   const code = await provider.getCode(R.DIAMOND);
   assert.notStrictEqual(code, "0x", `no contract deployed at ${R.DIAMOND}`);
 
-  const { aao, proposals, blockNumber } = await R.readGovernance(ethers, provider);
+  const { aaos, aao, proposals, blockNumber } = await R.readGovernance(ethers, provider);
+  const contract = R.getContract(ethers, provider);
+  const allProposals = await R.readAllProposals(contract, aaos);
 
   // The same endpoints the page fetches, over the same server.
   let wrenRecords = null;
@@ -74,7 +76,7 @@ async function main() {
   // The question channel (27.2). An empty log is the normal state until the
   // Director asks something, so the assertion is on the endpoint, not the count.
   const channel = {};
-  for (const route of ["/questions.json", "/answers.json"]) {
+  for (const route of ["/questions.json", "/answers.json", "/messages.json"]) {
     try {
       const response = await fetch(PAGE_URL + route, { cache: "no-store" });
       const body = await response.json();
@@ -122,7 +124,7 @@ async function main() {
 
   console.log("");
   console.log(`wren-votes.json  ${wrenError ? `UNAVAILABLE (${wrenError})` : `${wrenRecords.length} records from ${PAGE_URL}${R.WREN_VOTES_PATH}`}`);
-  for (const route of ["/questions.json", "/answers.json"]) {
+  for (const route of ["/questions.json", "/answers.json", "/messages.json"]) {
     const got = channel[route];
     console.log(`${route.padEnd(16)} ${got.error ? `UNAVAILABLE (${got.error})` : `${got.records.length} records`}`);
   }
@@ -143,12 +145,20 @@ async function main() {
     assert.strictEqual(aao.topic, "trilogy widget");
   });
 
-  check("the three governance roles are members", () => {
+  // The Builder and the Widget are roles too, but they belong to the sub-AAO;
+  // the main organisation has exactly the three that decide.
+  check("the three governance roles are members of AAO 0", () => {
     const addresses = aao.members.map((m) => m.address.toLowerCase());
-    for (const role of R.ROLES) {
+    for (const address of [R.DIRECTOR, R.WREN, R.CASTING]) {
       assert.ok(
-        addresses.includes(role.address.toLowerCase()),
-        `${role.label} (${role.address}) is not a member — run scripts/setup-governance-members.js`
+        addresses.includes(address.toLowerCase()),
+        `${R.labelFor(address)} (${address}) is not a member — run scripts/setup-governance-members.js`
+      );
+    }
+    for (const address of [R.BUILDER, R.WIDGET]) {
+      assert.ok(
+        !addresses.includes(address.toLowerCase()),
+        `${R.labelFor(address)} is on AAO 0; it belongs to the widget-builder sub-AAO`
       );
     }
   });
@@ -175,9 +185,14 @@ async function main() {
     }
   });
 
-  check("proposal ids are contiguous from 0", () => {
+  // The proposal counter is global across organisations, so AAO 0's ids are
+  // ascending but not necessarily contiguous once the sub-AAO has proposals.
+  check("proposal ids ascend, with no duplicates", () => {
     proposals.forEach((p, i) => {
-      assert.strictEqual(p.id, i, `proposal at index ${i} has id ${p.id}`);
+      if (i > 0) {
+        assert.ok(p.id > proposals[i - 1].id,
+          `proposal ids are not ascending: ${proposals[i - 1].id} then ${p.id}`);
+      }
       assert.strictEqual(p.aaoId, R.AAO_ID);
       assert.ok(p.text && p.text.length > 0, `proposal ${p.id} has no text`);
       assert.ok(R.STATUS[p.status], `proposal ${p.id} has unknown status ${p.status}`);
@@ -280,6 +295,49 @@ async function main() {
     }
   });
 
+  // --- the organisations and the sub-AAO (27.3, 27.4) -------------------
+
+  check(`the page lists ${aaos.length} organisation(s), in id order`, () => {
+    assert.ok(aaos.length >= 1, "no organisations on this chain");
+    aaos.forEach((a, i) => {
+      assert.strictEqual(a.id, i, `organisation at index ${i} has id ${a.id}`);
+      assert.ok(a.topic, `organisation ${a.id} has no topic`);
+      assert.ok(Array.isArray(a.members), `organisation ${a.id} has no member list`);
+    });
+  });
+
+  check("the widget-builder sub-AAO has its four members", () => {
+    const sub = aaos.filter((a) => a.topic === "widget-builder")[0];
+    assert.ok(sub, "no widget-builder organisation — run scripts/create-widget-builder-aao.js");
+    const labels = sub.members.map((m) => m.label).sort();
+    assert.deepStrictEqual(labels, ["Builder", "Director", "Widget", "Wren"]);
+    assert.ok(sub.note, "the sub-AAO has no plain-English line");
+  });
+
+  check("every organisation carries a plain-English line", () => {
+    for (const a of aaos) {
+      assert.ok(
+        typeof a.note === "string",
+        `organisation ${a.id} ("${a.topic}") has no note field`
+      );
+    }
+  });
+
+  check("the whole tree reads: every proposal belongs to a listed organisation", () => {
+    const ids = new Set(aaos.map((a) => a.id));
+    for (const p of allProposals) {
+      assert.ok(ids.has(p.aaoId), `proposal ${p.id} is on unlisted organisation ${p.aaoId}`);
+    }
+  });
+
+  check("proposal ids are unique across every organisation", () => {
+    const seenIds = new Set();
+    for (const p of allProposals) {
+      assert.ok(!seenIds.has(p.id), `proposal id ${p.id} appears twice`);
+      seenIds.add(p.id);
+    }
+  });
+
   // --- the proposal format (27.1) ---------------------------------------
 
   check("every proposal reads as either a 27.1 document or legacy free text", () => {
@@ -309,10 +367,15 @@ async function main() {
   check("the free-text proposals already on chain are left alone", () => {
     const legacy = proposals.filter((p) => p.format.legacy).map((p) => p.id);
     assert.ok(legacy.length >= 1, "expected the pre-27.1 proposals to still be here");
-    // They were filed 0..N before the format landed, so they are the low ids.
-    legacy.forEach((id, i) => {
-      assert.strictEqual(id, i, `legacy proposal ids are not contiguous from 0 (${legacy.join(",")})`);
-    });
+    // They were filed before the format landed, so they are the earliest ids and
+    // nothing has been re-filed since.
+    const structured = proposals.filter((p) => !p.format.legacy).map((p) => p.id);
+    if (structured.length) {
+      assert.ok(
+        Math.max(...legacy) < Math.min(...structured),
+        `a legacy proposal was filed after a 27.1 one (legacy ${legacy.join(",")}, 27.1 ${structured.join(",")})`
+      );
+    }
   });
 
   check("every proposal has a headline a person can read", () => {
@@ -344,7 +407,7 @@ async function main() {
   // --- the question channel and the protocol (27.2, 27.5) ---------------
 
   check("the question channel endpoints are served", () => {
-    for (const route of ["/questions.json", "/answers.json"]) {
+    for (const route of ["/questions.json", "/answers.json", "/messages.json"]) {
       const got = channel[route];
       assert.strictEqual(got.error, null, `${route} did not answer (${got.error})`);
       assert.ok(got.ok, `${route} returned a non-2xx status`);
@@ -353,7 +416,7 @@ async function main() {
   });
 
   check("every question and answer on file is a valid protocol message", () => {
-    for (const route of ["/questions.json", "/answers.json"]) {
+    for (const route of ["/questions.json", "/answers.json", "/messages.json"]) {
       (channel[route].records || []).forEach((record, i) => {
         const result = P.validate(record);
         assert.ok(result.ok, `${route}[${i}] (${record.id}): ${result.errors.join("; ")}`);
@@ -388,6 +451,29 @@ async function main() {
       P.validate({ from: "wren", type: "answer", subject: "x", summary: "y", refs: "no" }).ok,
       false
     );
+  });
+
+  check("every message names an organisation the page can show it on", () => {
+    for (const route of ["/questions.json", "/answers.json", "/messages.json"]) {
+      const ids = new Set(aaos.map((a) => a.id));
+      (channel[route].records || []).forEach((m) => {
+        const on = m.aaoId === undefined || m.aaoId === null ? R.AAO_ID : Number(m.aaoId);
+        assert.ok(ids.has(on), `${route} ${m.id} is on unlisted organisation ${on}`);
+      });
+    }
+  });
+
+  check("a question names a proposal that is on the organisation it claims", () => {
+    const byId = new Map(allProposals.map((p) => [p.id, p]));
+    (channel["/questions.json"].records || []).forEach((q) => {
+      if (q.proposal === null || q.proposal === undefined) return;
+      const p = byId.get(Number(q.proposal));
+      assert.ok(p, `question ${q.id} asks about proposal ${q.proposal}, which does not exist`);
+      assert.strictEqual(
+        p.aaoId, Number(q.aaoId),
+        `question ${q.id} says organisation ${q.aaoId} but proposal ${q.proposal} is on ${p.aaoId}`
+      );
+    });
   });
 
   check("normalise fills id, ts, to and refs without touching what was written", () => {

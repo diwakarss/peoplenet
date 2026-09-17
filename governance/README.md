@@ -1,10 +1,23 @@
 # The governance page
 
-A one-page view of AAO 0, the "trilogy widget" AAO, on the local chain: every
-proposal, who voted, and the three buttons that move one along. Static HTML,
-ethers v6 from a CDN, no framework, no build step.
+Every organisation on the local chain, every proposal on them, who voted and
+why, the questions the Director asks and the answers Wren gives, the whole tree
+and a search over all of it. Static HTML, ethers v6 from a CDN, no framework, no
+build step.
 
-Spec: `LEARNING-MODEL-ARCHITECTURE.md` section 24, WP17d-UI.
+Spec: `LEARNING-MODEL-ARCHITECTURE.md` section 24 (WP17d-UI) and section 27.
+
+Three sections, one click apart:
+
+| | |
+|---|---|
+| **1. Governance** | The organisations, their members, the message stream, and the proposals with everything the Director can do to one. |
+| **2. Structure** | PeopleNet down to the bottommost record, each node with its plain-English line. Branches open in place. |
+| **3. Search** | Every organisation, proposal, vote reason, question, answer and agent message. Results open the card. |
+
+One click (27.6a): every function and every piece of information is at most one
+click away. A fold is one click. There are no folds inside folds, no modals, and
+nothing that needs two.
 
 ## Running it
 
@@ -14,6 +27,7 @@ You need two things up: the chain, and the page.
 npm run node                    # terminal 1 -- Hardhat node on 127.0.0.1:8545 (chain id 31337)
 npm run deploy:local            # once, if the diamond is not deployed yet
 npm run governance:members      # once, puts the three roles on AAO 0
+npx hardhat run scripts/create-widget-builder-aao.js --network localhost   # once, the sub-AAO
 npm run governance              # terminal 2 -- http://127.0.0.1:8787
 ```
 
@@ -26,6 +40,116 @@ Two more commands worth knowing:
 npm run governance:check        # render the data layer in the terminal and assert it
 npx hardhat test test/governance/tiebreak.test.js
 ```
+
+## The question channel
+
+The fastest path between the Director's doubt and Wren's answer.
+
+On any proposal card there is one input and one button. The Director asks; the
+page posts it to `POST /questions`; the server appends it to
+`governance/questions.jsonl` within milliseconds. Wren watches that file and
+answers:
+
+```bash
+node scripts/wren-answer.js --list       # the open questions
+node scripts/wren-answer.js q-abc123 "Internal only; nothing the operator sees moves." \
+     --details "citations.py builds the key from mtime; the helper builds it from (path, size, mtime_ns)." \
+     --ref "spec 27.1"
+```
+
+The page polls every two seconds, so the only latency the Director feels is
+Wren's own reading time. The answer appears under the question, with `--details`
+behind one fold.
+
+**After an answer** the Director gets the two moves 27.2 names:
+
+- **Close as tie** — `executeProposal`, offered only on a level tally, which a
+  level tally rejects. It is the deliberate way to say no.
+- **Ask for a new proposal** — files a `request-new-proposal` message, shown as
+  such, for the proposer to answer with a revised proposal that links the old one.
+
+**To watch a question land the instant it arrives**, watch the file, or the
+endpoint:
+
+```bash
+# the file, one JSON object per line, appended the moment the Director clicks Ask
+tail -f governance/questions.jsonl
+
+# or the endpoint the page reads, re-read from disk on every request
+curl -s http://127.0.0.1:8787/questions.json
+```
+
+## Filing a proposal
+
+Three ways in, one format and one validator behind all of them:
+
+```bash
+node scripts/propose.js --file proposal.json --dry-run        # validate only
+node scripts/propose.js --title "..." --summary "..." --why "..."
+node scripts/submit-widget-proposals.js --dry-run             # a whole batch
+```
+
+and the **File a new proposal** fold on the page, which signs with account 0.
+See "The proposal format" below.
+
+## The two organisations
+
+| AAO | Topic | Members | What happens there |
+|---|---|---|---|
+| 0 | `trilogy widget` | Director, Wren, Casting vote | The Director decides what the widget should become. |
+| 1 | `widget-builder` | Director, Wren, Builder, Widget | The widget, its builder and Wren work out what to propose. |
+
+The page lists both; one click switches. The sub-AAO's view carries the message
+stream, where the agents' incidents, statuses and decisions read as one timeline
+alongside the questions and answers. The widget votes there on proposals that
+touch its own behaviour.
+
+`scripts/create-widget-builder-aao.js` creates it and joins accounts 0, 1, 3 and
+4. It is idempotent.
+
+## The proposal format
+
+Since 27.1 a proposal is a JSON document stored as the on-chain text:
+
+```json
+{
+  "title":     "One line.",
+  "summary":   "Two to four sentences, plain English, written for a person.",
+  "why":       "The reason, in plain English.",
+  "technical": "The details. Free form, kept whole.",
+  "risk":      "One line.",
+  "effort":    "One line.",
+  "refs":      ["spec 27.1", "https://example.invalid/ticket/1"],
+  "from":      "director",
+  "filed_at":  "2026-09-17T06:40:43.000Z"
+}
+```
+
+`title`, `summary` and `why` are required. `scripts/propose.js`,
+`scripts/submit-widget-proposals.js` and the page's form all refuse without
+them, through the same `validateProposalDoc()` in `read.js` — one rule, not
+three.
+
+The page shows the title and the summary first, then the why, then one fold for
+the technical, risk and effort, then the refs, with URLs as links.
+
+Proposals filed before 27.1 are free text. They render exactly as they were
+written, marked **legacy format**. Nothing has been re-filed.
+
+## The protocol
+
+All agent traffic — incidents, statuses, questions, answers, decisions — is one
+message shape, documented in [`PROTOCOL.md`](PROTOCOL.md) and validated by
+`protocol.js`, which the server, the scripts and the page all share. A message
+without a subject and a summary is refused with the reasons.
+
+## Notifications
+
+The page asks once for permission, from a button in the header, and then tells
+the Director about the four things 27.7 names: a new proposal, an answer to a
+question they asked, a tally that reached a tie and awaits the casting vote, and
+a passed proposal the builder has picked up. Each names the proposal and opens
+its card.
 
 ### The keys
 
@@ -118,7 +242,12 @@ not a prediction, the event. Once executed a proposal is closed for good.
 | `read.js` | The data layer. `require()`-able from Node, `<script>`-able in the browser. Owns the ABI, the role labels, the reads, and `castingVoteState()`. |
 | `app.js` | The page. Renders, wires the buttons, refreshes on every block. |
 | `index.html`, `style.css` | One column, proposal cards, tally bars, status chips. |
-| `server.js` | A loopback static server for this directory, plus `GET /wren-votes.json`. `npm run governance`. |
+| `server.js` | A loopback static server for this directory, plus the log endpoints. `npm run governance`. |
+| `protocol.js` | The one message shape (27.5) and its validator, shared by the server, the scripts and the page. |
+| `PROTOCOL.md` | What that shape is, who sends what, and where each log lives. |
+| `questions.jsonl` | The Director's questions, appended by `POST /questions`. |
+| `answers.jsonl` | Wren's answers, appended by `scripts/wren-answer.js`. |
+| `messages.jsonl` | Agent traffic, appended by `POST /messages`. |
 | `check.js` | Runs `read.js` against the live node **and** the served endpoint, prints what the page would show, asserts the AAO, the three members, the proposal floor, and Wren's twelve records. |
 | `wren-votes.jsonl` | Wren's votes with their stated reasons, one JSON object per line. |
 
