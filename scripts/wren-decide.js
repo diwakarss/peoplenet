@@ -28,6 +28,7 @@ const fs = require("fs");
 const path = require("path");
 const P = require("../governance/protocol.js");
 const A = require("../governance/adoption.js");
+const A_READ = require("../governance/read.js");
 
 const GOV = path.join(__dirname, "..", "governance");
 const MESSAGES = path.join(GOV, "messages.jsonl");
@@ -41,7 +42,7 @@ function readLog(file) {
 
 function usage(message) {
   if (message) console.error(message + "\n");
-  console.error('  node scripts/wren-decide.js <proposal> "<what happened>" [--details "..."] [--ref X]');
+  console.error('  node scripts/wren-decide.js <proposal> "<what happened>" [--details "..."] [--ref X] [--dry-run]');
   console.error("  node scripts/wren-decide.js --list");
   console.error("");
   console.error("The state is read from your words. These are the phrases that carry it:");
@@ -50,12 +51,13 @@ function usage(message) {
 }
 
 function parseArgs(argv) {
-  const out = { positional: [], details: "", refs: [], from: "wren", aaoId: 0, list: false };
+  const out = { positional: [], details: "", refs: [], from: "wren", aaoId: 0, list: false, dryRun: false };
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (arg === "--") continue;
     else if (arg === "--list") out.list = true;
+    else if (arg === "--dry-run") out.dryRun = true;
     else if (arg === "--details") out.details = String(rest[++i] || "");
     else if (arg === "--from") out.from = String(rest[++i] || "wren");
     else if (arg === "--aao") out.aaoId = Number(rest[++i]);
@@ -130,6 +132,24 @@ function main() {
   }, { idPrefix: "decision" });
 
   P.assertValid(message, "wren-decide");
+
+  if (args.dryRun) {
+    console.log("");
+    console.log(A_READ.describePlan({
+      standing: [
+        `Proposal ${proposal}: the words read as "${state.label}".`,
+        "This writes a file, not a transaction: no chain state changes."
+      ],
+      to: "(no transaction)",
+      from: "(no account)",
+      call: `append a decision message from "${args.from}" about proposal ${proposal}`,
+      effect: `the card would show the chip "${state.label}"`,
+      logFile: path.relative(process.cwd(), MESSAGES)
+    }));
+    console.log("");
+    console.log(JSON.stringify(message, null, 1));
+    return;
+  }
 
   fs.mkdirSync(GOV, { recursive: true });
   fs.appendFileSync(MESSAGES, P.toJsonl(message), "utf8");

@@ -460,6 +460,37 @@
       String(b).replace(/\s+/g, " ").trim().toLowerCase();
   }
 
+  // --- saying what a write would do, without doing it --------------------
+
+  // Every script that writes to the chain takes --dry-run, and every one of
+  // them prints the same shape: the standing check it applied and the exact
+  // transaction it would send. One function, so the rehearsal and the real run
+  // cannot describe different things -- and so nobody ever has to run a write
+  // against live state to find out what it does. A vote was cast by accident on
+  // proposal 32 doing exactly that, and it could not be taken back.
+  function describePlan(plan) {
+    var lines = [];
+    lines.push("--dry-run: nothing was sent.");
+    lines.push("");
+    lines.push("Standing check");
+    (plan.standing || []).forEach(function (line) { lines.push("  " + line); });
+    lines.push("");
+    lines.push("Transaction that would be sent");
+    lines.push("  to        " + (plan.to || DIAMOND));
+    var who = /^0x[0-9a-fA-F]{40}$/.test(String(plan.from))
+      ? plan.from + "  (" + labelFor(plan.from) + ")"
+      : plan.from;
+    lines.push("  from      " + who);
+    lines.push("  call      " + plan.call);
+    if (plan.effect) lines.push("  effect    " + plan.effect);
+    if (plan.logFile) {
+      lines.push("");
+      lines.push("Then appended to");
+      lines.push("  " + plan.logFile);
+    }
+    return lines.join("\n");
+  }
+
   // --- Wren's reasons ----------------------------------------------------
 
   // scripts/wren-vote.js appends one JSON object per vote to
@@ -689,6 +720,7 @@
     proposalHeadline: proposalHeadline,
     voteTargetProblem: voteTargetProblem,
     looselyEqual: looselyEqual,
+    describePlan: describePlan,
     isUrl: isUrl,
     WREN_VOTES_PATH: WREN_VOTES_PATH,
     parseWrenVotesJsonl: parseWrenVotesJsonl,

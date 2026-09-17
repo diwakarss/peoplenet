@@ -174,6 +174,21 @@
         proposalId, target, shown ? { text: shown.text } : null);
       if (problem) throw new Error(problem);
 
+      // The same standing check the scripts apply, from the same rule set: may
+      // this account vote on this organisation at all, and if it is the casting
+      // vote, is the tally level with the ordinary voters in? A disabled button
+      // is a courtesy; this is the rule.
+      if (shown) {
+        var rules = rulesForProposal(shown);
+        var standing = R.voterProblem(rules, voterAddress);
+        if (standing) throw new Error(standing);
+        var isCasting = rules.casting && R.sameAddress(rules.casting, voterAddress);
+        if (isCasting) {
+          var casting = R.castingStateUnder(rules, shown);
+          if (!casting.allowed) throw new Error("The casting vote is not ready: " + casting.reason);
+        }
+      }
+
       var tx = await contract.vote(proposalId, support);
       await tx.wait();
 

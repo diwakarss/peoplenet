@@ -50,6 +50,7 @@ function parseArgs(argv) {
   // free-text run and nothing in it is mistaken for an option.
   var expectTitle = null;
   var aaoId = AAO_ID;
+  var dryRun = false;
   var positional = [];
   for (var i = 0; i < rest.length; i++) {
     if (rest[i] === "--expect-title" || rest[i] === "--expect") {
@@ -57,10 +58,12 @@ function parseArgs(argv) {
       continue;
     }
     if (rest[i] === "--aao") { aaoId = Number(rest[++i]); continue; }
+    if (rest[i] === "--dry-run") { dryRun = true; continue; }
     positional.push(rest[i]);
   }
   positional.expectTitle = expectTitle;
   positional.aaoId = aaoId;
+  positional.dryRun = dryRun;
   return positional;
 }
 
@@ -68,7 +71,7 @@ function usage(message) {
   console.error(message);
   console.error("");
   console.error('  node scripts/wren-vote.js <proposalId> <for|against> "<reason>" \\');
-  console.error('      [--aao <id>] [--expect-title "..."]');
+  console.error('      [--aao <id>] [--expect-title "..."] [--dry-run]');
   console.error("");
   console.error("  --aao 0   the trilogy widget: Wren has an ordinary vote (the default)");
   console.error("  --aao 1   widget-builder: Wren votes only to break a level tally,");
@@ -80,6 +83,7 @@ async function main() {
   const args = parseArgs(process.argv);
   const expectTitle = args.expectTitle;
   const aaoId = args.aaoId;
+  const dryRun = args.dryRun;
   const [rawId, rawSupport, ...reasonParts] = args;
 
   if (rawId === undefined || rawSupport === undefined) {
@@ -203,6 +207,30 @@ async function main() {
   console.log(`proposal ${proposalId}: ${R.proposalHeadline({ text: before.text })}`);
   console.log(`proposed by ${labelFor(before.proposer)}`);
   console.log(`Wren votes ${choice.toUpperCase()}: ${reason}`);
+
+  // The rehearsal goes here, after every check has run, so what it prints is
+  // what the real run would actually do rather than what it hopes to.
+  if (dryRun) {
+    console.log("");
+    console.log(R.describePlan({
+      standing: [
+        `AAO ${aaoId} "${organisation.topic}": Wren is ` +
+          `${wrenIsOrdinary ? "an ordinary voter" : "the casting vote"}.`,
+        `Proposal ${proposalId} exists, is on AAO ${aaoId}, and is ${STATUS[Number(before.status)]}.`,
+        `Tally now ${Number(before.forVotes)}-${Number(before.againstVotes)}.`,
+        wrenIsOrdinary
+          ? "No casting-vote condition applies."
+          : "The casting-vote condition is met."
+      ],
+      from: wren.address,
+      call: `vote(${proposalId}, ${support})`,
+      effect: `${choice} -> tally would become ` +
+        `${Number(before.forVotes) + (support ? 1 : 0)}-` +
+        `${Number(before.againstVotes) + (support ? 0 : 1)}`,
+      logFile: path.relative(process.cwd(), LOG_PATH)
+    }));
+    return;
+  }
 
   const tx = await aaoFacet.connect(wren).vote(proposalId, support);
   const receipt = await tx.wait();

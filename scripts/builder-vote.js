@@ -20,7 +20,8 @@ process.env.HARDHAT_NETWORK = process.env.HARDHAT_NETWORK || "localhost";
 const fs = require("fs");
 const path = require("path");
 const { ethers } = require("hardhat");
-const { DIAMOND, BUILDER, labelFor, STATUS } = require("../governance/read.js");
+const R = require("../governance/read.js");
+const { DIAMOND, BUILDER, labelFor, STATUS } = R;
 
 const LOG_PATH = path.join(__dirname, "..", "governance", "builder-votes.jsonl");
 const BUILDER_ACCOUNT = 3;
@@ -30,7 +31,7 @@ const DEFAULT_AAO = 1;
 function usage(message) {
   console.error(message);
   console.error("");
-  console.error('  node scripts/builder-vote.js [--aao <id>] <proposalId> <for|against> "<reason>"');
+  console.error('  node scripts/builder-vote.js [--aao <id>] <proposalId> <for|against> "<reason>" [--dry-run]');
   process.exit(1);
 }
 
@@ -38,16 +39,18 @@ function parseArgs(argv) {
   let rest = argv.slice(2);
   if (rest[0] === "--") rest = rest.slice(1);
   let aaoId = DEFAULT_AAO;
+  let dryRun = false;
   const positional = [];
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === "--aao") { aaoId = Number(rest[++i]); continue; }
+    if (rest[i] === "--dry-run") { dryRun = true; continue; }
     positional.push(rest[i]);
   }
-  return { aaoId, positional };
+  return { aaoId, dryRun, positional };
 }
 
 async function main() {
-  const { aaoId, positional } = parseArgs(process.argv);
+  const { aaoId, dryRun, positional } = parseArgs(process.argv);
   const [rawId, rawSupport, ...reasonParts] = positional;
 
   if (rawId === undefined || rawSupport === undefined) {
@@ -106,6 +109,26 @@ async function main() {
   console.log(`AAO ${aaoId}, proposal ${proposalId}: ${before.text}`);
   console.log(`proposed by ${labelFor(before.proposer)}`);
   console.log(`Builder votes ${choice.toUpperCase()}: ${reason}`);
+
+  // The rehearsal goes here, after every check has run, so what it prints is
+  // what the real run would actually do rather than what it hopes to.
+  if (dryRun) {
+    console.log("");
+    console.log(R.describePlan({
+      standing: [
+        `AAO ${aaoId}: the Builder is one of its voters.`,
+        `Proposal ${proposalId} exists, is on AAO ${aaoId}, and is ${STATUS[Number(before.status)]}.`,
+        `Tally now ${Number(before.forVotes)}-${Number(before.againstVotes)}.`
+      ],
+      from: builder.address,
+      call: `vote(${proposalId}, ${support})`,
+      effect: `${choice} -> tally would become ` +
+        `${Number(before.forVotes) + (support ? 1 : 0)}-` +
+        `${Number(before.againstVotes) + (support ? 0 : 1)}`,
+      logFile: path.relative(process.cwd(), LOG_PATH)
+    }));
+    return;
+  }
 
   const tx = await aaoFacet.connect(builder).vote(proposalId, support);
   const receipt = await tx.wait();
