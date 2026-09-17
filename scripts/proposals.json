@@ -1,0 +1,9 @@
+[
+ "2026-09-17 builder S1: make test_zz_no_real_state_written check the widget is idle (or compare shape not mtime) so a live widget writing mid-suite cannot cause a false red.",
+ "2026-09-17 builder S2: extract one shared mtime_cache helper used by citations, gates, precedents and kayako_client (~80 lines and one staleness-bug class removed).",
+ "2026-09-17 builder S3: add a pre-commit grep for chr(8) / raw control characters in tools/floating-assistant/*.py to catch heredoc-mangled regex escapes.",
+ "2026-09-17 builder S4: one turn_context() in output_validator so check_citations, check_macro_names and check_gates agree on what this ticket is about.",
+ "2026-09-17 builder S5: collapse the eight pre-turn stream lines into one summary line with detail on click.",
+ "2026-09-17 builder S6: stamp widget_version into the caselog header and the thread so regressions trace to a release.",
+ "2026-09-17 builder S7: run the macro_audit stale-name report on a schedule (daily at idle), not only inside the full case-review pass."
+]
