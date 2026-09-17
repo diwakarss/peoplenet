@@ -87,6 +87,14 @@ async function main() {
   }
 
   const before = await aaoFacet.getProposal(proposalId);
+  // A vote on an id nobody has filed goes through, and then BLOCKS the real proposal
+  // when it arrives. An unfiled slot reads back with the zero proposer and empty text.
+  if (!before.proposer || /^0x0+$/.test(String(before.proposer)) || !String(before.text).trim()) {
+    throw new Error(
+      `Proposal ${proposalId} has not been filed (no proposer, no text). Check ` +
+      `scripts/tally.js for the ids that exist. Refusing to vote on an empty slot: the ` +
+      `vote would stand and block the real proposal when it is filed.`);
+  }
   if (Number(before.aaoId) !== aaoId) {
     throw new Error(`Proposal ${proposalId} belongs to AAO ${Number(before.aaoId)}, not ${aaoId}. ` +
                     `Pass --aao ${Number(before.aaoId)} if that is the one you meant.`);
