@@ -45,33 +45,43 @@
 
 * { box-sizing: border-box; }
 
+/* 27.11: the page never scrolls. The window is the frame; the long things scroll
+ * inside their own pane. The whole layout is built around that one rule. */
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
   font: 15px/1.6 var(--sans);
   -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
 }
 
 code, .addr, .pre { font-family: var(--mono); font-size: .86em; }
 
-.page {
-  max-width: 820px;
-  margin: 0 auto;
-  padding: 44px 24px 80px;
-}
-
 /* --- masthead ----------------------------------------------------------- */
 
 .masthead {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 11px 24px 9px;
   border-bottom: 3px double var(--rule);
-  padding-bottom: 16px;
-  margin-bottom: 20px;
+  background: var(--form);
 }
 
+.masthead-left { display: flex; align-items: baseline; gap: 12px; }
+
 .masthead-org {
-  margin: 0;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: .22em;
   text-transform: uppercase;
@@ -79,59 +89,68 @@ code, .addr, .pre { font-family: var(--mono); font-size: .86em; }
 }
 
 .masthead-title {
-  margin: 4px 0 0;
+  margin: 0;
   font-family: var(--serif);
-  font-size: 32px;
+  font-size: 21px;
   font-weight: 400;
   letter-spacing: -.01em;
   line-height: 1.15;
 }
 
-.masthead-sub {
-  margin: 6px 0 0;
-  font-size: 12.5px;
-  color: var(--ink-soft);
-}
-
-.status-line {
-  margin-top: 14px;
+.masthead-right {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 13px;
   flex-wrap: wrap;
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
 .muted { color: var(--ink-faint); font-variant-numeric: tabular-nums; }
 
-.notify-toggle {
-  margin-left: auto;
-  font-size: 11.5px;
-  padding: 3px 10px;
+.mini { font-size: 11px; padding: 3px 9px; }
+
+/* The notice is one click, and it lays over the frame rather than pushing it. */
+.notice { position: relative; }
+
+.notice > summary {
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  list-style: none;
 }
 
-/* --- notice ------------------------------------------------------------- */
+.notice > summary::-webkit-details-marker { display: none; }
+.notice > summary::before { content: "\25B8\00A0"; }
+.notice[open] > summary::before { content: "\25BE\00A0"; }
+.notice > summary:hover { color: var(--accent); }
 
-.banner {
-  margin: 0 0 24px;
+.notice-body {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 20;
+  width: min(460px, 80vw);
+  margin-top: 8px;
   padding: 12px 15px;
   background: var(--form);
   border: 1px solid var(--rule);
   border-left: 4px solid var(--accent);
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.55;
   color: var(--ink-soft);
 }
 
-.banner strong { color: var(--ink); }
-
 /* --- view tabs ---------------------------------------------------------- */
 
 .views {
+  flex: 0 0 auto;
   display: flex;
   gap: 0;
+  padding: 0 24px;
   border-bottom: 1px solid var(--rule);
-  margin-bottom: 26px;
+  background: var(--form);
 }
 
 .view-tab {
@@ -157,15 +176,54 @@ code, .addr, .pre { font-family: var(--mono); font-size: .86em; }
   font-weight: 600;
 }
 
-/* --- blocks ------------------------------------------------------------- */
+/* --- the frame: one window, no page scroll (27.11) ---------------------- */
 
-.block {
-  margin-bottom: 30px;
-  padding-bottom: 26px;
-  border-bottom: 1px solid var(--rule-soft);
+.frame {
+  flex: 1 1 auto;
+  min-height: 0;          /* so the stage can shrink instead of pushing the page */
+  overflow: hidden;
+  display: flex;
 }
 
-.block:last-child { border-bottom: none; }
+.view {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.view[hidden] { display: none; }
+
+/* Fixed above the stage: the things you steer with. */
+.controls {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--form);
+}
+
+.controls-plain { display: block; }
+.controls-plain .block-head { margin-bottom: 4px; }
+.controls-plain .block-note { margin: 0; }
+
+/* The one pane that scrolls, and it scrolls inside itself. */
+.stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 18px 24px 26px;
+}
+
+.stage > :last-child { margin-bottom: 0; }
+
+/* --- blocks ------------------------------------------------------------- */
 
 .block-head {
   margin: 0 0 12px;
@@ -195,49 +253,136 @@ code, .addr, .pre { font-family: var(--mono); font-size: .86em; }
   color: var(--ink-soft);
 }
 
-.list-head {
+/* --- organisation bar --------------------------------------------------- */
+
+.orgbar {
+  flex: 0 0 auto;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 16px;
   flex-wrap: wrap;
+  padding: 7px 24px;
+  border-bottom: 1px solid var(--rule-soft);
+  background: var(--form);
+  position: relative;
+  z-index: 10;
 }
 
-/* --- organisations ------------------------------------------------------ */
-
-.aao-tabs { display: flex; flex-direction: column; border-top: 1px solid var(--rule); }
+.orgbar-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .aao-tab {
-  display: block;
-  width: 100%;
-  text-align: left;
   font: inherit;
-  color: var(--ink);
-  background: var(--form);
-  border: none;
-  border-bottom: 1px solid var(--rule);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--rule);
   border-radius: 0;
-  padding: 11px 15px;
+  padding: 3px 11px;
   cursor: pointer;
 }
 
-.aao-tab:hover { background: var(--accent-soft); }
+.aao-tab:hover { background: var(--accent-soft); color: var(--ink); }
 
 .aao-tab.is-current {
-  border-left: 4px solid var(--accent);
-  padding-left: 11px;
+  color: var(--ink);
   background: var(--accent-soft);
+  border-color: var(--accent);
+  font-weight: 600;
 }
 
-.aao-tab-topic {
-  font-family: var(--serif);
-  font-size: 15.5px;
-  margin-right: 10px;
+.aao-tab-topic { font-family: var(--serif); font-size: 13.5px; }
+.aao-tab-count { margin-left: 7px; font-size: 11px; color: var(--ink-faint); }
+
+/* Organisation detail is one click and lays over the frame. */
+.org-details { position: relative; }
+
+.org-details > summary {
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  list-style: none;
 }
 
-.aao-tab.is-current .aao-tab-topic { font-weight: 700; }
+.org-details > summary::-webkit-details-marker { display: none; }
+.org-details > summary::before { content: "\25B8\00A0"; }
+.org-details[open] > summary::before { content: "\25BE\00A0"; }
+.org-details > summary:hover { color: var(--accent); }
 
-.aao-tab-note { font-size: 12px; color: var(--ink-soft); }
+.org-body {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 20;
+  width: min(560px, 88vw);
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-top: 8px;
+  padding: 14px 16px;
+  background: var(--form);
+  border: 1px solid var(--rule);
+}
+
+/* --- filters and the pager (27.11) -------------------------------------- */
+
+.filters { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.filter-chip {
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.filter-chip:hover { background: var(--accent-soft); color: var(--ink); }
+
+.filter-chip.is-current {
+  color: var(--ink);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.filter-chip .filter-n { margin-left: 6px; color: var(--ink-faint); font-family: var(--mono); font-size: 10.5px; }
+
+.pager { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.counter {
+  font-size: 12px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  min-width: 10em;
+  text-align: center;
+}
+
+.jump { display: flex; align-items: center; gap: 6px; }
+
+.jump-label {
+  font-size: 10.5px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.jump-input {
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 12px;
+  width: 5em;
+  padding: 3px 7px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 0;
+}
+
+.jump-input:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* --- facts -------------------------------------------------------------- */
 
@@ -811,10 +956,29 @@ button.casting:not(:disabled), button.close-tie:not(:disabled) {
 .proposal-list .empty, .stream .empty { list-style: none; }
 
 .foot {
-  margin-top: 36px;
-  padding-top: 18px;
+  flex: 0 0 auto;
+  padding: 7px 24px;
   border-top: 3px double var(--rule);
+  background: var(--form);
   color: var(--ink-faint);
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+
+/* --- the one proposal on the stage -------------------------------------- */
+
+/* One at a time, so the card is the page: no bottom margin fighting the pane. */
+.stage > .proposal { margin-bottom: 0; }
+
+.stage-empty {
+  padding: 26px 20px;
+  background: var(--form);
+  border: 1px solid var(--rule-soft);
+  color: var(--ink-faint);
+  font-size: 13.5px;
+}
+
+.stage-empty b { color: var(--ink); font-weight: 600; }

@@ -54,9 +54,14 @@
 
   var view = remember("governance.view", "governance");
   var selectedAaoId = Number(remember("governance.aao", "0"));
-  var hideClosed = remember("governance.hideClosed", "0") === "1";
   var searchQuery = "";
   var treeOpen = {};
+
+  // One at a time (27.11): which filter, and which card the Director is on.
+  // The cursor is a card key, not an index, so a refresh that changes the list
+  // does not silently move the Director to a different proposal.
+  var filterKey = remember("governance.filter", "mine");
+  var cursorId = null;
 
   function remember(key, fallback) {
     try {
@@ -159,21 +164,23 @@
   function renderAaoTabs(data) {
     var host = byId("aao-tabs");
     host.textContent = "";
-    data.aaos.forEach(function (aao, index) {
+    data.aaos.forEach(function (aao) {
       var tab = el("button", "aao-tab" + (aao.id === data.aao.id ? " is-current" : ""));
       tab.type = "button";
-      tab.appendChild(el("span", "num", "1.1." + (index + 1)));
+      tab.title = aao.note || "";
       tab.appendChild(el("span", "aao-tab-topic", aao.topic));
-      tab.appendChild(el("span", "aao-tab-note",
-        (aao.note || "") + " " + aao.members.length + " members."));
+      var count = (data.allProposals || []).filter(function (p) { return p.aaoId === aao.id; }).length;
+      tab.appendChild(el("span", "aao-tab-count", count));
       tab.addEventListener("click", function () { selectAao(aao.id); });
       host.appendChild(tab);
     });
+    byId("org-summary").textContent = data.aao.topic + " · " + data.aao.members.length + " members";
   }
 
   function selectAao(id) {
     if (selectedAaoId === id) return;
     selectedAaoId = id;
+    cursorId = null;            // a different organisation starts at its first card
     store("governance.aao", id);
     refresh();
   }
@@ -188,9 +195,6 @@
     creator.textContent = "";
     creator.appendChild(el("span", null, aao.creatorLabel + " "));
     creator.appendChild(el("span", "addr", aao.creator));
-
-    byId("fact-members").textContent =
-      aao.members.length + (aao.active ? "" : " (organisation inactive)");
 
     var list = byId("members");
     list.textContent = "";
@@ -335,12 +339,9 @@
 
   // --- filing a proposal from the page (27.6a) ---------------------------
 
+  // The container in the organisation bar is already the one click, so this
+  // returns the form itself -- a fold inside a fold is not allowed (27.6a).
   function renderNewProposalForm(data) {
-    var fold = el("details", "new-proposal");
-    fold.open = newProposal.open || Boolean(newProposal.error || newProposal.busy);
-    fold.addEventListener("toggle", function () { newProposal.open = fold.open; });
-    fold.appendChild(el("summary", null, "File a new proposal"));
-
     var form = el("form", "np-form");
     var fields = [
       ["title", "Title", "One line.", false, true],
@@ -390,8 +391,7 @@
       fileProposal();
     });
 
-    fold.appendChild(form);
-    return fold;
+    return form;
   }
 
   function draftDocument() {
@@ -667,8 +667,9 @@
     var card = el("li", "proposal");
     card.id = "p-" + p.id;
 
+    // The counter above the stage says where in the flow this is; the card says
+    // which proposal it is, which is the number everyone quotes.
     var head = el("div", "proposal-head");
-    head.appendChild(el("span", "num", "1.4." + (index + 1)));
     head.appendChild(el("span", "pid", "#" + p.id));
     head.appendChild(el("span", "chip chip-" + p.statusLabel.toLowerCase(), p.statusLabel));
     var by = el("span", "by");
@@ -902,23 +903,35 @@
     host.appendChild(root);
   }
 
+  // One at a time, so "go to" is not a scroll: it is a move of the cursor, and
+  // it widens the filter when the wanted card is not under the current one --
+  // silently showing nothing would be the worse answer.
   function goToProposal(aaoId, proposalId) {
     setView("governance");
     if (Number(aaoId) !== currentAaoId()) {
       selectAao(Number(aaoId));
-      window.setTimeout(function () { scrollToProposal(proposalId); }, 900);
+      pendingJump = Number(proposalId);
       return;
     }
-    scrollToProposal(proposalId);
+    showProposal(Number(proposalId));
   }
 
-  function scrollToProposal(proposalId) {
+  function showProposal(proposalId) {
+    var key = "p" + proposalId;
+    if (!visibleCards(lastData).some(function (c) { return c.key === key; })) {
+      filterKey = "all";
+      store("governance.filter", filterKey);
+    }
+    cursorId = key;
+    render(lastData);
     var card = byId("p-" + proposalId);
     if (!card) return;
-    card.scrollIntoView({ behavior: "smooth", block: "center" });
     card.classList.add("is-target");
     window.setTimeout(function () { card.classList.remove("is-target"); }, 2400);
   }
+
+  // Set when a jump has to wait for an organisation switch to land.
+  var pendingJump = null;
 
   // --- global search (27.3) ----------------------------------------------
 
@@ -1188,40 +1201,155 @@
     try { input.setSelectionRange(mark.start, mark.end); } catch (e) { /* not a text input */ }
   }
 
+  // --- one at a time (27.11) ---------------------------------------------
+
+  // The filters, in the order 27.11 names them. Each is a plain predicate, so
+  // the counts on the chips and the list under the pager come from one place.
+  var FILTERS = [
+    {
+      key: "mine", label: "Open for my vote",
+      test: function (p) { return p.status === 0 && !closedByBuild(p) && !R.hasVoted(p, R.DIRECTOR); }
+    },
+    {
+      key: "tied", label: "Tied",
+      test: function (p) { return R.castingVoteState(p).allowed; }
+    },
+    {
+      key: "executed", label: "Executed",
+      test: function (p) { return p.status === 1; }
+    },
+    {
+      key: "rejected", label: "Rejected",
+      test: function (p) { return p.status === 2; }
+    },
+    {
+      key: "closed", label: "Closed by a build",
+      test: function (p) { return Boolean(closedByBuild(p)); }
+    },
+    { key: "all", label: "All", test: function () { return true; } }
+  ];
+
+  function filterByKey(key) {
+    return FILTERS.filter(function (f) { return f.key === key; })[0] || FILTERS[0];
+  }
+
+  // What the flow is showing right now: this organisation's proposals and drafts
+  // through the current filter, pinned ones first.
+  function visibleCards(data) {
+    if (!data) return [];
+    var test = filterByKey(filterKey).test;
+    var cards = data.proposals.filter(test).map(function (p) {
+      return { kind: "proposal", id: p.id, key: "p" + p.id, proposal: p };
+    });
+    return cards.sort(function (a, b) {
+      var pinned = (pinnedFirst(b) ? 1 : 0) - (pinnedFirst(a) ? 1 : 0);
+      return pinned !== 0 ? pinned : a.id - b.id;
+    });
+  }
+
+  // Filled in by 27.12: a trigger that fired pins its proposal to the front.
+  function pinnedFirst() { return false; }
+
+  // Filled in by 27.12(3): a decision message that closes the card.
+  function closedByBuild() { return null; }
+
+  function cursorIndex(cards) {
+    if (!cards.length) return -1;
+    if (cursorId === null) return 0;
+    for (var i = 0; i < cards.length; i++) {
+      if (cards[i].key === cursorId) return i;
+    }
+    return 0;   // the card fell out of the filter; start again at the front
+  }
+
+  function renderFilters(data) {
+    var host = byId("filters");
+    host.textContent = "";
+    FILTERS.forEach(function (f) {
+      var n = data ? data.proposals.filter(f.test).length : 0;
+      var chip = el("button", "filter-chip" + (f.key === filterKey ? " is-current" : ""));
+      chip.type = "button";
+      chip.appendChild(document.createTextNode(f.label));
+      chip.appendChild(el("span", "filter-n", n));
+      chip.addEventListener("click", function () { setFilter(f.key); });
+      host.appendChild(chip);
+    });
+  }
+
+  function setFilter(key) {
+    filterKey = key;
+    cursorId = null;
+    store("governance.filter", key);
+    render(lastData);
+  }
+
+  function step(delta) {
+    var cards = visibleCards(lastData);
+    var at = cursorIndex(cards);
+    if (at < 0) return;
+    var next = at + delta;
+    if (next < 0 || next >= cards.length) return;
+    cursorId = cards[next].key;
+    render(lastData);
+  }
+
+  function renderPager(cards, at) {
+    byId("counter").textContent = cards.length
+      ? "proposal " + (at + 1) + " of " + cards.length
+      : "nothing to show";
+    byId("prev").disabled = at <= 0;
+    byId("next").disabled = at < 0 || at >= cards.length - 1;
+  }
+
+  function renderStage(data) {
+    var host = byId("stage");
+    host.textContent = "";
+
+    var cards = visibleCards(data);
+    var at = cursorIndex(cards);
+    renderPager(cards, at);
+
+    if (!cards.length) {
+      var f = filterByKey(filterKey);
+      var empty = el("div", "stage-empty");
+      empty.appendChild(document.createTextNode("Nothing under "));
+      empty.appendChild(el("b", null, f.label.toLowerCase()));
+      empty.appendChild(document.createTextNode(
+        data && data.proposals.length
+          ? ". " + data.proposals.length + " proposals on this organisation — try another filter."
+          : ". No proposals on this organisation yet."
+      ));
+      host.appendChild(empty);
+      return;
+    }
+
+    var card = cards[at];
+    cursorId = card.key;
+    host.appendChild(renderProposal(card.proposal, data.aao, at));
+  }
+
   function render(data) {
     if (!data) return;
     var mark = captureFocus();
+    var scrolled = byId("stage").scrollTop;
     lastData = data;
 
     renderHeader(data);
     renderAaoTabs(data);
     renderOrganisation(data);
     renderStream(data);
-
-    var all = data.proposals;
-    var shown = hideClosed ? all.filter(function (p) { return p.status === 0; }) : all;
-
-    byId("proposal-count").textContent = shown.length === all.length
-      ? "(" + all.length + ")"
-      : "(" + shown.length + " of " + all.length + ")";
+    renderFilters(data);
 
     var filing = byId("file-proposal");
     filing.textContent = "";
     filing.appendChild(renderNewProposalForm(data));
 
-    var host = byId("proposals");
-    host.textContent = "";
-    if (!all.length) {
-      host.appendChild(el("li", "empty", "No proposals on this organisation yet."));
-    } else if (!shown.length) {
-      host.appendChild(el("li", "empty", "Every proposal is closed. Untick “Hide closed” to see them."));
-    } else {
-      shown.forEach(function (p, i) { host.appendChild(renderProposal(p, data.aao, i)); });
-    }
+    renderStage(data);
 
     if (view === "structure") renderTree(data);
     if (view === "search") renderSearch(data);
 
+    byId("stage").scrollTop = scrolled;
     restoreFocus(mark);
   }
 
@@ -1298,6 +1426,11 @@
       setConnection("ok", "chain " + R.CHAIN_ID);
       render(data);
       checkNotifications(data);
+      if (pendingJump !== null) {
+        var wanted = pendingJump;
+        pendingJump = null;
+        showProposal(wanted);
+      }
     } catch (e) {
       setConnection("err", "no chain at " + R.RPC_URL);
       console.error(e);
@@ -1325,12 +1458,27 @@
   });
   setView(view);
 
-  var hideClosedBox = byId("hide-closed");
-  hideClosedBox.checked = hideClosed;
-  hideClosedBox.addEventListener("change", function () {
-    hideClosed = hideClosedBox.checked;
-    store("governance.hideClosed", hideClosed ? "1" : "0");
-    render(lastData);
+  byId("prev").addEventListener("click", function () { step(-1); });
+  byId("next").addEventListener("click", function () { step(1); });
+
+  // The jump box takes a proposal number and goes to it, whatever the filter is.
+  var jumpInput = byId("jump-input");
+  byId("jump-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    var wanted = Number(String(jumpInput.value).replace(/[^0-9]/g, ""));
+    if (!Number.isInteger(wanted)) return;
+    jumpInput.value = "";
+    goToProposal(aaoOfProposal(wanted), wanted);
+  });
+
+  // Left and right move through the flow, when the Director is not typing.
+  document.addEventListener("keydown", function (event) {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    var tag = (document.activeElement && document.activeElement.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    if (view !== "governance") return;
+    if (event.key === "ArrowLeft") { step(-1); event.preventDefault(); }
+    if (event.key === "ArrowRight") { step(1); event.preventDefault(); }
   });
 
   var searchInput = byId("search-input");
@@ -1346,12 +1494,12 @@
   // A link straight to a card, from a notification or a pasted URL.
   window.addEventListener("hashchange", function () {
     var m = /^#p-(\d+)$/.exec(window.location.hash);
-    if (m) scrollToProposal(Number(m[1]));
+    if (m) showProposal(Number(m[1]));
   });
 
   refresh().then(function () {
     var m = /^#p-(\d+)$/.exec(window.location.hash);
-    if (m) scrollToProposal(Number(m[1]));
+    if (m) showProposal(Number(m[1]));
   });
 
   provider.on("block", function () { refresh(); });
@@ -1376,6 +1524,11 @@
     selectAao: selectAao,
     search: function (q) { searchQuery = q; byId("search-input").value = q; renderSearch(lastData); },
     tree: function () { return treeOpen; },
-    goToProposal: goToProposal
+    goToProposal: goToProposal,
+    showProposal: showProposal,
+    setFilter: setFilter,
+    step: step,
+    cards: function () { return visibleCards(lastData); },
+    filterKey: function () { return filterKey; }
   };
 })();
