@@ -15,6 +15,20 @@ const ethers = require("ethers");
 const R = require("./read.js");
 const P = require("./protocol.js");
 const A = require("./adoption.js");
+const W = require("./watch.js");
+const path = require("path");
+const fs = require("fs");
+const os = require("os");
+
+// The trigger evaluator is tested against fixtures under governance/fixtures,
+// never against the real incidents file: a check that reads the widget's own
+// log would go red or green for reasons nothing here controls.
+const FIXTURES = {
+  incidentsFile: path.join(__dirname, "fixtures", "incidents.jsonl"),
+  versionFile: path.join(__dirname, "fixtures", "version.py"),
+  reportDir: path.join(__dirname, "fixtures", "reports"),
+  widgetRepo: path.join(__dirname, "fixtures", "no-such-repo")
+};
 
 const PAGE_URL = process.env.GOVERNANCE_URL ||
   `http://${process.env.GOVERNANCE_HOST || "127.0.0.1"}:${process.env.GOVERNANCE_PORT || 8787}`;
@@ -263,6 +277,16 @@ async function main() {
 
   check("every record names a proposal, a direction and a reason", () => {
     wrenRecords.forEach((record, i) => {
+      // A correction is Wren writing down that an earlier record was wrong. The
+      // log is append-only, so that is the only way to say so: it names no
+      // proposal, carries no direction, and indexWrenVotes skips it.
+      if (record.correction) {
+        assert.ok(
+          typeof record.reason === "string" && record.reason.trim().length > 0,
+          `correction ${i} has no reason`
+        );
+        return;
+      }
       assert.ok(Number.isInteger(record.proposalId), `record ${i} has no proposalId`);
       assert.strictEqual(typeof record.support, "boolean", `record ${i} has no support flag`);
       assert.ok(
@@ -478,6 +502,63 @@ async function main() {
         `translation ${p.id} is just a copy of the chain text`);
     }
   });
+
+  // --- the trigger evaluator (27.12 (2)) ---------------------------------
+
+  const triggerChecks = [];
+  function triggerCheck(name, fn) { triggerChecks.push({ name, fn }); }
+
+  function withTrigger(rule, filedAt, extra) {
+    return Object.assign({
+      id: 99,
+      aaoId: 0,
+      text: "",
+      format: {
+        legacy: false,
+        doc: Object.assign({
+          title: "t", summary: "s", why: "w",
+          filed_at: filedAt || "2026-09-10T00:00:00Z",
+          trigger: { text: "when the thing happens", rule: rule }
+        }, (extra || {}).doc || {})
+      },
+      createdAt: 0
+    }, extra || {});
+  }
+
+  check("a trigger rule is parsed, and a bad one says why", () => {
+    assert.strictEqual(W.parseRule("date:2026-01-01").kind, "date");
+    assert.strictEqual(W.parseRule("count:x.json:5").kind, "count");
+    assert.ok(W.parseRule("nonsense").error, "a rule with no kind should error");
+    assert.ok(W.parseRule("teleport:now").error, "an unknown kind should error");
+    assert.ok(W.parseRule("date:").error, "a rule with no argument should error");
+  });
+
+  check("the glob matches the way a person would read it", () => {
+    const cases = [
+      ["tools/fa/citations.py", "tools/fa/*.py", true],
+      ["tools/fa/sub/x.py", "tools/fa/*.py", false],
+      ["tools/fa/sub/x.py", "tools/**/*.py", true],
+      ["tools/fa/gates.py", "tools/fa/{citations,gates}.py", true],
+      ["tools/fa/other.py", "tools/fa/{citations,gates}.py", false],
+      ["a.b.c", "a.b.c", true],
+      ["aXbXc", "a.b.c", false]
+    ];
+    cases.forEach(([file, glob, want]) => {
+      assert.strictEqual(
+        W.globToRegExp(glob).test(file), want,
+        `glob ${glob} against ${file}`
+      );
+    });
+  });
+
+  check("triggerOf reads a trigger, and ignores a proposal without one", () => {
+    assert.ok(W.triggerOf(withTrigger("date:2020-01-01")));
+    assert.strictEqual(W.triggerOf({ format: { doc: { title: "t" } } }), null);
+    assert.strictEqual(W.triggerOf({ format: { legacy: true, doc: null } }), null);
+  });
+
+  console.log("");
+  console.log("trigger evaluator (fixtures only, never the real incidents file):");
 
   // --- adoption and waiting (27.9) ---------------------------------------
 
@@ -711,6 +792,201 @@ async function main() {
     assert.strictEqual(message.subject, "s");
     assert.strictEqual(P.validate(message).ok, true);
   });
+
+  // --- the trigger rules, evaluated against fixtures ---------------------
+
+  async function checkAsync(name, fn) {
+    await fn();
+    checks.push(name);
+  }
+
+  await checkAsync("incident-key fires only on an incident filed after the proposal", async () => {
+    // The fixture has two "stale-cache" incidents: 2026-09-01 and 2026-09-18.
+    const earlyProposal = withTrigger("incident-key:stale-cache", "2026-09-10T00:00:00Z");
+    const early = await W.evaluate(W.triggerOf(earlyProposal), earlyProposal, FIXTURES);
+    assert.strictEqual(early.fired, true, early.because);
+
+    const lateProposal = withTrigger("incident-key:stale-cache", "2026-09-20T00:00:00Z");
+    const late = await W.evaluate(W.triggerOf(lateProposal), lateProposal, FIXTURES);
+    assert.strictEqual(late.fired, false, "an incident from before the proposal is not news");
+
+    const noneProposal = withTrigger("incident-key:never-happened", "2026-01-01T00:00:00Z");
+    const none = await W.evaluate(W.triggerOf(noneProposal), noneProposal, FIXTURES);
+    assert.strictEqual(none.fired, false, none.because);
+  });
+
+  await checkAsync("version fires when the widget reaches it, and not before", async () => {
+    // The fixture says VERSION = "1.4.0".
+    const cases = [["1.3.0", true], ["1.4.0", true], ["1.5.0", false], ["2.0.0", false]];
+    for (const [want, fired] of cases) {
+      const proposal = withTrigger("version:" + want);
+      const result = await W.evaluate(W.triggerOf(proposal), proposal, FIXTURES);
+      assert.strictEqual(result.fired, fired, `version:${want} -- ${result.because}`);
+    }
+  });
+
+  await checkAsync("date fires once the date has passed", async () => {
+    const past = withTrigger("date:2020-01-01");
+    const future = withTrigger("date:2099-01-01");
+    assert.strictEqual((await W.evaluate(W.triggerOf(past), past, FIXTURES)).fired, true);
+    assert.strictEqual((await W.evaluate(W.triggerOf(future), future, FIXTURES)).fired, false);
+    const bad = withTrigger("date:not-a-date");
+    assert.strictEqual((await W.evaluate(W.triggerOf(bad), bad, FIXTURES)).fired, false);
+  });
+
+  await checkAsync("count fires when a report crosses the line", async () => {
+    // stale-names.json holds {"count": 42}; bare.txt holds 7.
+    const cases = [
+      ["count:stale-names.json:40", true],
+      ["count:stale-names.json:42", true],
+      ["count:stale-names.json:50", false],
+      ["count:bare.txt:5", true],
+      ["count:bare.txt:9", false],
+      ["count:no-such-report.json:1", false]
+    ];
+    for (const [rule, fired] of cases) {
+      const proposal = withTrigger(rule);
+      const result = await W.evaluate(W.triggerOf(proposal), proposal, FIXTURES);
+      assert.strictEqual(result.fired, fired, `${rule} -- ${result.because}`);
+    }
+  });
+
+  await checkAsync("a count rule may not read outside the reports directory", async () => {
+    const proposal = withTrigger("count:../../package.json:1");
+    const result = await W.evaluate(W.triggerOf(proposal), proposal, FIXTURES);
+    assert.strictEqual(result.fired, false);
+    assert.ok(/outside the reports directory/.test(result.because), result.because);
+  });
+
+  await checkAsync("a broken rule reports itself instead of firing", async () => {
+    for (const rule of ["nonsense", "teleport:now", "date:"]) {
+      const proposal = withTrigger(rule);
+      const trigger = W.triggerOf(proposal) || { rule: rule, parsed: W.parseRule(rule) };
+      const result = await W.evaluate(trigger, proposal, FIXTURES);
+      assert.strictEqual(result.fired, false, rule);
+      assert.ok(result.because, `${rule} gave no reason`);
+    }
+  });
+
+  await checkAsync("a fired trigger posts one message, and only one", async () => {
+    const os = require("os");
+    const tmp = path.join(os.tmpdir(), "governance-watch-check-" + Date.now() + ".jsonl");
+    const proposal = withTrigger("date:2020-01-01");
+    proposal.id = 4242;
+
+    const first = await W.runOnce([proposal], Object.assign({}, FIXTURES, { messagesFile: tmp }));
+    assert.strictEqual(first.fired.length, 1, "the first pass should fire");
+    const message = first.fired[0].message;
+    assert.strictEqual(message.from, "watch");
+    assert.strictEqual(message.type, "status");
+    assert.strictEqual(P.validate(message).ok, true, P.validate(message).errors.join("; "));
+    assert.deepStrictEqual(message.refs, ["proposal 4242"]);
+    assert.ok(/when the thing happens/.test(message.summary), message.summary);
+
+    const second = await W.runOnce([proposal], Object.assign({}, FIXTURES, { messagesFile: tmp }));
+    assert.strictEqual(second.fired.length, 0, "a trigger that fired must not fire again");
+
+    fs.unlinkSync(tmp);
+  });
+
+  await checkAsync("a proposal with no trigger is never touched", async () => {
+    const os = require("os");
+    const tmp = path.join(os.tmpdir(), "governance-watch-none-" + Date.now() + ".jsonl");
+    const plain = { id: 7, aaoId: 0, format: { legacy: false, doc: { title: "t" } } };
+    const result = await W.runOnce([plain], Object.assign({}, FIXTURES, { messagesFile: tmp }));
+    assert.strictEqual(result.fired.length, 0);
+    assert.strictEqual(result.looked.length, 0);
+    assert.strictEqual(fs.existsSync(tmp), false, "nothing should have been written");
+  });
+
+  // --- how each organisation decides -------------------------------------
+
+  check("each organisation has a rule set with plain-English lines", () => {
+    for (const a of aaos) {
+      const rules = R.rulesFor(a);
+      assert.ok(Array.isArray(rules.plain) && rules.plain.length,
+        `AAO ${a.id} ("${a.topic}") has no plain-English rules`);
+      rules.plain.forEach((line) => {
+        assert.ok(typeof line === "string" && line.trim(), `AAO ${a.id} has an empty rule line`);
+      });
+    }
+  });
+
+  check("the Director votes on the main organisation and watches the sub-AAO", () => {
+    const main = R.rulesFor("trilogy widget");
+    const sub = R.rulesFor("widget-builder");
+
+    assert.strictEqual(R.voterProblem(main, R.DIRECTOR), null, "the Director votes on the main AAO");
+    assert.strictEqual(R.voterProblem(main, R.WREN), null);
+    assert.ok(R.voterProblem(sub, R.DIRECTOR), "the Director must not vote on the sub-AAO");
+    assert.ok(/watches/.test(R.voterProblem(sub, R.DIRECTOR)), R.voterProblem(sub, R.DIRECTOR));
+    assert.strictEqual(R.voterProblem(sub, R.BUILDER), null);
+    assert.strictEqual(R.voterProblem(sub, R.WIDGET), null);
+    assert.strictEqual(R.voterProblem(sub, R.WREN), null, "Wren is the sub-AAO's casting vote");
+    assert.strictEqual(R.sameAddress(sub.casting, R.WREN), true);
+    assert.strictEqual(R.sameAddress(main.casting, R.CASTING), true);
+  });
+
+  check("the sub-AAO executes automatically, on the rules it publishes", () => {
+    const sub = R.rulesFor("widget-builder");
+    const now = 1000000;
+    const make = (f, a, voters, ageHours) => ({
+      status: 0, forVotes: f, againstVotes: a,
+      createdAt: now - ageHours * 3600,
+      votes: voters.map((v) => ({ voter: v, support: true }))
+    });
+
+    const both = R.autoExecuteState(sub, make(2, 0, [R.BUILDER, R.WIDGET], 1), now);
+    assert.strictEqual(both.should, true, both.reason);
+    assert.strictEqual(R.sameAddress(both.by, R.WREN), true, "the sub-AAO executes as Wren");
+
+    const level = R.autoExecuteState(sub, make(1, 1, [R.BUILDER, R.WIDGET], 1), now);
+    assert.strictEqual(level.should, false);
+    assert.strictEqual(level.tied, true, "a level tally with both votes in notifies Wren");
+
+    const fresh = R.autoExecuteState(sub, make(1, 0, [R.BUILDER], 1), now);
+    assert.strictEqual(fresh.should, false, "a builder-only vote waits out the window");
+
+    const aged = R.autoExecuteState(sub, make(1, 0, [R.BUILDER], 25), now);
+    assert.strictEqual(aged.should, true, aged.reason);
+
+    const none = R.autoExecuteState(sub, make(0, 0, [], 48), now);
+    assert.strictEqual(none.should, false, "no votes, nothing to execute");
+
+    const main = R.rulesFor("trilogy widget");
+    assert.strictEqual(R.autoExecuteState(main, make(1, 0, [R.DIRECTOR], 1), now).should, false,
+      "the main organisation executes on the Director's vote, not on a timer");
+  });
+
+  // --- the vote guard ----------------------------------------------------
+
+  check("a vote on an unfiled proposal id is refused", () => {
+    // The bug this closes: AAOFacet.vote() accepts an id that was never filed,
+    // records hasVoted against the zero struct, and the real vote is then
+    // refused with "Already voted". A vote was lost that way on id 27.
+    assert.ok(R.voteTargetProblem(27, { text: "", createdAt: 0 }));
+    assert.ok(R.voteTargetProblem(27, { text: "   ", createdAt: 0 }));
+    assert.ok(R.voteTargetProblem(27, { text: "something", createdAt: 0 }));
+    assert.strictEqual(R.voteTargetProblem(3, { text: "filed", createdAt: 123 }), null);
+  });
+
+  check("a vote is refused when the proposal is not the one you read", () => {
+    const filed = { text: JSON.stringify({ title: "A thing", summary: "s", why: "w" }), createdAt: 1 };
+    assert.ok(R.voteTargetProblem(3, filed, { title: "Another thing" }));
+    assert.strictEqual(R.voteTargetProblem(3, filed, { title: "  a  THING " }), null);
+    assert.ok(R.voteTargetProblem(3, filed, { text: "different text entirely" }));
+    assert.strictEqual(R.voteTargetProblem(3, filed, { text: filed.text }), null);
+  });
+
+  check("every proposal on chain would pass the vote guard", () => {
+    for (const p of allProposals) {
+      assert.strictEqual(
+        R.voteTargetProblem(p.id, p), null,
+        `proposal ${p.id} would be refused by the vote guard`
+      );
+    }
+  });
+
 
   console.log("");
   for (const name of checks) console.log(`  ok  ${name}`);

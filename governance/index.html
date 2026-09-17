@@ -48,6 +48,7 @@
 
       <div class="orgbar">
         <div class="orgbar-tabs" id="aao-tabs"></div>
+        <p class="orgbar-rule" id="orgbar-rule"></p>
         <details class="org-details" id="file-fold">
           <summary>File a proposal</summary>
           <div class="org-body" id="file-proposal"></div>
@@ -62,12 +63,7 @@
               <dt>Created</dt><dd id="fact-created">&mdash;</dd>
             </dl>
             <ol class="members" id="members"></ol>
-            <p class="rule">
-              One member, one vote. <code>executeProposal</code> passes a proposal only on
-              <em>for &gt; against</em>, so a 1&ndash;1 tie rejects. The tie-break lives in
-              membership: the Director&rsquo;s casting vote is a third member whose vote this page
-              offers <strong>only</strong> when the Director and Wren have both voted and are tied.
-            </p>
+            <ol class="rules" id="rules"></ol>
           </div>
         </details>
       </div>

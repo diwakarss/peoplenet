@@ -50,6 +50,91 @@
     "widget-builder": "Where the widget, its builder and Wren work out what to propose."
   };
 
+  // --- who decides where -------------------------------------------------
+  //
+  // The two organisations do not govern the same way, and the difference is not
+  // a detail of the page: it is the rule. So it lives here, once, and the page,
+  // the scripts and the checks all read it from the same place. Each rule set
+  // carries its own plain-English lines, which the page prints on the header --
+  // a rule nobody can read is a rule nobody can hold you to.
+  //
+  // Keyed by topic, because a topic is stabler than an id.
+  var AAO_RULES = {
+    "trilogy widget": {
+      key: "main",
+      voters: [DIRECTOR, WREN],
+      viewers: [],
+      casting: CASTING,
+      // The Director's vote settles it: the page executes as soon as the vote
+      // confirms and the tally is not level.
+      autoExecute: "on-director-vote",
+      executeAs: DIRECTOR,
+      windowHours: null,
+      plain: [
+        "The Director and Wren each have one vote.",
+        "The Director's vote settles it: the page executes straight away unless the tally is level.",
+        "A level tally is broken by the Director's casting vote, and by nothing else."
+      ]
+    },
+    "widget-builder": {
+      key: "sub",
+      voters: [BUILDER, WIDGET],
+      viewers: [DIRECTOR],
+      casting: WREN,
+      // Nobody presses a button here: the watcher, or the last voter's script,
+      // executes once the tally is decisive.
+      autoExecute: "automatic",
+      executeAs: WREN,
+      windowHours: 24,
+      plain: [
+        "The builder and the widget vote. The Director watches and never votes here.",
+        "Wren votes only to break a level tally, after both have voted.",
+        "Execution is automatic: a decisive tally with both votes in, or after 24 hours with at least one vote and a decisive tally.",
+        "A level tally after both have voted notifies Wren and pins the proposal."
+      ]
+    }
+  };
+
+  var DEFAULT_RULES = {
+    key: "default",
+    voters: [],
+    viewers: [],
+    casting: null,
+    autoExecute: "none",
+    executeAs: null,
+    windowHours: null,
+    plain: ["Every member has one vote, and a proposal passes on more for than against."]
+  };
+
+  // The rule set for an organisation. Takes an AAO object or a topic.
+  function rulesFor(aao) {
+    var topic = aao && aao.topic !== undefined ? aao.topic : aao;
+    return AAO_RULES[topic] || DEFAULT_RULES;
+  }
+
+  function mayVote(rules, address) {
+    var r = rules || DEFAULT_RULES;
+    if (r.voters.some(function (a) { return sameAddress(a, address); })) return true;
+    return Boolean(r.casting && sameAddress(r.casting, address));
+  }
+
+  function isViewerOnly(rules, address) {
+    var r = rules || DEFAULT_RULES;
+    return r.viewers.some(function (a) { return sameAddress(a, address); }) &&
+      !r.voters.some(function (a) { return sameAddress(a, address); });
+  }
+
+  // Why an account may not vote here, in a sentence, or null when it may.
+  function voterProblem(rules, address) {
+    var r = rules || DEFAULT_RULES;
+    if (mayVote(r, address)) return null;
+    if (isViewerOnly(r, address)) {
+      return labelFor(address) + " watches this organisation and does not vote in it.";
+    }
+    return labelFor(address) + " is not one of its voters (" +
+      r.voters.map(labelFor).join(", ") + ").";
+  }
+
   // Minimal human-readable ABI: exactly the AAOFacet surface the page touches.
   var AAO_ABI = [
     "function getAAO(uint256 aaoId) view returns (tuple(string topic, uint256 duration, address owner, bool active, bool isMacro, address[] members, uint256 macroAAOId))",
@@ -322,6 +407,59 @@
     return /^https?:\/\//i.test(String(ref || ""));
   }
 
+  // --- who may be voted on -----------------------------------------------
+
+  // A proposal id that was never filed reads back as a zero struct: empty text,
+  // createdAt 0, status 0 (Active). AAOFacet.vote() has no createdAt guard, so
+  // it treats that as a live proposal and records hasVoted against it -- and
+  // when the id is later filled in by a real proposal, the real vote is refused
+  // with "Already voted". That is how a vote was lost on id 27.
+  //
+  // So every vote path -- wren-vote.js, builder-vote.js, the page's buttons --
+  // asks this first. It returns null when the target is safe to vote on, and a
+  // sentence saying why not otherwise.
+  //
+  // `expect` is optional: { title, text }. Saying what you believe you are
+  // voting on turns a silent id drift into a refusal instead of a wrong vote.
+  function voteTargetProblem(proposalId, proposal, expect) {
+    var id = num(proposalId);
+    if (!proposal) return "proposal " + id + " could not be read from the chain";
+
+    var text = proposal.text === undefined || proposal.text === null ? "" : String(proposal.text);
+    if (!text.trim()) {
+      return "proposal " + id + " has no text on chain: it has not been filed yet. " +
+        "A vote now is recorded against the empty id and blocks the real vote when it is filed.";
+    }
+    if (num(proposal.createdAt) === 0) {
+      return "proposal " + id + " has createdAt 0, so it was never filed. " +
+        "A vote now blocks the real vote later.";
+    }
+
+    if (!expect) return null;
+
+    var parsed = proposal.format || parseProposalText(text);
+    if (expect.title) {
+      var actual = (!parsed.legacy && parsed.doc && parsed.doc.title)
+        ? String(parsed.doc.title)
+        : proposalHeadline({ text: text, format: parsed });
+      if (!looselyEqual(actual, expect.title)) {
+        return "proposal " + id + ' is "' + actual + '", not "' + expect.title + '". ' +
+          "Refusing to vote on a proposal that is not the one you read.";
+      }
+    }
+    if (expect.text && !looselyEqual(text, expect.text)) {
+      return "proposal " + id + "'s chain text is not the text you expected. " +
+        "Refusing to vote on a proposal that changed under you.";
+    }
+    return null;
+  }
+
+  // Whitespace and case do not make two titles different things.
+  function looselyEqual(a, b) {
+    return String(a).replace(/\s+/g, " ").trim().toLowerCase() ===
+      String(b).replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
   // --- Wren's reasons ----------------------------------------------------
 
   // scripts/wren-vote.js appends one JSON object per vote to
@@ -394,15 +532,26 @@
     var directorAddress = opts.director || DIRECTOR;
     var wrenAddress = opts.wren || WREN;
     var castingAddress = opts.casting || CASTING;
+    return castingStateFor(proposal, [directorAddress, wrenAddress], castingAddress);
+  }
 
+  // The same rule, told which accounts are the ordinary voters and which is the
+  // casting one. On the main organisation that is Director + Wren, broken by
+  // account 2; on the widget-builder it is builder + widget, broken by Wren.
+  function castingStateFor(proposal, ordinary, castingAddress) {
+    var names = ordinary.map(labelFor);
     if (proposal.status !== 0) {
       return { allowed: false, reason: "Proposal is " + (STATUS[proposal.status] || "closed") + "." };
+    }
+    if (!castingAddress) {
+      return { allowed: false, reason: "This organisation has no casting vote." };
     }
     if (hasVoted(proposal, castingAddress)) {
       return { allowed: false, reason: "The casting vote has already been cast." };
     }
-    if (!(hasVoted(proposal, directorAddress) && hasVoted(proposal, wrenAddress))) {
-      return { allowed: false, reason: "Waiting for both the Director and Wren to vote." };
+    var allVoted = ordinary.every(function (a) { return hasVoted(proposal, a); });
+    if (!allVoted) {
+      return { allowed: false, reason: "Waiting for " + names.join(" and ") + " to vote." };
     }
     if (proposal.forVotes !== proposal.againstVotes) {
       return {
@@ -413,6 +562,82 @@
     return {
       allowed: true,
       reason: "Tied " + proposal.forVotes + "-" + proposal.againstVotes + "; the casting vote decides."
+    };
+  }
+
+  // The casting-vote rule for whichever organisation the proposal is on.
+  function castingStateUnder(rules, proposal) {
+    var r = rules || DEFAULT_RULES;
+    return castingStateFor(proposal, r.voters, r.casting);
+  }
+
+  // --- automatic execution -----------------------------------------------
+
+  // Nobody presses a button on the widget-builder: once the tally is decisive
+  // the watcher, or the last voter's own script, executes. Returns what should
+  // happen and why, so the caller can act and say the same sentence.
+  //
+  // `nowSeconds` defaults to the clock; the checks pass a fixed one.
+  function autoExecuteState(rules, proposal, nowSeconds) {
+    var r = rules || DEFAULT_RULES;
+    if (r.autoExecute !== "automatic") {
+      return { should: false, reason: "This organisation executes on the Director's vote, not on a timer." };
+    }
+    if (proposal.status !== 0) {
+      return { should: false, reason: "Already " + (STATUS[proposal.status] || "closed") + "." };
+    }
+
+    var cast = proposal.forVotes + proposal.againstVotes;
+    if (cast === 0) return { should: false, reason: "No votes yet." };
+
+    var level = proposal.forVotes === proposal.againstVotes;
+    var allVoted = r.voters.every(function (a) { return hasVoted(proposal, a); });
+
+    if (level) {
+      if (allVoted) {
+        return {
+          should: false,
+          tied: true,
+          reason: "Level at " + proposal.forVotes + "-" + proposal.againstVotes +
+            " with both votes in. " + labelFor(r.casting) + " breaks it."
+        };
+      }
+      return { should: false, reason: "Level, and not everyone has voted yet." };
+    }
+
+    if (allVoted) {
+      return {
+        should: true,
+        by: r.executeAs,
+        reason: "Decisive at " + proposal.forVotes + "-" + proposal.againstVotes +
+          " with every vote in."
+      };
+    }
+
+    // Not everyone voted: the window decides. Until the widget's add-on exists,
+    // account 4 cannot vote at all, so a builder-only vote has to be able to
+    // carry -- after the window, and only after it.
+    var hours = r.windowHours;
+    if (!hours) return { should: false, reason: "Waiting for the remaining votes." };
+    var now = nowSeconds === undefined || nowSeconds === null
+      ? Math.floor(Date.now() / 1000)
+      : num(nowSeconds);
+    var age = now - num(proposal.createdAt);
+    var windowSeconds = hours * 3600;
+    if (age < windowSeconds) {
+      var left = Math.ceil((windowSeconds - age) / 3600);
+      return {
+        should: false,
+        reason: "Decisive at " + proposal.forVotes + "-" + proposal.againstVotes +
+          ", but not everyone has voted; " + left + " hour" + (left === 1 ? "" : "s") +
+          " of the " + hours + "-hour window left."
+      };
+    }
+    return {
+      should: true,
+      by: r.executeAs,
+      reason: "Decisive at " + proposal.forVotes + "-" + proposal.againstVotes +
+        " and the " + hours + "-hour window has passed."
     };
   }
 
@@ -438,6 +663,15 @@
     WIDGET: WIDGET,
     ROLES: ROLES,
     AAO_NOTES: AAO_NOTES,
+    AAO_RULES: AAO_RULES,
+    DEFAULT_RULES: DEFAULT_RULES,
+    rulesFor: rulesFor,
+    mayVote: mayVote,
+    isViewerOnly: isViewerOnly,
+    voterProblem: voterProblem,
+    castingStateFor: castingStateFor,
+    castingStateUnder: castingStateUnder,
+    autoExecuteState: autoExecuteState,
     readAAOs: readAAOs,
     readAllProposals: readAllProposals,
     AAO_ABI: AAO_ABI,
@@ -447,6 +681,8 @@
     validateProposalDoc: validateProposalDoc,
     parseProposalText: parseProposalText,
     proposalHeadline: proposalHeadline,
+    voteTargetProblem: voteTargetProblem,
+    looselyEqual: looselyEqual,
     isUrl: isUrl,
     WREN_VOTES_PATH: WREN_VOTES_PATH,
     parseWrenVotesJsonl: parseWrenVotesJsonl,

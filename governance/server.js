@@ -319,3 +319,32 @@ server.on("error", (err) => {
   }
   throw err;
 });
+
+// --- the trigger watcher (27.12) ---------------------------------------
+
+// The watcher runs with the server, so "npm run governance" starts both. It
+// reads the chain for proposals that carry a trigger and evaluates the rules
+// every five minutes; when one fires it appends a status message, which the
+// page picks up on its two-second poll.
+//
+// Set GOVERNANCE_NO_WATCH=1 to serve the page without it.
+if (!process.env.GOVERNANCE_NO_WATCH) {
+  try {
+    const ethers = require("ethers");
+    const watch = require("./watch.js");
+
+    const provider = R.getProvider(ethers);
+    const contract = R.getContract(ethers, provider);
+
+    const readProposals = async () => {
+      const aaos = await R.readAAOs(contract);
+      return R.readAllProposals(contract, aaos);
+    };
+
+    watch.start(readProposals, {});
+    console.log(`watching         triggers, every ${watch.DEFAULTS.intervalMs / 60000} minutes`);
+  } catch (e) {
+    // A watcher that cannot start must not take the page down with it.
+    console.warn("watch: not started -- " + (e.message || e));
+  }
+}

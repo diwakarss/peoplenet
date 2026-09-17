@@ -145,32 +145,79 @@
     return String(reason).replace(/^execution reverted:?\s*/i, "");
   }
 
+  // The Director's vote settles the proposal there and then, unless it is tied.
+  //
+  // A proposal must never sit Active after the Director has voted: the vote is
+  // the decision, and leaving it open makes the Director come back to press a
+  // second button for an outcome the chain already knows. So when the tally is
+  // not level after the vote confirms, the page executes immediately from
+  // account 0 and shows what the chain said. When it is level it executes
+  // nothing and the casting-vote buttons appear instead -- that is the one case
+  // where a second decision is genuinely still needed.
+  //
+  // Only on the main organisation, and only for the Director's own votes --
+  // their ordinary one and their casting one. Wren's votes, cast from
+  // wren-vote.js, never execute anything.
   function castVote(proposalId, support, voterAddress, buttonKey) {
     return send(proposalId, buttonKey, async function () {
       var signer = await signerFor(voterAddress);
-      var tx = await R.getContract(ethers, signer).vote(proposalId, support);
+      var contract = R.getContract(ethers, signer);
+
+      // The same guard the scripts use: an unfiled id reads back as a zero
+      // struct that AAOFacet.vote() accepts, and the vote it records then
+      // blocks the real one. Read the chain, refuse if there is nothing there,
+      // and refuse if the text is not what the card is showing.
+      var target = await contract.getProposal(proposalId);
+      var shown = (lastData && (lastData.allProposals || []).filter(
+        function (x) { return x.id === proposalId; })[0]) || null;
+      var problem = R.voteTargetProblem(
+        proposalId, target, shown ? { text: shown.text } : null);
+      if (problem) throw new Error(problem);
+
+      var tx = await contract.vote(proposalId, support);
       await tx.wait();
+
+      var directorsVote = R.sameAddress(voterAddress, R.DIRECTOR) ||
+        R.sameAddress(voterAddress, R.CASTING);
+      if (!directorsVote) return;
+
+      var after = await contract.getProposal(proposalId);
+      if (Number(after.aaoId) !== R.AAO_ID) return;      // main organisation only
+      if (Number(after.status) !== 0) return;            // already settled
+      if (Number(after.forVotes) === Number(after.againstVotes)) return;  // tied
+
+      // Execute as the Director, whichever account cast the vote.
+      var director = R.getContract(ethers, await signerFor(R.DIRECTOR));
+      await runExecute(proposalId, director, "automatically, on your vote");
     });
+  }
+
+  // Send executeProposal and record what the chain reported. Shared by the
+  // Execute button, "Close as tie", and the automatic execute above.
+  async function runExecute(proposalId, contract, why) {
+    var tx = await contract.executeProposal(proposalId);
+    var receipt = await tx.wait();
+    var passed = null;
+    for (var i = 0; i < receipt.logs.length; i++) {
+      try {
+        var parsed = contract.interface.parseLog(receipt.logs[i]);
+        if (parsed && parsed.name === "ProposalExecuted") passed = Boolean(parsed.args.passed);
+      } catch (err) { /* a log from another facet */ }
+    }
+    stateFor(proposalId).outcome = {
+      passed: passed,
+      txHash: receipt.hash,
+      blockNumber: receipt.blockNumber,
+      why: why || null
+    };
+    return passed;
   }
 
   function executeProposal(proposalId, buttonKey) {
     return send(proposalId, buttonKey || "execute", async function () {
       var signer = await signerFor(R.DIRECTOR);
       var contract = R.getContract(ethers, signer);
-      var tx = await contract.executeProposal(proposalId);
-      var receipt = await tx.wait();
-      var passed = null;
-      for (var i = 0; i < receipt.logs.length; i++) {
-        try {
-          var parsed = contract.interface.parseLog(receipt.logs[i]);
-          if (parsed && parsed.name === "ProposalExecuted") passed = Boolean(parsed.args.passed);
-        } catch (err) { /* a log from another facet */ }
-      }
-      stateFor(proposalId).outcome = {
-        passed: passed,
-        txHash: receipt.hash,
-        blockNumber: receipt.blockNumber
-      };
+      await runExecute(proposalId, contract, null);
     });
   }
 
@@ -217,6 +264,15 @@
     creator.textContent = "";
     creator.appendChild(el("span", null, aao.creatorLabel + " "));
     creator.appendChild(el("span", "addr", aao.creator));
+
+    // The organisation's rule set, in its own words (read.js owns the rules;
+    // this only prints them). A rule nobody can read is a rule nobody can be
+    // held to, so the first line sits on the bar and all of them in the fold.
+    var rules = R.rulesFor(aao);
+    byId("orgbar-rule").textContent = rules.plain[0] || "";
+    var ruleList = byId("rules");
+    ruleList.textContent = "";
+    rules.plain.forEach(function (line) { ruleList.appendChild(el("li", "rule-line", line)); });
 
     var list = byId("members");
     list.textContent = "";
@@ -771,6 +827,18 @@
         P.label(adoption.message.from) + " · " + timeOf(adoption.message)));
     }
 
+    // 27.12(3): closed on the card is not the same as closed on the chain. Say
+    // which is which, so nobody reads the chip as a chain state it is not.
+    if (A.isClosedByBuild(adoption) && p.status === 0) {
+      var cast = p.forVotes + p.againstVotes;
+      wrap.appendChild(el("p", "adoption-chain",
+        cast
+          ? "Still Active on chain with " + p.forVotes + "–" + p.againstVotes +
+            " cast. Execute settles it when you are ready."
+          : "Still Active on chain, with no votes cast. Nothing needs executing: " +
+            "the work is done and the card is closed."));
+    }
+
     wrap.appendChild(renderWaitControls(p, waiting));
     return wrap;
   }
@@ -873,7 +941,15 @@
     block.appendChild(el("blockquote", "wren-reason", reason || "(no reason recorded)"));
 
     var onChain = (p.votes || []).filter(function (v) { return R.sameAddress(v.voter, R.WREN); })[0];
-    if (onChain && onChain.support !== support) {
+    if (!onChain) {
+      // The reason is on file but the chain has no VoteCast from Wren for this
+      // proposal. That happens when a vote was refused -- an id that already
+      // carried a stray vote, for instance. The reason still stands as Wren's
+      // position; it just is not counted in the tally.
+      block.appendChild(el("span", "wren-note wren-offchain",
+        "not on chain — this is Wren's stated position, but no vote was recorded, " +
+        "so it is not in the tally."));
+    } else if (onChain.support !== support) {
       block.appendChild(el("span", "wren-note",
         "The chain records Wren voting " + (onChain.support ? "for" : "against") +
         " — the log disagrees. Trust the chain."));
@@ -886,8 +962,15 @@
     var wrap = el("div", "actions");
     var open = p.status === 0;
     var busy = st.busy !== null;
+    var rules = rulesForProposal(p);
+    var casting = castingState(p);
+
+    // The Director does not vote on every organisation. On the widget-builder
+    // they watch: the builder and the widget vote, and Wren breaks a tie. The
+    // rule lives in read.js, so the page and the scripts refuse the same things.
+    var directorMayVote = R.mayVote(rules, R.DIRECTOR) &&
+      R.sameAddress(rules.voters[0], R.DIRECTOR);
     var directorVoted = R.hasVoted(p, R.DIRECTOR);
-    var casting = R.castingVoteState(p);
 
     function button(className, label, key, disabled, onClick) {
       var b = el("button", className, st.busy === key ? "working…" : label);
@@ -897,32 +980,48 @@
       return b;
     }
 
-    wrap.appendChild(button("for", "Vote for", "for", !open || directorVoted, function () {
-      castVote(p.id, true, R.DIRECTOR, "for");
-    }));
-    wrap.appendChild(button("against", "Vote against", "against", !open || directorVoted, function () {
-      castVote(p.id, false, R.DIRECTOR, "against");
-    }));
-    wrap.appendChild(button("casting", "Casting vote: for", "casting-for", !casting.allowed, function () {
-      castVote(p.id, true, R.CASTING, "casting-for");
-    }));
-    wrap.appendChild(button("casting", "Casting vote: against", "casting-against", !casting.allowed, function () {
-      castVote(p.id, false, R.CASTING, "casting-against");
-    }));
-    wrap.appendChild(button("execute", "Execute", "execute", !open, function () {
-      executeProposal(p.id);
-    }));
+    if (directorMayVote) {
+      wrap.appendChild(button("for", "Vote for", "for", !open || directorVoted, function () {
+        castVote(p.id, true, R.DIRECTOR, "for");
+      }));
+      wrap.appendChild(button("against", "Vote against", "against", !open || directorVoted, function () {
+        castVote(p.id, false, R.DIRECTOR, "against");
+      }));
+    }
+
+    // The casting vote is the Director's only on the main organisation; on the
+    // widget-builder it is Wren's, and Wren does not vote from this page.
+    var castingIsDirectors = rules.casting && R.sameAddress(rules.casting, R.CASTING);
+    if (castingIsDirectors) {
+      wrap.appendChild(button("casting", "Casting vote: for", "casting-for", !casting.allowed, function () {
+        castVote(p.id, true, rules.casting, "casting-for");
+      }));
+      wrap.appendChild(button("casting", "Casting vote: against", "casting-against", !casting.allowed, function () {
+        castVote(p.id, false, rules.casting, "casting-against");
+      }));
+    }
+
+    if (rules.autoExecute !== "automatic") {
+      wrap.appendChild(button("execute", "Execute", "execute", !open, function () {
+        executeProposal(p.id);
+      }));
+    }
 
     var hint = el("p", "hint");
     if (!open) {
       hint.textContent = "Closed — " + p.statusLabel.toLowerCase() + ".";
+    } else if (rules.autoExecute === "automatic") {
+      var auto = R.autoExecuteState(rules, p);
+      var problem = R.voterProblem(rules, R.DIRECTOR);
+      hint.textContent = (problem ? problem + " " : "") + auto.reason;
     } else if (casting.allowed) {
       hint.textContent = casting.reason;
+    } else if (directorVoted) {
+      hint.textContent = "You have voted. " + casting.reason;
     } else {
       hint.textContent =
-        (directorVoted ? "The Director has voted. " : "") +
-        "Casting vote: " + casting.reason.charAt(0).toLowerCase() + casting.reason.slice(1) +
-        " Execute would " + (R.predictedOutcome(p) ? "pass" : "reject") + " it right now.";
+        "Your vote settles it unless it ends level. " +
+        "As it stands, executing would " + (R.predictedOutcome(p) ? "pass" : "reject") + " it.";
     }
     wrap.appendChild(hint);
 
@@ -1187,7 +1286,7 @@
 
   // Seen-sets, so the page does not re-announce what it announced before a
   // redraw. Seeded on the first read: the operator is not told about history.
-  var seen = { proposals: null, answers: null, ties: null, decisions: null };
+  var seen = { proposals: null, answers: null, ties: null, decisions: null, triggers: null };
   var notifyAsked = remember("governance.notifyAsked", "0") === "1";
 
   function notificationsAllowed() {
@@ -1261,19 +1360,35 @@
     }
 
     var tied = (data.allProposals || []).filter(function (p) {
-      return R.castingVoteState(p).allowed;
+      return castingState(p).allowed;
     }).map(function (p) { return p.aaoId + ":" + p.id; });
     if (seen.ties === null) {
       seen.ties = new Set(tied);
     } else {
       (data.allProposals || []).forEach(function (p) {
         var key = p.aaoId + ":" + p.id;
-        if (!R.castingVoteState(p).allowed) { seen.ties.delete(key); return; }
+        if (!castingState(p).allowed) { seen.ties.delete(key); return; }
         if (seen.ties.has(key)) return;
         seen.ties.add(key);
         notify("Tie on proposal " + p.id + ", awaiting your casting vote",
           headline(p) + " — level at " + p.forVotes + "–" + p.againstVotes + ".",
           p.aaoId, p.id);
+      });
+    }
+
+    // A trigger that fired is the page telling the Director that the thing they
+    // were waiting for happened. It is the most time-sensitive of the four.
+    var watchIds = messages.filter(function (m) { return m && m.from === "watch"; })
+      .map(function (m) { return m.id; });
+    if (seen.triggers === null || seen.triggers === undefined) {
+      seen.triggers = new Set(watchIds);
+    } else {
+      messages.filter(function (m) { return m && m.from === "watch"; }).forEach(function (m) {
+        if (seen.triggers.has(m.id)) return;
+        seen.triggers.add(m.id);
+        if (m.proposal === undefined || m.proposal === null) return;
+        notify("Proposal " + m.proposal + ": what you were waiting for happened",
+          textOf(m.summary).slice(0, 180), Number(m.aaoId || 0), Number(m.proposal));
       });
     }
 
@@ -1349,7 +1464,7 @@
     },
     {
       key: "tied", label: "Tied",
-      test: function (p) { return R.castingVoteState(p).allowed; }
+      test: function (p) { return castingState(p).allowed; }
     },
     {
       key: "executed", label: "Executed",
@@ -1412,6 +1527,16 @@
     return cards;
   }
 
+  // The casting-vote rule of whichever organisation the proposal is on.
+  function rulesForProposal(p) {
+    var aao = lastData && (lastData.aaos || []).filter(function (a) { return a.id === p.aaoId; })[0];
+    return R.rulesFor(aao || (lastData && lastData.aao));
+  }
+
+  function castingState(p) {
+    return R.castingStateUnder(rulesForProposal(p), p);
+  }
+
   function adoptionFor(p) {
     return p ? A.adoptionOf(adoptions, p.id) : null;
   }
@@ -1428,8 +1553,24 @@
     return A.isWaiting(adoptionFor(p));
   }
 
-  // Filled in by 27.12(2): a trigger that fired pins its proposal to the front.
-  function pinnedFirst() { return false; }
+  // 27.12(2): a trigger that fired posts a status message from "watch". Until
+  // the Director opens that card it sits at the front of the flow -- the whole
+  // point of a trigger is that the thing you were waiting for happened.
+  function firedTrigger(p) {
+    if (!p) return null;
+    return messages.filter(function (m) {
+      return m && m.from === "watch" && Number(m.proposal) === Number(p.id);
+    }).slice(-1)[0] || null;
+  }
+
+  function pinnedFirst(p) {
+    var fired = firedTrigger(p);
+    if (!fired) return false;
+    return !openedSinceTrigger[fired.id];
+  }
+
+  // Opened cards stop being pinned, so the flow settles back to its own order.
+  var openedSinceTrigger = {};
 
   function cursorIndex(cards) {
     if (!cards.length) return -1;
@@ -1505,6 +1646,10 @@
 
     var card = cards[at];
     cursorId = card.key;
+    if (card.kind === "proposal") {
+      var fired = firedTrigger(card.proposal);
+      if (fired) openedSinceTrigger[fired.id] = true;
+    }
     host.appendChild(card.kind === "draft"
       ? renderDraft(card.draft)
       : renderProposal(card.proposal, data.aao, at));

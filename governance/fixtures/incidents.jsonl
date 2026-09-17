@@ -1,0 +1,3 @@
+{"id":"inc-1","ts":"2026-09-01T10:00:00Z","key":"stale-cache","subject":"Citations quoted a body that had been edited","summary":"The cache key was built from mtime only."}
+{"id":"inc-2","ts":"2026-09-16T10:00:00Z","key":"slow-answer","subject":"A turn took eleven seconds","summary":"Two KBA reads were not cached."}
+{"id":"inc-3","ts":"2026-09-18T10:00:00Z","key":"stale-cache","subject":"Again: a gate read a stale precedent","summary":"Same cause, a week later."}
