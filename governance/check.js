@@ -11,7 +11,14 @@ const assert = require("assert");
 const ethers = require("ethers");
 const R = require("./read.js");
 
-const EXPECTED_PROPOSALS = Number(process.env.GOVERNANCE_EXPECTED_PROPOSALS || 7);
+// AAO 0 was seeded with the seven WP17d builder suggestions, and proposals only
+// ever get added, never removed -- other sessions file more as the work goes on.
+// So the floor is the assertion: at least these seven must still render. Set
+// GOVERNANCE_EXPECTED_PROPOSALS to demand an exact count instead.
+const EXACT_PROPOSALS = process.env.GOVERNANCE_EXPECTED_PROPOSALS
+  ? Number(process.env.GOVERNANCE_EXPECTED_PROPOSALS)
+  : null;
+const MINIMUM_PROPOSALS = 7;
 
 function bar(count, total, width) {
   const w = width || 18;
@@ -93,12 +100,22 @@ async function main() {
     assert.ok(R.sameAddress(aao.creator, R.DIRECTOR), `creator is ${aao.creator}`);
   });
 
-  check(`AAO ${R.AAO_ID} has ${EXPECTED_PROPOSALS} proposals`, () => {
-    assert.strictEqual(
-      proposals.length,
-      EXPECTED_PROPOSALS,
-      `expected ${EXPECTED_PROPOSALS} proposals, read ${proposals.length}`
-    );
+  const countLabel = EXACT_PROPOSALS === null
+    ? `AAO ${R.AAO_ID} has at least ${MINIMUM_PROPOSALS} proposals (read ${proposals.length})`
+    : `AAO ${R.AAO_ID} has exactly ${EXACT_PROPOSALS} proposals`;
+  check(countLabel, () => {
+    if (EXACT_PROPOSALS !== null) {
+      assert.strictEqual(
+        proposals.length,
+        EXACT_PROPOSALS,
+        `expected ${EXACT_PROPOSALS} proposals, read ${proposals.length}`
+      );
+    } else {
+      assert.ok(
+        proposals.length >= MINIMUM_PROPOSALS,
+        `expected at least ${MINIMUM_PROPOSALS} proposals, read ${proposals.length}`
+      );
+    }
   });
 
   check("proposal ids are contiguous from 0", () => {

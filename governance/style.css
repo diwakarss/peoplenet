@@ -1,0 +1,381 @@
+/* governance/style.css -- one column, cards, small bars, chips. No framework. */
+
+:root {
+  --bg: #f6f6f4;
+  --surface: #ffffff;
+  --ink: #16181d;
+  --ink-soft: #5c6270;
+  --ink-faint: #8b909c;
+  --line: #e2e3e0;
+  --line-strong: #cfd1cd;
+  --accent: #2f5d50;
+  --for: #2f7d5d;
+  --against: #a64533;
+  --wait: #9a7b2f;
+  --shadow: 0 1px 2px rgba(20, 22, 28, .06), 0 6px 18px rgba(20, 22, 28, .05);
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --surface: #1c1f25;
+    --ink: #e9eaec;
+    --ink-soft: #a3a9b5;
+    --ink-faint: #767c88;
+    --line: #2a2e36;
+    --line-strong: #3a3f49;
+    --accent: #7bbfa8;
+    --for: #6fbf95;
+    --against: #e08874;
+    --wait: #d6b262;
+    --shadow: none;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: .88em;
+}
+
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 40px 20px 72px;
+}
+
+/* --- header ------------------------------------------------------------ */
+
+.head h1 {
+  margin: 0;
+  font-size: 27px;
+  letter-spacing: -.015em;
+  font-weight: 620;
+}
+
+.head-sub {
+  margin: 6px 0 0;
+  color: var(--ink-soft);
+  font-size: 13.5px;
+}
+
+.status-line {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+}
+
+.muted { color: var(--ink-faint); }
+
+/* --- banner ------------------------------------------------------------ */
+
+.banner {
+  margin: 20px 0 26px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.banner strong { color: var(--ink); }
+
+/* --- cards ------------------------------------------------------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+  margin-bottom: 26px;
+}
+
+.card h2 {
+  margin: 0 0 14px;
+  font-size: 12px;
+  font-weight: 640;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.section-head {
+  margin: 0 0 14px;
+  font-size: 12px;
+  font-weight: 640;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.count { color: var(--ink-faint); font-weight: 500; letter-spacing: 0; }
+
+/* --- facts grid -------------------------------------------------------- */
+
+.facts {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 6px 16px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.facts dt { color: var(--ink-faint); font-size: 13px; }
+.facts dd { margin: 0; }
+
+/* --- members ----------------------------------------------------------- */
+
+.members {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.member {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13.5px;
+}
+
+.role {
+  font-weight: 600;
+  min-width: 92px;
+}
+
+.role-casting { color: var(--wait); }
+
+.addr {
+  color: var(--ink-faint);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.tag {
+  font-size: 10.5px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.rule {
+  margin: 16px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.rule strong { color: var(--ink); }
+
+/* --- proposal cards ---------------------------------------------------- */
+
+.proposal {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px 20px 18px;
+  margin-bottom: 14px;
+}
+
+.proposal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.pid {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--ink-faint);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.by { font-size: 12.5px; color: var(--ink-faint); }
+.by b { color: var(--ink-soft); font-weight: 600; }
+
+.proposal-text {
+  margin: 0 0 14px;
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+/* --- chips ------------------------------------------------------------- */
+
+.chip {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 620;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  line-height: 1.5;
+}
+
+.chip-active { color: var(--accent); }
+.chip-executed { color: var(--for); }
+.chip-rejected { color: var(--against); }
+.chip-wait { color: var(--wait); }
+.chip-ok { color: var(--for); }
+.chip-err { color: var(--against); }
+
+/* --- tally bars -------------------------------------------------------- */
+
+.tally {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 62px 1fr 18px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.bar-track {
+  height: 6px;
+  background: var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width .25s ease;
+}
+
+.bar-for .bar-fill { background: var(--for); }
+.bar-against .bar-fill { background: var(--against); }
+
+.bar-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* --- voters ------------------------------------------------------------ */
+
+.voters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-bottom: 14px;
+}
+
+.voter b { font-weight: 600; }
+.voter-for b { color: var(--for); }
+.voter-against b { color: var(--against); }
+
+.no-votes { color: var(--ink-faint); font-style: italic; }
+
+/* --- actions ----------------------------------------------------------- */
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+
+button {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 560;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  padding: 6px 13px;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease;
+}
+
+button:hover:not(:disabled) { border-color: var(--ink-soft); }
+
+button:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+
+button.for:not(:disabled) { color: var(--for); }
+button.against:not(:disabled) { color: var(--against); }
+button.casting:not(:disabled) { color: var(--wait); border-color: var(--wait); }
+button.execute:not(:disabled) { color: var(--ink); border-color: var(--ink-soft); }
+
+.hint {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.outcome {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.err {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--against);
+  word-break: break-word;
+}
+
+/* --- footer ------------------------------------------------------------ */
+
+.foot {
+  margin-top: 34px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-faint);
+  font-size: 12.5px;
+}
+
+.empty {
+  color: var(--ink-faint);
+  font-style: italic;
+  padding: 18px 0;
+}
