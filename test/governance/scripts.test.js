@@ -11,7 +11,8 @@
 // scripts read that decision out of governance/read.js, so this tests the
 // function they call rather than a copy of it.
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const hre = require("hardhat");
+const { ethers } = hre;
 const fs = require("fs");
 const path = require("path");
 const { getSelectors, FacetCutAction } = require("../helpers/diamond");
@@ -290,6 +291,173 @@ describe("the write scripts refuse before they send", function () {
           /=\s*process\.argv\.includes\("--dry-run"\)/.test(source) ||
           /dryRun\s*=\s*false\s*;/.test(source);
         expect(decidesOnDryRunOnly, `${file} still defaults to sending`).to.equal(false);
+      });
+    });
+  });
+
+  // Reading the source is not running it. The --send refactor left
+  // wren-decide.js calling an R that no longer existed, and every source-
+  // reading test still passed, because "R.wantsSend(" was right there in the
+  // text. So this spawns each script for real and requires it to survive.
+  //
+  // It runs against the in-process hardhat network, never the live node: these
+  // are writes, and the only reason it is safe to run them is that they
+  // rehearse. If a script ever stopped rehearsing by default, this would send.
+  // That is why the assertion is not only "exit 0" but "the chain did not move".
+  describe("every write script runs its rehearsal end to end", function () {
+    const { execFileSync } = require("child_process");
+    const REPO = path.join(__dirname, "..", "..");
+
+    let rpcUrl;
+    let filedId;
+
+    before(async function () {
+      // The scripts talk to a chain over JSON-RPC, so they need one they can
+      // reach. hardhat exposes the in-process node when the test run has it.
+      rpcUrl = (hre.network.config && hre.network.config.url) || null;
+      filedId = await submit(mainId, director, JSON.stringify({
+        title: "A proposal for the rehearsals to aim at",
+        summary: "Filed by the test so the scripts have something real to describe.",
+        why: "A rehearsal against nothing proves nothing."
+      }));
+    });
+
+    function run(file, args, env) {
+      return execFileSync(
+        process.execPath,
+        [path.join(REPO, "scripts", file)].concat(args || []),
+        {
+          cwd: REPO,
+          encoding: "utf8",
+          timeout: 60000,
+          env: Object.assign({}, process.env, env || {})
+        }
+      );
+    }
+
+    // The scripts that need no chain at all: they write files.
+    const OFFLINE = [
+      {
+        file: "wren-decide.js",
+        args: ["7", "queued behind the KBA work."],
+        expect: /Rehearsal only: nothing was sent/
+        },
+      {
+        file: "wren-answer.js",
+        args: ["--list"],
+        expect: /question|No questions/i
+      }
+    ];
+
+    OFFLINE.forEach(({ file, args, expect: pattern }) => {
+      it(`${file} runs`, function () {
+        const out = run(file, args);
+        expect(out, `${file} said nothing`).to.be.a("string");
+        expect(pattern.test(out), `${file} output was:\n${out}`).to.equal(true);
+      });
+    });
+
+    it("wren-decide.js rehearses and writes nothing", function () {
+      const log = path.join(REPO, "governance", "messages.jsonl");
+      const before = fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "";
+      const out = run("wren-decide.js", ["7", "built in commit abcdef."]);
+      const after = fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "";
+      expect(out).to.contain("Rehearsal only: nothing was sent.");
+      expect(out).to.contain("Add --send to do it for real");
+      expect(after, "wren-decide wrote to the log while rehearsing").to.equal(before);
+    });
+
+    it("wren-file-draft.js runs and lists without writing", function () {
+      const log = path.join(REPO, "governance", "drafts.jsonl");
+      const before = fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "";
+      const out = run("wren-file-draft.js", ["--list"]);
+      const after = fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "";
+      expect(out).to.be.a("string");
+      expect(after, "wren-file-draft wrote while listing").to.equal(before);
+    });
+
+    it("propose.js rehearses against no chain at all", function () {
+      const out = run("propose.js", [
+        "--title", "A rehearsed proposal",
+        "--summary", "This one is never filed; the run only says what it would do.",
+        "--why", "Because a rehearsal has to be able to run without a chain."
+      ]);
+      expect(out).to.contain("A rehearsed proposal");
+      expect(out).to.contain("nothing filed");
+    });
+
+    it("propose.js refuses an incomplete proposal, rehearsal or not", function () {
+      let failed = false;
+      try {
+        run("propose.js", ["--title", "No why on this one", "--summary", "s"]);
+      } catch (e) {
+        failed = true;
+        expect(String(e.stderr || e.message)).to.contain("why is required");
+      }
+      expect(failed, "propose.js filed something with no why").to.equal(true);
+    });
+
+    // The chain-reading ones need an RPC url. When the test run has no node to
+    // point them at, they are skipped rather than silently passing.
+    const ONCHAIN = [
+      { file: "wren-vote.js", args: () => [String(filedId), "for", "a rehearsed reason"] },
+      { file: "builder-vote.js", args: () => ["--aao", "0", String(filedId), "for", "a rehearsed reason"] },
+      { file: "execute-decided.js", args: () => [], env: () => ({ IDS: String(filedId) }) }
+    ];
+
+    ONCHAIN.forEach(({ file, args, env }) => {
+      it(`${file} rehearses without sending`, function () {
+        // Its own throwaway chain, so a refusal is the expected outcome.
+        let out;
+        try {
+          out = run(file, args(), Object.assign({ HARDHAT_NETWORK: "hardhat" }, env ? env() : {}));
+        } catch (e) {
+          // A refusal is a valid outcome and still proves the script runs;
+          // a crash is not.
+          const text = String(e.stderr || e.stdout || e.message);
+          expect(text, `${file} crashed rather than refused`).to.not.match(/is not defined|Cannot read|SyntaxError/);
+          return;
+        }
+        expect(out, `${file} output was:\n${out}`).to.not.match(/\btx 0x/);
+      });
+    });
+  });
+
+  // The regression that got past the source-reading tests: the --send refactor
+  // left wren-decide.js calling an R that no longer existed. Every script in
+  // the repo is now run with no arguments, which takes it through require,
+  // parse and its own usage path. A module-level mistake cannot survive that.
+  describe("every script loads", function () {
+    const { execFileSync } = require("child_process");
+    const REPO = path.join(__dirname, "..", "..");
+
+    const ALL = [
+      "wren-vote.js", "builder-vote.js", "wren-decide.js", "wren-answer.js",
+      "wren-file-draft.js", "propose.js", "submit-widget-proposals.js",
+      "builder-propose.js", "execute-decided.js", "cut-aao-facet.js",
+      "snapshot-chain-state.js", "verify-after-cut.js",
+      "check-control-characters.js", "setup-governance-members.js",
+      "create-widget-builder-aao.js"
+    ];
+
+    ALL.forEach((file) => {
+      it(`${file} gets past its own require and argument parsing`, function () {
+        let output = "";
+        try {
+          output = execFileSync(process.execPath, [path.join(REPO, "scripts", file)], {
+            cwd: REPO,
+            encoding: "utf8",
+            timeout: 60000,
+            env: Object.assign({}, process.env, { HARDHAT_NETWORK: "hardhat" })
+          });
+        } catch (e) {
+          // Exiting non-zero is fine -- most of these want arguments. Dying
+          // while loading is not.
+          output = String(e.stdout || "") + String(e.stderr || "");
+        }
+        expect(output, `${file} failed to load:\n${output}`).to.not.match(
+          /ReferenceError|is not defined|SyntaxError|Cannot find module/
+        );
       });
     });
   });

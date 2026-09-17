@@ -28,7 +28,7 @@ const fs = require("fs");
 const path = require("path");
 const P = require("../governance/protocol.js");
 const A = require("../governance/adoption.js");
-const A_READ = require("../governance/read.js");
+const R = require("../governance/read.js");
 
 const GOV = path.join(__dirname, "..", "governance");
 const MESSAGES = path.join(GOV, "messages.jsonl");
@@ -136,7 +136,7 @@ function main() {
 
   if (args.dryRun) {
     console.log("");
-    console.log(A_READ.describePlan({
+    console.log(R.describePlan({
       standing: [
         `Proposal ${proposal}: the words read as "${state.label}".`,
         "This writes a file, not a transaction: no chain state changes."
