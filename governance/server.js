@@ -35,6 +35,13 @@ const LOGS = {
   "/messages.json": "messages.jsonl"
 };
 
+// Wren's plain-English translations of the legacy proposals (27.10). Served
+// read-only and re-read per request, like the logs: Wren edits the file while
+// the page is open and the Director should see the new wording at once. The
+// page never writes it -- the chain text is what it is, and a translation that
+// could be changed from a browser would not be a record.
+const TRANSLATIONS_ROUTE = "/translations.json";
+
 const MAX_BODY = 64 * 1024; // a question is a sentence, not a payload
 
 const MIME = {
@@ -205,6 +212,20 @@ function firstLine(text, max) {
 
 // --- routing -----------------------------------------------------------
 
+function serveTranslations(res) {
+  fs.readFile(path.join(ROOT, "translations.json"), "utf8", (err, text) => {
+    // No file is not an error: the legacy proposals simply show their raw text.
+    if (err) return sendJson(res, 200, {});
+    try {
+      const parsed = JSON.parse(text);
+      sendJson(res, 200, parsed && typeof parsed === "object" ? parsed : {});
+    } catch (e) {
+      console.warn("translations.json is not valid JSON: " + e.message);
+      sendJson(res, 200, {});
+    }
+  });
+}
+
 function serveStatic(res, pathname) {
   const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
   const target = path.resolve(ROOT, relative);
@@ -234,6 +255,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (LOGS[pathname]) return serveLog(res, LOGS[pathname]);
+  if (pathname === TRANSLATIONS_ROUTE) return serveTranslations(res);
 
   return serveStatic(res, pathname);
 });
@@ -250,6 +272,7 @@ server.listen(PORT, HOST, () => {
   });
   console.log(`  POST ${base}/questions`.padEnd(48) + "questions.jsonl  <- the Director asks");
   console.log(`  POST ${base}/messages`.padEnd(48) + "messages.jsonl   <- any agent, 27.5 shape");
+  console.log(`  GET  ${base}${TRANSLATIONS_ROUTE}`.padEnd(48) + "translations.json  read-only");
   console.log("");
   console.log("Ctrl-C to stop.");
 });

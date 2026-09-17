@@ -612,6 +612,26 @@ code, .addr, .pre { font-family: var(--mono); font-size: .86em; }
 
 .proposal-warn { margin: 9px 0 0; font-size: 12px; color: var(--negative); }
 
+/* 27.10: a translation must say it is one, without shouting. */
+.translated-note {
+  margin: 0 0 10px;
+  font-size: 10.5px;
+  font-style: italic;
+  letter-spacing: .04em;
+  color: var(--ink-faint);
+}
+
+.raw-fold .proposal-text {
+  margin-top: 10px;
+  padding: 11px 13px;
+  background: var(--paper);
+  border: 1px solid var(--rule-soft);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.pre-wrap { white-space: pre-wrap; word-break: break-word; }
+
 .pre {
   margin: 8px 0 0;
   padding: 10px 12px;

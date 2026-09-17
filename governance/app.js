@@ -48,6 +48,9 @@
   var messages = [];
   var threadError = null;
 
+  // Wren's translations of the legacy proposals (27.10), keyed by proposal id.
+  var translations = {};
+
   var drafts = {};
   var asking = {};
   var newProposal = { busy: false, error: null, filed: null, open: false };
@@ -92,6 +95,15 @@
 
   function textOf(value) {
     return String(value === undefined || value === null ? "" : value);
+  }
+
+  // The one line that stands for a proposal in the tree, the search, a stream
+  // row or a notification. A translated legacy proposal is named by Wren's
+  // title, not by the first eighty characters of its wall of text (27.10).
+  function headline(p) {
+    var translated = p && p.format && p.format.legacy ? translations[p.id] : null;
+    if (translated && translated.title) return String(translated.title);
+    return R.proposalHeadline(p);
   }
 
   // --- writes ------------------------------------------------------------
@@ -276,11 +288,43 @@
 
   // --- the proposal body (27.1) ------------------------------------------
 
-  function renderProposalBody(fmt) {
+  // 27.10: the chain will not let a proposal's text be edited, so the sixteen
+  // free-text proposals are not rewritten. Wren's translations.json gives each
+  // one a title, a summary, a why and the technical line in the 27.1 shape, and
+  // the page renders that in place of the wall of text -- saying plainly that it
+  // is a translation, with the chain's own words one click away.
+  function renderProposalBody(fmt, proposalId) {
     var body = el("div", "proposal-body");
 
     if (fmt.legacy) {
-      body.appendChild(el("p", "proposal-text", fmt.raw));
+      var translated = translations[proposalId];
+      if (!translated) {
+        body.appendChild(el("p", "proposal-text", fmt.raw));
+        return body;
+      }
+
+      if (translated.title) body.appendChild(el("h3", "proposal-title", translated.title));
+      if (translated.summary) body.appendChild(el("p", "proposal-summary", translated.summary));
+      if (translated.why) {
+        var tWhy = el("p", "proposal-why");
+        tWhy.appendChild(el("span", "field-label", "Why"));
+        tWhy.appendChild(document.createTextNode(translated.why));
+        body.appendChild(tWhy);
+      }
+      if (translated.technical && String(translated.technical).trim()) {
+        var tFold = el("details", "proposal-details");
+        tFold.appendChild(el("summary", null, "Technical"));
+        tFold.appendChild(el("p", "detail-technical", translated.technical));
+        body.appendChild(tFold);
+      }
+
+      body.appendChild(el("p", "translated-note", "translated by Wren, chain text unchanged"));
+
+      var rawFold = el("details", "proposal-details raw-fold");
+      rawFold.appendChild(el("summary", null, "The chain text"));
+      rawFold.appendChild(el("p", "proposal-text pre-wrap", fmt.raw));
+      body.appendChild(rawFold);
+
       return body;
     }
 
@@ -681,7 +725,7 @@
     if (fmt.legacy) head.appendChild(el("span", "chip chip-legacy", "legacy format"));
     card.appendChild(head);
 
-    card.appendChild(renderProposalBody(fmt));
+    card.appendChild(renderProposalBody(fmt, p.id));
 
     var total = Math.max(p.forVotes + p.againstVotes, aao.members.length, 1);
     var tally = el("div", "tally");
@@ -869,7 +913,7 @@
         if (qaNodes.length) kids.push(node("qa-" + p.id, "Questions and answers", qaNodes.length + " entries", qaNodes));
 
         var n = node("p-" + p.id, "Proposal " + p.id + " · " + p.statusLabel,
-          R.proposalHeadline(p), kids);
+          headline(p), kids);
         var jump = el("button", "node-jump", "open");
         jump.type = "button";
         jump.addEventListener("click", function () { goToProposal(aao.id, p.id); });
@@ -957,7 +1001,7 @@
       rows.push({
         kind: "Proposal",
         where: "AAO " + p.aaoId + " · #" + p.id,
-        title: R.proposalHeadline(p),
+        title: headline(p),
         body: doc
           ? [doc.summary, doc.why, doc.technical, doc.risk, doc.effort, (doc.refs || []).join(" ")].join(" ")
           : p.text,
@@ -1115,7 +1159,7 @@
         if (seen.proposals.has(key)) return;
         seen.proposals.add(key);
         notify("New proposal " + p.id,
-          R.proposalHeadline(p) + " — filed by " + p.proposerLabel + ".", p.aaoId, p.id);
+          headline(p) + " — filed by " + p.proposerLabel + ".", p.aaoId, p.id);
       });
     }
 
@@ -1146,7 +1190,7 @@
         if (seen.ties.has(key)) return;
         seen.ties.add(key);
         notify("Tie on proposal " + p.id + ", awaiting your casting vote",
-          R.proposalHeadline(p) + " — level at " + p.forVotes + "–" + p.againstVotes + ".",
+          headline(p) + " — level at " + p.forVotes + "–" + p.againstVotes + ".",
           p.aaoId, p.id);
       });
     }
@@ -1402,11 +1446,21 @@
       messages = [];
       threadError = e && e.message ? e.message : String(e);
     }
+    // The translations are read the same way and are just as non-fatal: without
+    // them the legacy proposals show the chain's own words, which is honest.
+    try {
+      var response = await window.fetch("/translations.json", { cache: "no-store" });
+      var body = response.ok ? await response.json() : {};
+      translations = body && typeof body === "object" && !Array.isArray(body) ? body : {};
+    } catch (e) {
+      translations = {};
+    }
     return before !== signature();
   }
 
   function signature() {
-    return questions.length + ":" + answers.length + ":" + messages.length + ":" + (threadError || "");
+    return questions.length + ":" + answers.length + ":" + messages.length +
+      ":" + Object.keys(translations).length + ":" + (threadError || "");
   }
 
   // A refresh asked for while one is in flight must not be dropped: dropping it
@@ -1529,6 +1583,7 @@
     setFilter: setFilter,
     step: step,
     cards: function () { return visibleCards(lastData); },
-    filterKey: function () { return filterKey; }
+    filterKey: function () { return filterKey; },
+    translations: function () { return translations; }
   };
 })();

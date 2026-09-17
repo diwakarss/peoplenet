@@ -73,6 +73,17 @@ async function main() {
   }
   const wrenByProposal = R.indexWrenVotes(wrenRecords || []);
 
+  // Wren's translations of the legacy proposals (27.10), read-only.
+  let translations = {};
+  let translationsError = null;
+  try {
+    const response = await fetch(PAGE_URL + "/translations.json", { cache: "no-store" });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    translations = await response.json();
+  } catch (e) {
+    translationsError = e && e.message ? e.message : String(e);
+  }
+
   // The question channel (27.2). An empty log is the normal state until the
   // Director asks something, so the assertion is on the endpoint, not the count.
   const channel = {};
@@ -108,7 +119,8 @@ async function main() {
       `  #${p.id}  ${p.statusLabel}  by ${p.proposerLabel}  ${R.formatTime(p.createdAt)}` +
       (p.format.legacy ? "  [legacy format]" : "")
     );
-    console.log(`      ${R.proposalHeadline(p).slice(0, 96)}`);
+    const tr = p.format.legacy ? translations[p.id] : null;
+    console.log(`      ${(tr && tr.title ? tr.title : R.proposalHeadline(p)).slice(0, 96)}${tr ? "  [translated]" : ""}`);
     if (!p.format.legacy && p.format.doc.summary) {
       console.log(`      ${String(p.format.doc.summary).slice(0, 96)}`);
     }
@@ -402,6 +414,68 @@ async function main() {
     assert.strictEqual(R.parseProposalText("{not json").legacy, true);
     assert.strictEqual(R.parseProposalText('{"unrelated":1}').legacy, true);
     assert.strictEqual(R.parseProposalText('{"title":"t","summary":"s","why":"w"}').legacy, false);
+  });
+
+  // --- the legacy translations (27.10) -----------------------------------
+
+  check("GET /translations.json is served and is an object", () => {
+    assert.strictEqual(translationsError, null,
+      `/translations.json did not answer (${translationsError})`);
+    assert.ok(
+      translations && typeof translations === "object" && !Array.isArray(translations),
+      "/translations.json did not return a JSON object"
+    );
+  });
+
+  check("every legacy proposal has a translation", () => {
+    const missing = proposals
+      .filter((p) => p.format.legacy && !translations[p.id])
+      .map((p) => p.id);
+    assert.strictEqual(missing.length, 0,
+      `legacy proposals with no translation: ${missing.join(", ")}`);
+  });
+
+  check("a translation carries a title, a summary and a why", () => {
+    Object.keys(translations).forEach((key) => {
+      if (key.startsWith("_")) return;   // notes to the reader, not translations
+      const t = translations[key];
+      for (const field of ["title", "summary", "why"]) {
+        assert.ok(
+          typeof t[field] === "string" && t[field].trim(),
+          `translation ${key} has no ${field}`
+        );
+      }
+      assert.ok(
+        t.technical === undefined || typeof t.technical === "string",
+        `translation ${key} has a non-string technical`
+      );
+    });
+  });
+
+  check("translations belong to proposals that exist and are legacy", () => {
+    const byId = new Map(allProposals.map((p) => [p.id, p]));
+    Object.keys(translations).forEach((key) => {
+      if (key.startsWith("_")) return;
+      const id = Number(key);
+      assert.ok(Number.isInteger(id), `translation key "${key}" is not a proposal id`);
+      const p = byId.get(id);
+      assert.ok(p, `translation ${key} names a proposal that does not exist`);
+      assert.ok(
+        p.format.legacy,
+        `proposal ${id} is already in the 27.1 format; it should not need a translation`
+      );
+    });
+  });
+
+  check("a translation never replaces the chain text", () => {
+    // The point of 27.10: the chain text is untouched and still there to show.
+    for (const p of proposals.filter((x) => x.format.legacy)) {
+      assert.ok(p.format.raw && p.format.raw.length > 0, `proposal ${p.id} lost its chain text`);
+      const t = translations[p.id];
+      if (!t) continue;
+      assert.notStrictEqual(t.title, p.format.raw,
+        `translation ${p.id} is just a copy of the chain text`);
+    }
   });
 
   // --- the question channel and the protocol (27.2, 27.5) ---------------
