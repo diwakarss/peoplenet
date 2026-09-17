@@ -202,7 +202,8 @@ describe("the write scripts refuse before they send", function () {
         effect: "for -> tally would become 2-0",
         logFile: "governance/wren-votes.jsonl"
       });
-      expect(plan).to.contain("--dry-run: nothing was sent.");
+      expect(plan).to.contain("Rehearsal only: nothing was sent.");
+      expect(plan).to.contain("Add --send to do it for real");
       expect(plan).to.contain("Standing check");
       expect(plan).to.contain("Transaction that would be sent");
       expect(plan).to.contain("vote(3, true)");
@@ -233,7 +234,7 @@ describe("the write scripts refuse before they send", function () {
 
         // Declared, so it is not an accidental global.
         expect(
-          /\b(?:var|let|const)\s+dryRun\b/.test(source) || /dryRun:\s*false/.test(source),
+          /\b(?:var|let|const)\s+dryRun\b/.test(source) || /\bdryRun\s*:/.test(source),
           `${file} never declares dryRun`
         ).to.equal(true);
 
@@ -248,6 +249,47 @@ describe("the write scripts refuse before they send", function () {
         // And the check returns rather than falling through.
         const after = source.slice(check, check + 900);
         expect(/\breturn\b/.test(after), `${file}'s dry run does not return`).to.equal(true);
+      });
+    });
+  });
+
+  // The safe path must be the one you get by doing nothing. It used to be the
+  // one you had to remember, and twice it was not remembered: two real votes
+  // went out with meaningless reasons on them, and neither could be taken back.
+  describe("rehearsing is the default; sending takes --send", function () {
+    const WRITERS = [
+      "wren-vote.js", "builder-vote.js", "wren-decide.js", "wren-file-draft.js",
+      "propose.js", "submit-widget-proposals.js", "builder-propose.js",
+      "execute-decided.js", "cut-aao-facet.js"
+    ];
+
+    it("wantsSend says no unless --send is there, and --dry-run always wins", function () {
+      expect(R.wantsSend(["node", "s.js", "3", "for", "a reason"])).to.equal(false);
+      expect(R.wantsSend(["node", "s.js", "--send"])).to.equal(true);
+      expect(R.wantsSend(["node", "s.js", "--dry-run"])).to.equal(false);
+      expect(R.wantsSend(["node", "s.js", "--send", "--dry-run"])).to.equal(false);
+      expect(R.wantsSend([])).to.equal(false);
+      expect(R.wantsSend(undefined)).to.equal(false);
+    });
+
+    WRITERS.forEach((file) => {
+      it(`${file} rehearses unless it is told to send`, function () {
+        const source = fs.readFileSync(
+          path.join(__dirname, "..", "..", "scripts", file), "utf8");
+
+        // It decides through the shared function, so one rule governs all of
+        // them and a script cannot quietly opt itself out.
+        expect(
+          source.includes("R.wantsSend(") || source.includes("wantsSend(process.argv)"),
+          `${file} does not ask wantsSend`
+        ).to.equal(true);
+
+        // And it never decides by looking for --dry-run alone, which would
+        // make sending the default again.
+        const decidesOnDryRunOnly =
+          /=\s*process\.argv\.includes\("--dry-run"\)/.test(source) ||
+          /dryRun\s*=\s*false\s*;/.test(source);
+        expect(decidesOnDryRunOnly, `${file} still defaults to sending`).to.equal(false);
       });
     });
   });

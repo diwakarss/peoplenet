@@ -16,6 +16,7 @@ const R = require("./read.js");
 const P = require("./protocol.js");
 const A = require("./adoption.js");
 const W = require("./watch.js");
+const CTRL = require("../scripts/check-control-characters.js");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -959,6 +960,33 @@ async function main() {
     const main = R.rulesFor("trilogy widget");
     assert.strictEqual(R.autoExecuteState(main, make(1, 0, [R.DIRECTOR], 1), now).should, false,
       "the main organisation executes on the Director's vote, not on a timer");
+  });
+
+  // --- no control characters in tracked source ---------------------------
+
+  check("no tracked source file carries a raw control character", () => {
+    // The pre-commit hook in .githooks runs this too, but a hook is per clone
+    // and this is not. Twice a heredoc ate the backslashes in a regex and left
+    // backspace bytes behind; the regex still parsed, matched nothing, and the
+    // guard it broke let a real vote through.
+    const result = CTRL.run({ mode: "all", files: [] });
+    assert.ok(result.scanned > 0, "no source files were scanned");
+    assert.strictEqual(
+      result.bad.length, 0,
+      "control characters in tracked source:" + "\n" + CTRL.report(result)
+    );
+  });
+
+  check("the control-character checker actually catches one", () => {
+    // A checker whose own pattern was mangled would report a clean repo
+    // forever. Hand it a line with a backspace in it and make it say so.
+    const bs = String.fromCharCode(8);
+    const found = CTRL.offences("const r = /" + bs + "word" + bs + "/;");
+    assert.strictEqual(found.length, 1);
+    assert.strictEqual(found[0].count, 2);
+    assert.ok(found[0].codes.indexOf("0x08") !== -1);
+    // Tab, newline and carriage return are not offences.
+    assert.strictEqual(CTRL.offences("a" + String.fromCharCode(9) + "b" + String.fromCharCode(10) + "c" + String.fromCharCode(13) + String.fromCharCode(10) + "d").length, 0);
   });
 
   // --- the vote guard ----------------------------------------------------

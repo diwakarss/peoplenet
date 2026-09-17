@@ -51,13 +51,14 @@ function usage(message) {
 }
 
 function parseArgs(argv) {
-  const out = { positional: [], details: "", refs: [], from: "wren", aaoId: 0, list: false, dryRun: false };
+  const out = { positional: [], details: "", refs: [], from: "wren", aaoId: 0, list: false, dryRun: !R.wantsSend(process.argv) };
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (arg === "--") continue;
     else if (arg === "--list") out.list = true;
     else if (arg === "--dry-run") out.dryRun = true;
+    else if (arg === "--send") { /* decided by wantsSend */ }
     else if (arg === "--details") out.details = String(rest[++i] || "");
     else if (arg === "--from") out.from = String(rest[++i] || "wren");
     else if (arg === "--aao") out.aaoId = Number(rest[++i]);

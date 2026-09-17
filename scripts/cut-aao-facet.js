@@ -30,7 +30,7 @@ function selectorsOf(contract) {
 }
 
 async function main() {
-  const dryRun = process.argv.includes("--dry-run");
+  const dryRun = !R.wantsSend(process.argv);
   const [deployer] = await ethers.getSigners();
 
   const loupe = await ethers.getContractAt("IDiamondLoupe", R.DIAMOND);

@@ -50,7 +50,7 @@ function parseArgs(argv) {
   // free-text run and nothing in it is mistaken for an option.
   var expectTitle = null;
   var aaoId = AAO_ID;
-  var dryRun = false;
+  var dryRun = !R.wantsSend(process.argv);
   var positional = [];
   for (var i = 0; i < rest.length; i++) {
     if (rest[i] === "--expect-title" || rest[i] === "--expect") {
@@ -59,6 +59,7 @@ function parseArgs(argv) {
     }
     if (rest[i] === "--aao") { aaoId = Number(rest[++i]); continue; }
     if (rest[i] === "--dry-run") { dryRun = true; continue; }
+    if (rest[i] === "--send") { continue; }
     positional.push(rest[i]);
   }
   positional.expectTitle = expectTitle;

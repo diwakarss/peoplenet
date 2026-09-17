@@ -40,7 +40,7 @@ function usage(message) {
 }
 
 function parseArgs(argv) {
-  const out = { id: null, refs: [], dryRun: false, list: false, account: 1, doc: {} };
+  const out = { id: null, refs: [], dryRun: !R.wantsSend(process.argv), list: false, account: 1, doc: {} };
   const fields = ["title", "summary", "why", "technical", "risk", "effort"];
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i++) {
@@ -48,6 +48,7 @@ function parseArgs(argv) {
     if (arg === "--") continue;
     else if (arg === "--list") out.list = true;
     else if (arg === "--dry-run") out.dryRun = true;
+    else if (arg === "--send") { /* decided by wantsSend */ }
     else if (arg === "--ref") out.refs.push(String(rest[++i] || ""));
     else if (arg === "--account") out.account = Number(rest[++i]);
     else if (arg.startsWith("--") && fields.indexOf(arg.slice(2)) !== -1) {

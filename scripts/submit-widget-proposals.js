@@ -20,13 +20,14 @@ function parseArgs(argv) {
     file: path.join(__dirname, "proposals.json"),
     aao: R.AAO_ID,
     account: 0,
-    dryRun: false
+    dryRun: !R.wantsSend(argv)
   };
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (arg === "--") continue;
     else if (arg === "--dry-run") out.dryRun = true;
+    else if (arg === "--send") { /* the default is a rehearsal; wantsSend decides */ }
     else if (arg === "--file") out.file = path.resolve(process.cwd(), String(rest[++i] || ""));
     else if (arg === "--aao") out.aao = Number(rest[++i]);
     else if (arg === "--account") out.account = Number(rest[++i]);

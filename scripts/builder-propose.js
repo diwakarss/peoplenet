@@ -21,6 +21,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const R = require("../governance/read.js");
 
 const DIAMOND = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
 const TOPIC = "widget-builder";
@@ -113,6 +114,23 @@ async function main() {
   if (!(await aaoFacet.isMember(aaoId, builder.address))) {
     throw new Error(`account ${BUILDER_ACCOUNT} is not a member of AAO ${aaoId}. ` +
                     `Run scripts/create-widget-builder-aao.js first.`);
+  }
+
+  // Rehearses by default; sends only with --send. Two votes were cast by
+  // accident by scripts whose safe path was the one you had to remember.
+  if (!R.wantsSend(process.argv)) {
+    console.log("");
+    console.log(R.describePlan({
+      standing: [
+        `AAO ${aaoId} ("${TOPIC}"): the Builder is a member and may file here.`,
+        `${text.length} bytes of proposal text.`
+      ],
+      from: builder.address,
+      call: `submitProposal(${aaoId}, <${text.length} bytes>)`,
+      effect: "a new proposal would be filed and take the next id",
+      command: "node scripts/builder-propose.js ..."
+    }));
+    return;
   }
 
   const tx = await aaoFacet.connect(builder).submitProposal(aaoId, text);

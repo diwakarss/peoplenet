@@ -39,11 +39,12 @@ function parseArgs(argv) {
   let rest = argv.slice(2);
   if (rest[0] === "--") rest = rest.slice(1);
   let aaoId = DEFAULT_AAO;
-  let dryRun = false;
+  let dryRun = !R.wantsSend(process.argv);
   const positional = [];
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === "--aao") { aaoId = Number(rest[++i]); continue; }
     if (rest[i] === "--dry-run") { dryRun = true; continue; }
+    if (rest[i] === "--send") { continue; }
     positional.push(rest[i]);
   }
   return { aaoId, dryRun, positional };

@@ -468,9 +468,31 @@
   // cannot describe different things -- and so nobody ever has to run a write
   // against live state to find out what it does. A vote was cast by accident on
   // proposal 32 doing exactly that, and it could not be taken back.
+  // Every chain-writing script rehearses unless it is told to send.
+  //
+  // The flag used to be --dry-run, so the safe path was the one you had to
+  // remember -- and twice it was not remembered, and twice a real vote went out
+  // with a meaningless reason on it. Now the default is the safe one and --send
+  // is the deliberate word. A forgotten --send costs a second run; a forgotten
+  // --dry-run cost a vote that cannot be taken back.
+  //
+  // --dry-run is still accepted and still wins, so nothing that already passes
+  // it changes behaviour.
+  function wantsSend(argv) {
+    var args = Array.isArray(argv) ? argv : [];
+    if (args.indexOf("--dry-run") !== -1) return false;
+    return args.indexOf("--send") !== -1;
+  }
+
+  // The line every script prints when it rehearsed rather than sent.
+  function sendHint(command) {
+    return "Nothing was sent. Add --send to do it for real" +
+      (command ? ":\n  " + command + " --send" : ".");
+  }
+
   function describePlan(plan) {
     var lines = [];
-    lines.push("--dry-run: nothing was sent.");
+    lines.push("Rehearsal only: nothing was sent.");
     lines.push("");
     lines.push("Standing check");
     (plan.standing || []).forEach(function (line) { lines.push("  " + line); });
@@ -488,6 +510,8 @@
       lines.push("Then appended to");
       lines.push("  " + plan.logFile);
     }
+    lines.push("");
+    lines.push(sendHint(plan.command));
     return lines.join("\n");
   }
 
@@ -721,6 +745,8 @@
     voteTargetProblem: voteTargetProblem,
     looselyEqual: looselyEqual,
     describePlan: describePlan,
+    wantsSend: wantsSend,
+    sendHint: sendHint,
     isUrl: isUrl,
     WREN_VOTES_PATH: WREN_VOTES_PATH,
     parseWrenVotesJsonl: parseWrenVotesJsonl,

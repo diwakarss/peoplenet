@@ -1,0 +1,17 @@
+#!/bin/sh
+#
+# Refuse a commit that would put a raw control character into a source file.
+#
+# Twice, an edit made through a shell heredoc lost the backslashes in a regex
+# and left literal backspace bytes (0x08) behind. The regex still parsed, still
+# ran, and quietly matched nothing -- and the guard it broke let a real vote
+# reach the chain with a meaningless reason on it. One member, one vote, so
+# neither could be taken back.
+#
+# Install once, per clone:
+#   git config core.hooksPath .githooks
+#
+# The same check runs from governance/check.js, so it is not lost on a clone
+# where nobody ran that.
+
+node scripts/check-control-characters.js --staged || exit 1

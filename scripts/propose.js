@@ -33,13 +33,14 @@ function usage(message) {
 }
 
 function parseArgs(argv) {
-  const out = { refs: [], aao: R.AAO_ID, account: 0, dryRun: false, file: null, doc: {} };
+  const out = { refs: [], aao: R.AAO_ID, account: 0, dryRun: !R.wantsSend(process.argv), file: null, doc: {} };
   const rest = argv.slice(2);
   const stringFields = ["title", "summary", "why", "technical", "risk", "effort", "from"];
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (arg === "--") continue;
     if (arg === "--dry-run") { out.dryRun = true; continue; }
+    if (arg === "--send") { continue; }
     if (arg === "--file") { out.file = String(rest[++i] || ""); continue; }
     if (arg === "--aao") { out.aao = Number(rest[++i]); continue; }
     if (arg === "--account") { out.account = Number(rest[++i]); continue; }
