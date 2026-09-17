@@ -14,6 +14,7 @@ const assert = require("assert");
 const ethers = require("ethers");
 const R = require("./read.js");
 const P = require("./protocol.js");
+const A = require("./adoption.js");
 
 const PAGE_URL = process.env.GOVERNANCE_URL ||
   `http://${process.env.GOVERNANCE_HOST || "127.0.0.1"}:${process.env.GOVERNANCE_PORT || 8787}`;
@@ -475,6 +476,100 @@ async function main() {
       if (!t) continue;
       assert.notStrictEqual(t.title, p.format.raw,
         `translation ${p.id} is just a copy of the chain text`);
+    }
+  });
+
+  // --- adoption and waiting (27.9) ---------------------------------------
+
+  const decisions = (channel["/messages.json"].records || []).filter((m) => m.type === "decision");
+  const adoptions = A.indexDecisions(decisions);
+
+  check("every decision names a proposal and says where it has got to", () => {
+    decisions.forEach((m) => {
+      const id = A.proposalOf(m);
+      assert.ok(
+        Number.isInteger(id),
+        `decision ${m.id} names no proposal; it needs refs ["proposal N"]`
+      );
+      const state = A.stateOf(m);
+      assert.notStrictEqual(
+        state.key, "unknown",
+        `decision ${m.id} does not say where proposal ${id} has got to: "${String(m.summary).slice(0, 70)}"`
+      );
+    });
+  });
+
+  check("every decision names a proposal that exists", () => {
+    const byId = new Map(allProposals.map((x) => [x.id, x]));
+    decisions.forEach((m) => {
+      const id = A.proposalOf(m);
+      if (id === null) return;
+      assert.ok(byId.get(id), `decision ${m.id} names proposal ${id}, which does not exist`);
+    });
+  });
+
+  check("the adoption state reader agrees with the phrases it documents", () => {
+    const table = [
+      ["queued behind S12; the builder starts tomorrow.", "queued"],
+      ["The builder has started on it.", "building"],
+      ["Built in commit 506df15, in the widget after the next restart.", "in-widget"],
+      ["Built in commit 4ebb5a5.", "built"],
+      ["waiting: not until the Postman work lands.", "waiting"],
+      ["back in the queue: brought back by the Director.", "back"],
+      ["closed: solved by the shared mtime_cache helper.", "closed"],
+      ["something that says nothing", "unknown"]
+    ];
+    table.forEach(([text, want]) => {
+      assert.strictEqual(
+        A.stateOf({ summary: text }).key, want,
+        `"${text}" read as ${A.stateOf({ summary: text }).key}, expected ${want}`
+      );
+    });
+    // "closed: solved by the build" must not read as "built".
+    assert.strictEqual(A.stateOf({ summary: "closed: solved by the build in commit x" }).key, "closed");
+  });
+
+  check("the latest decision wins, so a waiting proposal can come back", () => {
+    const log = [
+      { type: "decision", ts: "2026-01-01T00:00:00Z", refs: ["proposal 9"], summary: "queued." },
+      { type: "decision", ts: "2026-01-02T00:00:00Z", refs: ["proposal 9"], summary: "waiting: not yet." },
+      { type: "decision", ts: "2026-01-03T00:00:00Z", refs: ["proposal 9"], summary: "back in the queue." }
+    ];
+    const index = A.indexDecisions(log);
+    assert.strictEqual(A.stateOf(index[9]).key, "back");
+    assert.strictEqual(A.isWaiting(A.adoptionOf(index, 9)), false);
+    assert.strictEqual(A.isWaiting(A.adoptionOf(A.indexDecisions(log.slice(0, 2)), 9)), true);
+  });
+
+  check("a waiting proposal gives its reason, and a closed one names what solved it", () => {
+    Object.keys(adoptions).forEach((id) => {
+      const adoption = A.adoptionOf(adoptions, id);
+      if (A.isWaiting(adoption)) {
+        const reason = A.waitingReason(adoption);
+        assert.ok(reason && reason.trim(), `proposal ${id} is waiting with no reason`);
+      }
+      if (A.isClosedByBuild(adoption)) {
+        assert.ok(A.solvedBy(adoption), `proposal ${id} is closed but does not name what solved it`);
+      }
+    });
+  });
+
+  check("a waiting proposal is a real proposal and holds exactly one state", () => {
+    // Waiting says nothing about the chain: a proposal can be Rejected on chain
+    // and still kept in view (proposal 1 is), and 27.12(3) allows the reverse --
+    // closed on the card while Active on chain. What must hold is that the
+    // latest decision gives it one state, not two.
+    const waiting = Object.keys(adoptions)
+      .filter((id) => A.isWaiting(A.adoptionOf(adoptions, id)))
+      .map(Number);
+    const byId = new Map(allProposals.map((x) => [x.id, x]));
+    for (const id of waiting) {
+      assert.ok(byId.get(id), `proposal ${id} is waiting but does not exist`);
+      const adoption = A.adoptionOf(adoptions, id);
+      assert.strictEqual(
+        A.isClosedByBuild(adoption), false,
+        `proposal ${id} reads as both waiting and closed by a build`
+      );
     }
   });
 

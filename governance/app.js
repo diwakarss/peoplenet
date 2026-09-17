@@ -15,6 +15,7 @@
 
   var R = window.GovernanceRead;
   var P = window.GovernanceProtocol;
+  var A = window.GovernanceAdoption;
   var ethers = window.ethers;
 
   function byId(id) { return document.getElementById(id); }
@@ -53,6 +54,11 @@
 
   // The Director's one-field drafts (27.12), awaiting Wren.
   var drafts = [];
+
+  // Where each proposal has got to (27.9), read from Wren's decision messages.
+  var adoptions = {};
+  var waitDrafts = {};
+  var waitBusy = {};
 
   // What the Director has typed into a question box but not yet sent, per proposal.
   var questionDrafts = {};
@@ -687,9 +693,18 @@
     head.appendChild(by);
     var fmt = p.format || R.parseProposalText(p.text);
     if (fmt.legacy) head.appendChild(el("span", "chip chip-legacy", "legacy format"));
+
+    // 27.9: where it has got to, from Wren's latest decision.
+    var adoption = adoptionFor(p);
+    if (adoption) {
+      var solved = A.solvedBy(adoption);
+      head.appendChild(el("span", "chip chip-adopt chip-" + adoption.state.chip,
+        solved ? "closed: solved by " + solved : adoption.state.label));
+    }
     card.appendChild(head);
 
     card.appendChild(renderProposalBody(fmt, p.id));
+    card.appendChild(renderAdoption(p, adoption));
 
     var total = Math.max(p.forVotes + p.againstVotes, aao.members.length, 1);
     var tally = el("div", "tally");
@@ -728,6 +743,109 @@
     card.appendChild(renderThread(p));
 
     return card;
+  }
+
+  // --- adoption and waiting (27.9, the Director's waiting ruling) ---------
+
+  // What Wren last said about this proposal, and the two moves the Director has:
+  // park it, or bring it back. Both are one click and both post a decision, so
+  // the reason is on the record rather than in someone's memory.
+  function renderAdoption(p, adoption) {
+    var waiting = A.isWaiting(adoption);
+    var wrap = el("section", "adoption" + (waiting ? " adoption-waiting" : ""));
+
+    if (adoption) {
+      var line = el("p", "adoption-line");
+      line.appendChild(el("span", "adoption-state", adoption.state.label));
+      line.appendChild(document.createTextNode(
+        waiting ? A.waitingReason(adoption) : adoption.text));
+      wrap.appendChild(line);
+
+      if (adoption.message.details && String(adoption.message.details).trim()) {
+        var fold = el("details", "proposal-details");
+        fold.appendChild(el("summary", null, "What Wren did"));
+        fold.appendChild(el("pre", "pre", adoption.message.details));
+        wrap.appendChild(fold);
+      }
+      wrap.appendChild(el("p", "adoption-who",
+        P.label(adoption.message.from) + " · " + timeOf(adoption.message)));
+    }
+
+    wrap.appendChild(renderWaitControls(p, waiting));
+    return wrap;
+  }
+
+  function renderWaitControls(p, waiting) {
+    var row = el("div", "wait-controls");
+    var busy = waitBusy[p.id];
+
+    if (waiting) {
+      var back = el("button", "mini bring-back", busy ? "working…" : "Bring back");
+      back.type = "button";
+      back.disabled = Boolean(busy);
+      if (!back.disabled) {
+        back.addEventListener("click", function () {
+          postWaitDecision(p, "back in the queue: brought back by the Director.");
+        });
+      }
+      row.appendChild(back);
+      row.appendChild(el("span", "wait-note",
+        "Out of the main queue. It returns on its own if its trigger fires."));
+      return row;
+    }
+
+    var input = el("input", "wait-input");
+    input.type = "text";
+    input.placeholder = "why it can wait…";
+    input.value = waitDrafts[p.id] || "";
+    input.setAttribute("data-draft", "wait:" + p.id);
+    input.disabled = Boolean(busy);
+    input.addEventListener("input", function () { waitDrafts[p.id] = input.value; });
+    row.appendChild(input);
+
+    var keep = el("button", "mini keep-waiting", busy ? "working…" : "Keep waiting");
+    keep.type = "button";
+    keep.disabled = Boolean(busy);
+    if (!keep.disabled) {
+      keep.addEventListener("click", function () {
+        var words = String(waitDrafts[p.id] || "").trim();
+        postWaitDecision(p, "waiting: " + (words || "parked by the Director, no reason given yet."));
+      });
+    }
+    row.appendChild(keep);
+    return row;
+  }
+
+  async function postWaitDecision(p, summary) {
+    waitBusy[p.id] = true;
+    render(lastData);
+    try {
+      var response = await window.fetch("/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: "director",
+          to: "wren",
+          type: "decision",
+          subject: "Proposal " + p.id + ": " + (/^waiting/i.test(summary) ? "waiting" : "back in the queue"),
+          summary: summary,
+          refs: ["proposal " + p.id],
+          proposal: p.id,
+          aaoId: p.aaoId
+        })
+      });
+      var result = await response.json().catch(function () { return {}; });
+      if (!response.ok || result.ok === false) {
+        throw new Error((result.errors || ["HTTP " + response.status]).join("; "));
+      }
+      waitDrafts[p.id] = "";
+    } catch (e) {
+      stateFor(p.id).error = "Could not record that: " + (e.message || e);
+    } finally {
+      waitBusy[p.id] = false;
+    }
+    await refreshThreads();
+    render(lastData);
   }
 
   function renderWrenReason(p) {
@@ -1216,7 +1334,18 @@
   var FILTERS = [
     {
       key: "mine", label: "Open for my vote",
-      test: function (p) { return p.status === 0 && !closedByBuild(p) && !R.hasVoted(p, R.DIRECTOR); }
+      // Waiting proposals are out of this queue and out of its count: the
+      // Director parked them, and a parked proposal is not work in front of them.
+      // A fired trigger overrides that -- something changed, so it is back.
+      test: function (p) {
+        if (p.status !== 0 || closedByBuild(p)) return false;
+        if (isWaiting(p) && !pinnedFirst(p)) return false;
+        return !R.hasVoted(p, R.DIRECTOR);
+      }
+    },
+    {
+      key: "waiting", label: "Waiting",
+      test: function (p) { return isWaiting(p); }
     },
     {
       key: "tied", label: "Tied",
@@ -1283,11 +1412,24 @@
     return cards;
   }
 
-  // Filled in by 27.12: a trigger that fired pins its proposal to the front.
-  function pinnedFirst() { return false; }
+  function adoptionFor(p) {
+    return p ? A.adoptionOf(adoptions, p.id) : null;
+  }
 
-  // Filled in by 27.12(3): a decision message that closes the card.
-  function closedByBuild() { return null; }
+  // 27.12(3): a decision that says another item solved this one.
+  function closedByBuild(p) {
+    var a = adoptionFor(p);
+    return A.isClosedByBuild(a) ? a : null;
+  }
+
+  // A waiting proposal is out of the main queue until its trigger fires or the
+  // Director brings it back. It is not closed and not decided -- it is parked.
+  function isWaiting(p) {
+    return A.isWaiting(adoptionFor(p));
+  }
+
+  // Filled in by 27.12(2): a trigger that fired pins its proposal to the front.
+  function pinnedFirst() { return false; }
 
   function cursorIndex(cards) {
     if (!cards.length) return -1;
@@ -1471,12 +1613,14 @@
       answers = all[1];
       messages = all[2];
       drafts = all[3];
+      adoptions = A.indexDecisions(messages);
       threadError = null;
     } catch (e) {
       questions = [];
       answers = [];
       messages = [];
       drafts = [];
+      adoptions = {};
       threadError = e && e.message ? e.message : String(e);
     }
     // The translations are read the same way and are just as non-fatal: without
@@ -1605,6 +1749,7 @@
     data: function () { return lastData; },
     wrenVotes: function () { return wrenVotes; },
     threads: function () { return { questions: questions, answers: answers, messages: messages, drafts: drafts, error: threadError }; },
+    adoptions: function () { return adoptions; },
     refreshThreads: refreshThreads,
     ask: ask,
     setView: setView,
