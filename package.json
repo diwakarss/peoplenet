@@ -10,7 +10,10 @@
     "deploy:local": "npx hardhat run scripts/deploy/deploy-all.js --network localhost",
     "deploy:test": "npx hardhat run scripts/deploy/deploy-all.js --network hardhat",
     "verify": "npx hardhat run scripts/verify/verify-deployment.js",
-    "clean": "npx hardhat clean"
+    "clean": "npx hardhat clean",
+    "governance": "node governance/server.js",
+    "governance:check": "node governance/check.js",
+    "governance:members": "npx hardhat run scripts/setup-governance-members.js --network localhost"
   },
   "keywords": [
     "blockchain",
