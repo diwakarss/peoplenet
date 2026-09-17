@@ -211,6 +211,62 @@
     return { aao: aao, proposals: proposals, blockNumber: blockNumber };
   }
 
+  // --- Wren's reasons ----------------------------------------------------
+
+  // scripts/wren-vote.js appends one JSON object per vote to
+  // governance/wren-votes.jsonl. The page's server re-reads that file on every
+  // request and serves it as a JSON array here.
+  var WREN_VOTES_PATH = "/wren-votes.json";
+
+  // Parse the .jsonl text into records, skipping blank and malformed lines.
+  function parseWrenVotesJsonl(text) {
+    var records = [];
+    var skipped = 0;
+    String(text || "").split(/\r?\n/).forEach(function (line) {
+      var trimmed = line.trim();
+      if (!trimmed) return;
+      try {
+        records.push(JSON.parse(trimmed));
+      } catch (e) {
+        skipped++;
+      }
+    });
+    return { records: records, skipped: skipped };
+  }
+
+  function isLater(a, aIndex, b, bIndex) {
+    if (a && b && a.at && b.at && a.at !== b.at) return a.at > b.at;
+    return aIndex > bIndex;
+  }
+
+  // The log is append-only, so a second record for a proposal is a correction
+  // and the latest one stands. "Latest" is by the record's own `at` when both
+  // carry one, and by file order otherwise.
+  function indexWrenVotes(records) {
+    var best = {};
+    (records || []).forEach(function (record, index) {
+      if (!record || record.proposalId === undefined || record.proposalId === null) return;
+      var id = num(record.proposalId);
+      if (!best[id] || isLater(record, index, best[id].record, best[id].index)) {
+        best[id] = { record: record, index: index };
+      }
+    });
+    var out = {};
+    Object.keys(best).forEach(function (id) { out[id] = best[id].record; });
+    return out;
+  }
+
+  // Fetch the served endpoint. The caller decides what a failure means; the page
+  // treats it as "no reasons available" and carries on.
+  async function fetchWrenVotes(fetchImpl, baseUrl) {
+    var url = (baseUrl || "") + WREN_VOTES_PATH;
+    var response = await fetchImpl(url, { cache: "no-store" });
+    if (!response.ok) throw new Error(url + " returned HTTP " + response.status);
+    var body = await response.json();
+    if (!Array.isArray(body)) throw new Error(url + " did not return a JSON array");
+    return body;
+  }
+
   // --- the tie rule ------------------------------------------------------
 
   function hasVoted(proposal, address) {
@@ -270,6 +326,10 @@
     ROLES: ROLES,
     AAO_ABI: AAO_ABI,
     STATUS: STATUS,
+    WREN_VOTES_PATH: WREN_VOTES_PATH,
+    parseWrenVotesJsonl: parseWrenVotesJsonl,
+    indexWrenVotes: indexWrenVotes,
+    fetchWrenVotes: fetchWrenVotes,
     getProvider: getProvider,
     getContract: getContract,
     readAAO: readAAO,

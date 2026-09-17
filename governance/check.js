@@ -7,9 +7,18 @@
 // This is the page's test. It imports the very same governance/read.js the
 // browser loads, so a change that would break the page breaks this first. It
 // only reads; it never sends a transaction.
+//
+// It also hits the page's own server for GET /wren-votes.json, so `npm run
+// governance` must be up for the Wren checks; the chain checks run either way.
 const assert = require("assert");
 const ethers = require("ethers");
 const R = require("./read.js");
+
+const PAGE_URL = process.env.GOVERNANCE_URL ||
+  `http://${process.env.GOVERNANCE_HOST || "127.0.0.1"}:${process.env.GOVERNANCE_PORT || 8787}`;
+
+// Wren has voted on every proposal that existed when she sat down: twelve.
+const EXPECTED_WREN_VOTES = Number(process.env.GOVERNANCE_EXPECTED_WREN_VOTES || 12);
 
 // AAO 0 was seeded with the seven WP17d builder suggestions, and proposals only
 // ever get added, never removed -- other sessions file more as the work goes on.
@@ -44,6 +53,16 @@ async function main() {
 
   const { aao, proposals, blockNumber } = await R.readGovernance(ethers, provider);
 
+  // The same endpoint the page fetches, over the same server.
+  let wrenRecords = null;
+  let wrenError = null;
+  try {
+    wrenRecords = await R.fetchWrenVotes(fetch, PAGE_URL);
+  } catch (e) {
+    wrenError = e && e.message ? e.message : String(e);
+  }
+  const wrenByProposal = R.indexWrenVotes(wrenRecords || []);
+
   // --- the rendering ---------------------------------------------------
   console.log(`AAO ${aao.id}: ${aao.topic}`);
   console.log(`creator   ${aao.creatorLabel} ${aao.creator}`);
@@ -67,8 +86,15 @@ async function main() {
     console.log(`      for     ${bar(p.forVotes, total)} ${p.forVotes}`);
     console.log(`      against ${bar(p.againstVotes, total)} ${p.againstVotes}`);
     console.log(`      voted:  ${voters}`);
+    const wren = wrenByProposal[p.id];
+    console.log(`      wren:   ${wren
+      ? `voted ${wren.support ? "FOR" : "AGAINST"} — "${String(wren.reason || "").slice(0, 78)}"`
+      : "has not voted"}`);
     console.log(`      casting vote: ${casting.allowed ? "ENABLED" : "disabled"} — ${casting.reason}`);
   }
+
+  console.log("");
+  console.log(`wren-votes.json  ${wrenError ? `UNAVAILABLE (${wrenError})` : `${wrenRecords.length} records from ${PAGE_URL}${R.WREN_VOTES_PATH}`}`);
 
   // --- the assertions --------------------------------------------------
   const checks = [];
@@ -135,6 +161,70 @@ async function main() {
         assert.strictEqual(p.status, 0, `proposal ${p.id} is not open`);
         assert.ok(R.hasVoted(p, R.DIRECTOR) && R.hasVoted(p, R.WREN));
       }
+    }
+  });
+
+  check(`GET ${R.WREN_VOTES_PATH} is served`, () => {
+    assert.strictEqual(
+      wrenError,
+      null,
+      `${PAGE_URL}${R.WREN_VOTES_PATH} did not answer (${wrenError}). Is "npm run governance" up?`
+    );
+    assert.ok(Array.isArray(wrenRecords), "the endpoint did not return an array");
+  });
+
+  check(`${R.WREN_VOTES_PATH} returns ${EXPECTED_WREN_VOTES} records`, () => {
+    assert.strictEqual(
+      wrenRecords.length,
+      EXPECTED_WREN_VOTES,
+      `expected ${EXPECTED_WREN_VOTES} records, got ${wrenRecords.length}`
+    );
+  });
+
+  check("every record names a proposal, a direction and a reason", () => {
+    wrenRecords.forEach((record, i) => {
+      assert.ok(Number.isInteger(record.proposalId), `record ${i} has no proposalId`);
+      assert.strictEqual(typeof record.support, "boolean", `record ${i} has no support flag`);
+      assert.ok(
+        typeof record.reason === "string" && record.reason.trim().length > 0,
+        `record ${i} (proposal ${record.proposalId}) has no reason`
+      );
+      assert.ok(
+        R.sameAddress(record.voter, R.WREN),
+        `record ${i} was cast by ${record.voter}, not Wren`
+      );
+    });
+  });
+
+  check("the page shows one reason per proposal, the latest", () => {
+    const ids = Object.keys(wrenByProposal).map(Number).sort((a, b) => a - b);
+    assert.strictEqual(
+      ids.length,
+      new Set(wrenRecords.map((r) => r.proposalId)).size,
+      "indexing lost or invented a proposal"
+    );
+    for (const id of ids) {
+      const forThisProposal = wrenRecords.filter((r) => Number(r.proposalId) === id);
+      const latest = forThisProposal[forThisProposal.length - 1];
+      assert.strictEqual(
+        wrenByProposal[id].at,
+        latest.at,
+        `proposal ${id} shows a record that is not the latest of its ${forThisProposal.length}`
+      );
+    }
+  });
+
+  check("each recorded direction matches the chain", () => {
+    for (const p of proposals) {
+      const record = wrenByProposal[p.id];
+      if (!record) continue;
+      const onChain = p.votes.filter((v) => R.sameAddress(v.voter, R.WREN))[0];
+      assert.ok(onChain, `proposal ${p.id} has a Wren record but no Wren VoteCast on chain`);
+      assert.strictEqual(
+        onChain.support,
+        Boolean(record.support),
+        `proposal ${p.id}: the log says ${record.support ? "for" : "against"}, the chain says the opposite`
+      );
     }
   });
 

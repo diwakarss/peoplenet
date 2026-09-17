@@ -58,6 +58,32 @@ node scripts/wren-vote.js 3 for "The cache key is the real fix; the rest is a wo
 The vote goes on chain and the reason is appended to `governance/wren-votes.jsonl`
 with the tally it produced, so the record and the number stay together.
 
+### Wren's reasons on the page
+
+Every proposal card carries Wren's line under the tally: **Wren voted FOR** or
+**AGAINST**, with the reason quoted, or *Wren has not voted* when there is no
+record. The tally is the chain's; the reason is Wren's argument for it, and the
+Director is meant to weigh the second, not just count the first.
+
+The page gets it from `GET /wren-votes.json`, which `server.js` re-reads off
+`wren-votes.jsonl` on **every** request &mdash; `wren-vote.js` appends to that
+file while the page is open, and a cached copy would quietly show the operator a
+stale argument. The endpoint is read-only; nothing served here ever writes the log.
+
+The log is append-only, so a second record for the same proposal is a correction
+and the latest one is shown (by the record's `at`, falling back to file order). If
+a record's direction disagrees with the `VoteCast` event on chain, the card says
+so and tells you to trust the chain.
+
+Opened over `file://`, or with the server down, the page loses the reasons and
+keeps everything else.
+
+### Hiding what is finished
+
+**Hide closed**, above the proposal list, drops everything that is not Active. The
+count then reads `(3 of 12)` so you can see what is hidden. The preference is
+remembered per browser in `localStorage` and affects nothing but this list.
+
 ## The tie rule
 
 `AAOFacet` is one member, one vote, and `executeProposal` passes a proposal only
@@ -92,8 +118,8 @@ not a prediction, the event. Once executed a proposal is closed for good.
 | `read.js` | The data layer. `require()`-able from Node, `<script>`-able in the browser. Owns the ABI, the role labels, the reads, and `castingVoteState()`. |
 | `app.js` | The page. Renders, wires the buttons, refreshes on every block. |
 | `index.html`, `style.css` | One column, proposal cards, tally bars, status chips. |
-| `server.js` | A loopback static server for this directory and nothing else. `npm run governance`. |
-| `check.js` | Runs `read.js` against the live node, prints what the page would show, asserts the AAO, the three members, and the proposal floor. |
+| `server.js` | A loopback static server for this directory, plus `GET /wren-votes.json`. `npm run governance`. |
+| `check.js` | Runs `read.js` against the live node **and** the served endpoint, prints what the page would show, asserts the AAO, the three members, the proposal floor, and Wren's twelve records. |
 | `wren-votes.jsonl` | Wren's votes with their stated reasons, one JSON object per line. |
 
 `read.js` is the join: the page, `check.js`, and the Hardhat test all read through
@@ -112,4 +138,7 @@ the same functions, so a change that would break the page breaks a test first.
 - The facet has no `proposalCount` getter, so the proposal list comes from
   `ProposalSubmitted` events and the tallies come from `getProposal` -- the page
   always shows the chain, not the event history.
+- `check.js` also asserts `/wren-votes.json` returns twelve records, so
+  `npm run governance` must be up when you run it. Override with
+  `GOVERNANCE_EXPECTED_WREN_VOTES`; point it elsewhere with `GOVERNANCE_URL`.
 - `GOVERNANCE_PORT` and `GOVERNANCE_HOST` override the server's defaults.

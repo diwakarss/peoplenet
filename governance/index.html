@@ -48,13 +48,20 @@
     </section>
 
     <section>
-      <h2 class="section-head">Proposals <span class="count" id="proposal-count"></span></h2>
+      <div class="list-head">
+        <h2 class="section-head">Proposals <span class="count" id="proposal-count"></span></h2>
+        <label class="filter">
+          <input type="checkbox" id="hide-closed">
+          <span>Hide closed</span>
+        </label>
+      </div>
       <div id="proposals"></div>
     </section>
 
     <p class="foot">
       Wren votes through <code>node scripts/wren-vote.js &lt;id&gt; for|against "reason"</code>, never from this page.
-      Reasons are appended to <code>governance/wren-votes.jsonl</code>.
+      Reasons are appended to <code>governance/wren-votes.jsonl</code> and read back here from
+      <code>/wren-votes.json</code> &mdash; the reason is Wren&rsquo;s argument, the tally is the chain&rsquo;s.
     </p>
 
   </main>

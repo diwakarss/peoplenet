@@ -31,6 +31,17 @@
   var rendering = false;
   var lastData = null;
 
+  // Wren's reasons, keyed by proposal id, from GET /wren-votes.json. Absent when
+  // the page is opened straight off the filesystem instead of through the server.
+  var wrenVotes = {};
+  var wrenVotesError = null;
+
+  // "Hide closed" survives a reload; it is a per-viewer convenience, nothing more.
+  var hideClosed = false;
+  try {
+    hideClosed = window.localStorage.getItem("governance.hideClosed") === "1";
+  } catch (e) { /* private window, blocked storage: the default is fine */ }
+
   // --- small DOM helpers -------------------------------------------------
 
   function el(tag, className, text) {
@@ -190,6 +201,8 @@
     }
     card.appendChild(voters);
 
+    card.appendChild(renderWrenReason(p));
+
     card.appendChild(renderActions(p, st));
 
     if (st.outcome) {
@@ -207,6 +220,45 @@
     if (st.error) card.appendChild(el("p", "err", st.error));
 
     return card;
+  }
+
+  // Wren's argument, under the chain's arithmetic. The tally above says what the
+  // vote was; this says why, in Wren's own words, so the Director can weigh the
+  // reason rather than just the count.
+  function renderWrenReason(p) {
+    var record = wrenVotes[p.id];
+    var block = el("div", "wren");
+
+    if (!record) {
+      block.className = "wren wren-absent";
+      block.appendChild(el("span", "wren-who", "Wren has not voted"));
+      if (wrenVotesError) {
+        block.appendChild(el("span", "wren-note", "(reasons unavailable: " + wrenVotesError + ")"));
+      }
+      return block;
+    }
+
+    var support = Boolean(record.support);
+    block.className = "wren wren-" + (support ? "for" : "against");
+
+    var who = el("span", "wren-who");
+    who.appendChild(document.createTextNode("Wren voted "));
+    who.appendChild(el("b", null, support ? "FOR" : "AGAINST"));
+    block.appendChild(who);
+
+    var reason = String(record.reason || "").trim();
+    block.appendChild(el("blockquote", "wren-reason", reason || "(no reason recorded)"));
+
+    // A record whose direction disagrees with the chain means the log and the
+    // chain have drifted; say so rather than quietly presenting a wrong reason.
+    var onChain = (p.votes || []).filter(function (v) { return R.sameAddress(v.voter, R.WREN); })[0];
+    if (onChain && onChain.support !== support) {
+      block.appendChild(el("span", "wren-note",
+        "The chain records Wren voting " + (onChain.support ? "for" : "against") +
+        " — the log disagrees. Trust the chain."));
+    }
+
+    return block;
   }
 
   function renderActions(p, st) {
@@ -262,24 +314,53 @@
     lastData = data;
     renderHeader(data);
 
-    byId("proposal-count").textContent = "(" + data.proposals.length + ")";
+    var all = data.proposals;
+    var shown = hideClosed ? all.filter(function (p) { return p.status === 0; }) : all;
+
+    byId("proposal-count").textContent = shown.length === all.length
+      ? "(" + all.length + ")"
+      : "(" + shown.length + " of " + all.length + ")";
+
     var host = byId("proposals");
     host.textContent = "";
-    if (!data.proposals.length) {
+    if (!all.length) {
       host.appendChild(el("p", "empty", "No proposals on this AAO yet."));
       return;
     }
-    data.proposals.forEach(function (p) {
+    if (!shown.length) {
+      host.appendChild(el("p", "empty", "Every proposal is closed. Untick “Hide closed” to see them."));
+      return;
+    }
+    shown.forEach(function (p) {
       host.appendChild(renderProposal(p, data.aao));
     });
   }
 
   // --- refresh loop ------------------------------------------------------
 
+  // Wren's reasons come from the page's own server, so a page opened over
+  // file:// (or with the server down) simply loses the reasons and keeps the
+  // chain. Never fatal.
+  async function refreshWrenVotes() {
+    if (typeof window.fetch !== "function") {
+      wrenVotesError = "this browser has no fetch";
+      return;
+    }
+    try {
+      var records = await R.fetchWrenVotes(window.fetch.bind(window), "");
+      wrenVotes = R.indexWrenVotes(records);
+      wrenVotesError = null;
+    } catch (e) {
+      wrenVotes = {};
+      wrenVotesError = e && e.message ? e.message : String(e);
+    }
+  }
+
   async function refresh() {
     if (rendering) return;
     rendering = true;
     try {
+      await refreshWrenVotes();
       var data = await R.readGovernance(ethers, provider);
       setConnection("ok", "chain " + R.CHAIN_ID);
       render(data);
@@ -292,12 +373,31 @@
     }
   }
 
+  var hideClosedBox = byId("hide-closed");
+  hideClosedBox.checked = hideClosed;
+  hideClosedBox.addEventListener("change", function () {
+    hideClosed = hideClosedBox.checked;
+    try {
+      window.localStorage.setItem("governance.hideClosed", hideClosed ? "1" : "0");
+    } catch (e) { /* not worth failing a redraw over */ }
+    render(lastData);
+  });
+
   refresh();
   // Every new block redraws: a vote from wren-vote.js shows up here without a reload.
   provider.on("block", function () { refresh(); });
   // Belt and braces if the websocket-less poller ever stalls.
   setInterval(refresh, 8000);
 
-  // Read-only debugging handle.
-  window.__governance = { provider: provider, contract: readContract, refresh: refresh };
+  // Debugging handle: the live provider and contract, plus the render path, so
+  // the page can be driven from a console or a CDP session without a chain that
+  // happens to be in the right state.
+  window.__governance = {
+    provider: provider,
+    contract: readContract,
+    refresh: refresh,
+    render: render,
+    data: function () { return lastData; },
+    wrenVotes: function () { return wrenVotes; }
+  };
 })();
