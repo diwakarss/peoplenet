@@ -1,22 +1,42 @@
-// A static file server for governance/, and nothing else.
+// The governance server: static files for governance/, plus the small set of
+// append-only logs the page reads and writes.
 //
 //   npm run governance   ->   http://127.0.0.1:8787
 //
 // Node's own http and fs only; no dependency beyond what the repo already has.
 // It binds to the loopback address on purpose -- this page drives a local chain
 // with unlocked accounts and has no business being reachable from the network.
+//
+// Endpoints (spec section 27.2, 27.5):
+//   GET  /wren-votes.json   Wren's votes with the reason for each
+//   GET  /questions.json    the Director's questions, oldest first
+//   GET  /answers.json      Wren's answers
+//   POST /questions         file a question (or a request-new-proposal)
+//
+// Every log is re-read from disk on each request and served no-store: the
+// scripts append to these files while the page is open, and a cached copy would
+// quietly show the operator a stale thread.
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const url = require("url");
 const R = require("./read.js");
+const P = require("./protocol.js");
 
 const ROOT = __dirname;
-const WREN_VOTES_FILE = path.join(ROOT, "wren-votes.jsonl");
 const HOST = process.env.GOVERNANCE_HOST || "127.0.0.1";
 const PORT = Number(process.env.GOVERNANCE_PORT || 8787);
 
-const TYPES = {
+// One place that says which log lives where.
+const LOGS = {
+  "/wren-votes.json": "wren-votes.jsonl",
+  "/questions.json": "questions.jsonl",
+  "/answers.json": "answers.jsonl"
+};
+
+const MAX_BODY = 64 * 1024; // a question is a sentence, not a payload
+
+const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -28,42 +48,143 @@ const TYPES = {
 };
 
 function send(res, status, body, type) {
+  const payload = Buffer.isBuffer(body) ? body : String(body);
   res.writeHead(status, {
     "Content-Type": type || "text/plain; charset=utf-8",
-    "Content-Length": Buffer.byteLength(body),
-    // The page reads a live chain; never let a stale copy hide a new block.
+    "Content-Length": Buffer.byteLength(payload),
     "Cache-Control": "no-store"
   });
-  res.end(body);
+  res.end(payload);
 }
 
-// GET /wren-votes.json -- Wren's votes with the reason she gave for each, read
-// straight off governance/wren-votes.jsonl. Re-read on every request on purpose:
-// scripts/wren-vote.js appends to that file while the page is open, and a cached
-// copy would quietly show the operator a stale argument. Read-only; nothing here
-// ever writes the log.
-function serveWrenVotes(res) {
-  fs.readFile(WREN_VOTES_FILE, "utf8", (err, text) => {
+function sendJson(res, status, value) {
+  send(res, status, JSON.stringify(value), MIME[".json"]);
+}
+
+// --- logs --------------------------------------------------------------
+
+function logPath(file) {
+  return path.join(ROOT, file);
+}
+
+// Read one .jsonl log. A file that does not exist yet is an empty log, not an
+// error: nobody has asked anything yet.
+function readLog(file, done) {
+  fs.readFile(logPath(file), "utf8", (err, text) => {
     if (err) {
-      // No log yet is not an error: Wren simply has not voted.
-      if (err.code === "ENOENT") return send(res, 200, "[]", TYPES[".json"]);
-      return send(res, 500, "Cannot read wren-votes.jsonl: " + err.code);
+      if (err.code === "ENOENT") return done(null, []);
+      return done(err);
     }
-    const { records, skipped } = R.parseWrenVotesJsonl(text);
-    if (skipped) console.warn(`wren-votes.jsonl: skipped ${skipped} malformed line(s)`);
-    send(res, 200, JSON.stringify(records), TYPES[".json"]);
+    const { records, skipped } = P.parseJsonl(text);
+    if (skipped) console.warn(`${file}: skipped ${skipped} malformed line(s)`);
+    done(null, records);
   });
 }
 
-const server = http.createServer((req, res) => {
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    return send(res, 405, "Method not allowed");
-  }
+function serveLog(res, file) {
+  readLog(file, (err, records) => {
+    if (err) return send(res, 500, `Cannot read ${file}: ${err.code || err.message}`);
+    sendJson(res, 200, records);
+  });
+}
 
-  const pathname = decodeURIComponent(url.parse(req.url).pathname);
+// Append one record. Append-only on purpose: nothing here ever edits or deletes
+// a line, so the file is the record and git can hold it.
+function appendLog(file, record, done) {
+  fs.appendFile(logPath(file), P.toJsonl(record), "utf8", done);
+}
 
-  if (pathname === R.WREN_VOTES_PATH) return serveWrenVotes(res);
+function readBody(req, done) {
+  let size = 0;
+  const chunks = [];
+  let finished = false;
+  const fail = (message, status) => {
+    if (finished) return;
+    finished = true;
+    done(Object.assign(new Error(message), { status: status || 400 }));
+  };
+  req.on("data", (chunk) => {
+    size += chunk.length;
+    if (size > MAX_BODY) return fail("Body too large", 413);
+    chunks.push(chunk);
+  });
+  req.on("error", () => fail("Could not read the request body"));
+  req.on("end", () => {
+    if (finished) return;
+    finished = true;
+    const text = Buffer.concat(chunks).toString("utf8").trim();
+    if (!text) return done(null, {});
+    try {
+      done(null, JSON.parse(text));
+    } catch (e) {
+      done(Object.assign(new Error("Body is not valid JSON"), { status: 400 }));
+    }
+  });
+}
 
+// --- POST /questions ---------------------------------------------------
+
+// The Director asks something about a proposal, or asks for a new proposal
+// altogether. Either way it is one protocol message (27.5) that also carries the
+// 27.2 question fields, so the file is readable both as a thread and as the
+// agent traffic it is.
+function postQuestion(req, res) {
+  readBody(req, (err, body) => {
+    if (err) return send(res, err.status || 400, err.message);
+
+    const text = typeof body.text === "string" ? body.text.trim() : "";
+    if (!text) return sendJson(res, 400, { ok: false, errors: ["text is required"] });
+
+    const type = body.type === "request-new-proposal" ? "request-new-proposal" : "question";
+    const proposal = body.proposal === undefined || body.proposal === null
+      ? null
+      : Number(body.proposal);
+    if (proposal !== null && !Number.isInteger(proposal)) {
+      return sendJson(res, 400, { ok: false, errors: ["proposal must be a proposal id"] });
+    }
+
+    const now = new Date().toISOString();
+    const subject = type === "request-new-proposal"
+      ? `A new proposal is wanted for #${proposal}`
+      : firstLine(text);
+
+    const message = P.normalise({
+      // 27.5, the protocol envelope
+      from: "director",
+      to: body.to || "wren",
+      type: type,
+      subject: subject,
+      summary: text,
+      details: typeof body.details === "string" ? body.details : "",
+      refs: Array.isArray(body.refs) ? body.refs : [],
+      ts: now,
+      // 27.2, the question channel's own fields
+      proposal: proposal,
+      aaoId: body.aaoId === undefined ? R.AAO_ID : Number(body.aaoId),
+      text: text,
+      at: now
+    }, { idPrefix: type === "request-new-proposal" ? "req" : "q" });
+
+    const check = P.validate(message);
+    if (!check.ok) return sendJson(res, 400, { ok: false, errors: check.errors });
+
+    appendLog("questions.jsonl", message, (writeErr) => {
+      if (writeErr) return send(res, 500, "Could not append to questions.jsonl: " + writeErr.code);
+      console.log(`question ${message.id} on proposal ${proposal}: ${firstLine(text, 70)}`);
+      sendJson(res, 201, { ok: true, question: message });
+    });
+  });
+}
+
+function firstLine(text, max) {
+  const line = String(text).split(/\r?\n/)[0].trim();
+  const limit = max || 100;
+  return line.length > limit ? line.slice(0, limit - 1) + "…" : line;
+}
+
+// --- routing -----------------------------------------------------------
+
+function serveStatic(res, pathname) {
   const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
   const target = path.resolve(ROOT, relative);
 
@@ -74,15 +195,38 @@ const server = http.createServer((req, res) => {
 
   fs.readFile(target, (err, data) => {
     if (err) return send(res, 404, "Not found: " + relative);
-    send(res, 200, data, TYPES[path.extname(target).toLowerCase()] || "application/octet-stream");
+    send(res, 200, data, MIME[path.extname(target).toLowerCase()] || "application/octet-stream");
   });
+}
+
+const server = http.createServer((req, res) => {
+  const pathname = decodeURIComponent(url.parse(req.url).pathname);
+
+  if (req.method === "POST") {
+    if (pathname === "/questions") return postQuestion(req, res);
+    return send(res, 404, "No such endpoint: POST " + pathname);
+  }
+
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return send(res, 405, "Method not allowed");
+  }
+
+  if (LOGS[pathname]) return serveLog(res, LOGS[pathname]);
+
+  return serveStatic(res, pathname);
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`governance page: http://${HOST}:${PORT}`);
+  const base = `http://${HOST}:${PORT}`;
+  console.log(`governance page  ${base}`);
   console.log(`serving          ${ROOT}`);
-  console.log(`chain            http://127.0.0.1:8545 (chain id 31337)`);
-  console.log(`Wren's reasons   http://${HOST}:${PORT}${R.WREN_VOTES_PATH} (re-read per request)`);
+  console.log(`chain            ${R.RPC_URL} (chain id ${R.CHAIN_ID})`);
+  console.log("");
+  console.log("logs, re-read on every request:");
+  Object.keys(LOGS).forEach((route) => {
+    console.log(`  GET  ${base}${route}`.padEnd(48) + LOGS[route]);
+  });
+  console.log(`  POST ${base}/questions`.padEnd(48) + "questions.jsonl  <- the Director asks");
   console.log("");
   console.log("Ctrl-C to stop.");
 });

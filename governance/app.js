@@ -36,6 +36,17 @@
   var wrenVotes = {};
   var wrenVotesError = null;
 
+  // The question channel (27.2): the Director's questions and Wren's answers,
+  // polled every two seconds so the latency the operator sees is Wren's own.
+  var questions = [];
+  var answers = [];
+  var threadError = null;
+
+  // What the Director has typed but not yet sent, per proposal. Kept out of the
+  // DOM so a redraw cannot eat a half-written question.
+  var drafts = {};
+  var asking = {};
+
   // "Hide closed" survives a reload; it is a per-viewer convenience, nothing more.
   var hideClosed = false;
   try {
@@ -100,8 +111,8 @@
     });
   }
 
-  function executeProposal(proposalId) {
-    return send(proposalId, "execute", async function () {
+  function executeProposal(proposalId, buttonKey) {
+    return send(proposalId, buttonKey || "execute", async function () {
       var signer = await signerFor(R.DIRECTOR);
       var contract = R.getContract(ethers, signer);
       var tx = await contract.executeProposal(proposalId);
@@ -219,6 +230,8 @@
 
     if (st.error) card.appendChild(el("p", "err", st.error));
 
+    card.appendChild(renderThread(p));
+
     return card;
   }
 
@@ -259,6 +272,188 @@
     }
 
     return block;
+  }
+
+  // --- the question channel (27.2) ---------------------------------------
+
+  function questionsFor(proposalId) {
+    return questions.filter(function (q) { return Number(q.proposal) === Number(proposalId); });
+  }
+
+  function answersTo(questionId) {
+    return answers.filter(function (a) { return a.question === questionId; });
+  }
+
+  function timeOf(record) {
+    var raw = record.at || record.ts;
+    if (!raw) return "";
+    var d = new Date(raw);
+    return isNaN(d.getTime()) ? String(raw) : d.toLocaleTimeString();
+  }
+
+  // One input, one button, and the thread underneath. Nothing else: the Director
+  // asks in a sentence and Wren answers in a sentence.
+  function renderThread(p) {
+    var wrap = el("section", "thread");
+    var mine = questionsFor(p.id);
+    var anyAnswered = mine.some(function (q) { return answersTo(q.id).length > 0; });
+
+    var head = el("div", "thread-head");
+    head.appendChild(el("h4", "thread-title", "Questions to Wren"));
+    if (mine.length) {
+      head.appendChild(el("span", "thread-count",
+        mine.length + (mine.length === 1 ? " asked" : " asked") + " · " +
+        answers.filter(function (a) { return Number(a.proposal) === p.id; }).length + " answered"));
+    }
+    wrap.appendChild(head);
+
+    mine.forEach(function (q) {
+      wrap.appendChild(renderQuestion(q));
+    });
+
+    if (threadError) {
+      wrap.appendChild(el("p", "thread-note", "The question channel is unavailable: " + threadError));
+      return wrap;
+    }
+
+    wrap.appendChild(renderAskBox(p));
+
+    // 27.2: after an answer, the Director either closes it as a tie or asks for
+    // a better proposal. Both are offered only once there is something to judge.
+    if (anyAnswered) wrap.appendChild(renderAfterAnswer(p));
+
+    return wrap;
+  }
+
+  function renderQuestion(q) {
+    var item = el("article", "qa");
+    var isRequest = q.type === "request-new-proposal";
+
+    var qHead = el("div", "qa-head");
+    qHead.appendChild(el("span", "qa-who qa-who-director",
+      isRequest ? "Director asked for a new proposal" : "Director asked"));
+    qHead.appendChild(el("span", "qa-time", timeOf(q)));
+    item.appendChild(qHead);
+    item.appendChild(el("p", "qa-text", q.text || q.summary || ""));
+
+    var replies = answersTo(q.id);
+    if (!replies.length) {
+      item.appendChild(el("p", "qa-waiting",
+        isRequest ? "Sent to the proposer. Awaiting a revised proposal." : "Waiting for Wren…"));
+      return item;
+    }
+
+    replies.forEach(function (a) {
+      var reply = el("div", "qa-reply");
+      var rHead = el("div", "qa-head");
+      rHead.appendChild(el("span", "qa-who qa-who-wren", R.labelFor(R.WREN) + " answered"));
+      rHead.appendChild(el("span", "qa-time", timeOf(a)));
+      reply.appendChild(rHead);
+      reply.appendChild(el("p", "qa-text", a.text || a.summary || ""));
+
+      // The technical part lives below a fold, as 27.2 asks.
+      if (a.details && String(a.details).trim()) {
+        var fold = el("details", "qa-details");
+        fold.appendChild(el("summary", null, "Technical detail"));
+        fold.appendChild(el("pre", "qa-pre", a.details));
+        reply.appendChild(fold);
+      }
+      if (Array.isArray(a.refs) && a.refs.length) {
+        reply.appendChild(el("p", "qa-refs", "refs: " + a.refs.join(", ")));
+      }
+      item.appendChild(reply);
+    });
+
+    return item;
+  }
+
+  function renderAskBox(p) {
+    var box = el("form", "ask");
+    var input = el("input", "ask-input");
+    input.type = "text";
+    input.placeholder = "Ask Wren about this proposal…";
+    input.value = drafts[p.id] || "";
+    input.setAttribute("data-draft", String(p.id));
+    input.disabled = Boolean(asking[p.id]);
+    input.addEventListener("input", function () { drafts[p.id] = input.value; });
+
+    var button = el("button", "ask-send", asking[p.id] ? "sending…" : "Ask");
+    button.type = "submit";
+    button.disabled = Boolean(asking[p.id]);
+
+    box.appendChild(input);
+    box.appendChild(button);
+    box.addEventListener("submit", function (event) {
+      event.preventDefault();
+      ask(p.id, drafts[p.id] || input.value, "question");
+    });
+    return box;
+  }
+
+  function renderAfterAnswer(p) {
+    var wrap = el("div", "after-answer");
+    var level = p.forVotes === p.againstVotes;
+    var open = p.status === 0;
+    var st = stateFor(p.id);
+
+    var tie = el("button", "close-tie", st.busy === "close-tie" ? "working…" : "Close as tie");
+    tie.disabled = !open || !level || st.busy !== null;
+    if (!tie.disabled) {
+      tie.addEventListener("click", function () { executeProposal(p.id, "close-tie"); });
+    }
+    wrap.appendChild(tie);
+
+    var again = el("button", "ask-new", asking[p.id] ? "sending…" : "Ask for a new proposal");
+    again.disabled = Boolean(asking[p.id]);
+    if (!again.disabled) {
+      again.addEventListener("click", function () {
+        ask(p.id,
+          drafts[p.id] || "This proposal is not it. Please file a revised one that links this.",
+          "request-new-proposal");
+      });
+    }
+    wrap.appendChild(again);
+
+    var note = el("p", "hint");
+    if (!open) {
+      note.textContent = "Closed — " + p.statusLabel.toLowerCase() + ".";
+    } else if (level) {
+      note.textContent =
+        "Tally is level at " + p.forVotes + "–" + p.againstVotes +
+        ". Closing as a tie executes it, which rejects a level tally.";
+    } else {
+      note.textContent =
+        "Close as tie needs a level tally; it stands at " + p.forVotes + "–" + p.againstVotes + ".";
+    }
+    wrap.appendChild(note);
+
+    return wrap;
+  }
+
+  async function ask(proposalId, text, type) {
+    var body = String(text || "").trim();
+    if (!body) return;
+    asking[proposalId] = true;
+    threadError = null;
+    render(lastData);
+    try {
+      var response = await window.fetch("/questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposal: proposalId, text: body, type: type })
+      });
+      var result = await response.json().catch(function () { return {}; });
+      if (!response.ok || result.ok === false) {
+        throw new Error((result.errors || ["HTTP " + response.status]).join("; "));
+      }
+      drafts[proposalId] = "";
+    } catch (e) {
+      stateFor(proposalId).error = "Could not send the question: " + (e.message || e);
+    } finally {
+      asking[proposalId] = false;
+    }
+    await refreshThreads();
+    render(lastData);
   }
 
   function renderActions(p, st) {
@@ -309,8 +504,27 @@
     return wrap;
   }
 
+  // A redraw replaces the DOM, which would steal focus from a half-typed
+  // question. Remember where the caret was and put it back.
+  function captureFocus() {
+    var active = document.activeElement;
+    if (!active || !active.getAttribute) return null;
+    var draft = active.getAttribute("data-draft");
+    if (draft === null) return null;
+    return { draft: draft, start: active.selectionStart, end: active.selectionEnd };
+  }
+
+  function restoreFocus(mark) {
+    if (!mark) return;
+    var input = document.querySelector('[data-draft="' + mark.draft + '"]');
+    if (!input) return;
+    input.focus();
+    try { input.setSelectionRange(mark.start, mark.end); } catch (e) { /* not a text input */ }
+  }
+
   function render(data) {
     if (!data) return;
+    var mark = captureFocus();
     lastData = data;
     renderHeader(data);
 
@@ -334,6 +548,7 @@
     shown.forEach(function (p) {
       host.appendChild(renderProposal(p, data.aao));
     });
+    restoreFocus(mark);
   }
 
   // --- refresh loop ------------------------------------------------------
@@ -356,11 +571,43 @@
     }
   }
 
+  // The question channel, polled every two seconds (27.2). Cheap: two small
+  // files off the loopback server. Nothing here touches the chain.
+  async function fetchJson(path) {
+    var response = await window.fetch(path, { cache: "no-store" });
+    if (!response.ok) throw new Error(path + " returned HTTP " + response.status);
+    var body = await response.json();
+    if (!Array.isArray(body)) throw new Error(path + " did not return a JSON array");
+    return body;
+  }
+
+  // Returns true when something actually changed, so the poll only redraws when
+  // there is news -- a redraw every two seconds would fight the Director's typing.
+  async function refreshThreads() {
+    if (typeof window.fetch !== "function") {
+      threadError = "this browser has no fetch";
+      return false;
+    }
+    var before = questions.length + ":" + answers.length + ":" + (threadError || "");
+    try {
+      var pair = await Promise.all([fetchJson("/questions.json"), fetchJson("/answers.json")]);
+      questions = pair[0];
+      answers = pair[1];
+      threadError = null;
+    } catch (e) {
+      questions = [];
+      answers = [];
+      threadError = e && e.message ? e.message : String(e);
+    }
+    return before !== questions.length + ":" + answers.length + ":" + (threadError || "");
+  }
+
   async function refresh() {
     if (rendering) return;
     rendering = true;
     try {
       await refreshWrenVotes();
+      await refreshThreads();
       var data = await R.readGovernance(ethers, provider);
       setConnection("ok", "chain " + R.CHAIN_ID);
       render(data);
@@ -371,6 +618,12 @@
     } finally {
       rendering = false;
     }
+  }
+
+  async function pollThreads() {
+    if (rendering) return;
+    var changed = await refreshThreads();
+    if (changed) render(lastData);
   }
 
   var hideClosedBox = byId("hide-closed");
@@ -388,6 +641,9 @@
   provider.on("block", function () { refresh(); });
   // Belt and braces if the websocket-less poller ever stalls.
   setInterval(refresh, 8000);
+  // The question channel is the impatient one: two seconds, so the only delay
+  // the Director feels between asking and reading the answer is Wren's own.
+  setInterval(pollThreads, 2000);
 
   // Debugging handle: the live provider and contract, plus the render path, so
   // the page can be driven from a console or a CDP session without a chain that
@@ -398,6 +654,9 @@
     refresh: refresh,
     render: render,
     data: function () { return lastData; },
-    wrenVotes: function () { return wrenVotes; }
+    wrenVotes: function () { return wrenVotes; },
+    threads: function () { return { questions: questions, answers: answers, error: threadError }; },
+    refreshThreads: refreshThreads,
+    ask: ask
   };
 })();

@@ -350,6 +350,127 @@ code {
   color: var(--ink-faint);
 }
 
+/* --- the question channel ---------------------------------------------- */
+
+.thread {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+
+.thread-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.thread-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 640;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.thread-count { font-size: 11.5px; color: var(--ink-faint); }
+
+.qa {
+  margin-bottom: 10px;
+  padding: 9px 0 9px 12px;
+  border-left: 2px solid var(--line-strong);
+  font-size: 13px;
+}
+
+.qa-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.qa-who {
+  font-size: 11px;
+  font-weight: 640;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.qa-who-director { color: var(--accent); }
+.qa-who-wren { color: var(--for); }
+
+.qa-time { font-size: 11px; color: var(--ink-faint); }
+
+.qa-text { margin: 4px 0 0; line-height: 1.55; }
+
+.qa-waiting {
+  margin: 5px 0 0;
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+.qa-reply {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--line);
+}
+
+.qa-details { margin-top: 7px; font-size: 12px; }
+.qa-details summary { cursor: pointer; color: var(--ink-faint); }
+.qa-details summary:hover { color: var(--ink); }
+
+.qa-pre {
+  margin: 7px 0 0;
+  padding: 9px 11px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.qa-refs { margin: 6px 0 0; font-size: 11.5px; color: var(--ink-faint); }
+
+.ask {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ask-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  padding: 6px 11px;
+}
+
+.ask-input:focus { outline: none; border-color: var(--accent); }
+.ask-input::placeholder { color: var(--ink-faint); }
+
+.after-answer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line);
+}
+
+button.close-tie:not(:disabled) { color: var(--wait); border-color: var(--wait); }
+
+.thread-note { margin: 8px 0 0; font-size: 12px; color: var(--against); }
+
 /* --- proposal list header ---------------------------------------------- */
 
 .list-head {

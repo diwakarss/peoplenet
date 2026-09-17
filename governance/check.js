@@ -13,12 +13,20 @@
 const assert = require("assert");
 const ethers = require("ethers");
 const R = require("./read.js");
+const P = require("./protocol.js");
 
 const PAGE_URL = process.env.GOVERNANCE_URL ||
   `http://${process.env.GOVERNANCE_HOST || "127.0.0.1"}:${process.env.GOVERNANCE_PORT || 8787}`;
 
-// Wren has voted on every proposal that existed when she sat down: twelve.
-const EXPECTED_WREN_VOTES = Number(process.env.GOVERNANCE_EXPECTED_WREN_VOTES || 12);
+// Wren had voted twelve times when the reasons first went on the page, and she
+// keeps voting as proposals arrive. A fixed number would go red on its own, so
+// the floor is the assertion and the real invariant is the one below it: every
+// Wren vote the chain knows about has a reason on file. Set
+// GOVERNANCE_EXPECTED_WREN_VOTES to demand an exact count instead.
+const EXACT_WREN_VOTES = process.env.GOVERNANCE_EXPECTED_WREN_VOTES
+  ? Number(process.env.GOVERNANCE_EXPECTED_WREN_VOTES)
+  : null;
+const MINIMUM_WREN_VOTES = 12;
 
 // AAO 0 was seeded with the seven WP17d builder suggestions, and proposals only
 // ever get added, never removed -- other sessions file more as the work goes on.
@@ -53,7 +61,7 @@ async function main() {
 
   const { aao, proposals, blockNumber } = await R.readGovernance(ethers, provider);
 
-  // The same endpoint the page fetches, over the same server.
+  // The same endpoints the page fetches, over the same server.
   let wrenRecords = null;
   let wrenError = null;
   try {
@@ -62,6 +70,19 @@ async function main() {
     wrenError = e && e.message ? e.message : String(e);
   }
   const wrenByProposal = R.indexWrenVotes(wrenRecords || []);
+
+  // The question channel (27.2). An empty log is the normal state until the
+  // Director asks something, so the assertion is on the endpoint, not the count.
+  const channel = {};
+  for (const route of ["/questions.json", "/answers.json"]) {
+    try {
+      const response = await fetch(PAGE_URL + route, { cache: "no-store" });
+      const body = await response.json();
+      channel[route] = { ok: response.ok, records: body, error: null };
+    } catch (e) {
+      channel[route] = { ok: false, records: null, error: e && e.message ? e.message : String(e) };
+    }
+  }
 
   // --- the rendering ---------------------------------------------------
   console.log(`AAO ${aao.id}: ${aao.topic}`);
@@ -95,6 +116,10 @@ async function main() {
 
   console.log("");
   console.log(`wren-votes.json  ${wrenError ? `UNAVAILABLE (${wrenError})` : `${wrenRecords.length} records from ${PAGE_URL}${R.WREN_VOTES_PATH}`}`);
+  for (const route of ["/questions.json", "/answers.json"]) {
+    const got = channel[route];
+    console.log(`${route.padEnd(16)} ${got.error ? `UNAVAILABLE (${got.error})` : `${got.records.length} records`}`);
+  }
 
   // --- the assertions --------------------------------------------------
   const checks = [];
@@ -173,12 +198,33 @@ async function main() {
     assert.ok(Array.isArray(wrenRecords), "the endpoint did not return an array");
   });
 
-  check(`${R.WREN_VOTES_PATH} returns ${EXPECTED_WREN_VOTES} records`, () => {
-    assert.strictEqual(
-      wrenRecords.length,
-      EXPECTED_WREN_VOTES,
-      `expected ${EXPECTED_WREN_VOTES} records, got ${wrenRecords.length}`
-    );
+  const wrenCountLabel = EXACT_WREN_VOTES === null
+    ? `${R.WREN_VOTES_PATH} returns at least ${MINIMUM_WREN_VOTES} records (got ${(wrenRecords || []).length})`
+    : `${R.WREN_VOTES_PATH} returns exactly ${EXACT_WREN_VOTES} records`;
+  check(wrenCountLabel, () => {
+    if (EXACT_WREN_VOTES !== null) {
+      assert.strictEqual(
+        wrenRecords.length,
+        EXACT_WREN_VOTES,
+        `expected ${EXACT_WREN_VOTES} records, got ${wrenRecords.length}`
+      );
+    } else {
+      assert.ok(
+        wrenRecords.length >= MINIMUM_WREN_VOTES,
+        `expected at least ${MINIMUM_WREN_VOTES} records, got ${wrenRecords.length}`
+      );
+    }
+  });
+
+  check("every Wren vote on chain has a reason on file", () => {
+    for (const p of proposals) {
+      const onChain = p.votes.filter((v) => R.sameAddress(v.voter, R.WREN))[0];
+      if (!onChain) continue;
+      assert.ok(
+        wrenByProposal[p.id],
+        `proposal ${p.id}: Wren voted ${onChain.support ? "for" : "against"} on chain but gave no reason`
+      );
+    }
   });
 
   check("every record names a proposal, a direction and a reason", () => {
@@ -226,6 +272,64 @@ async function main() {
         `proposal ${p.id}: the log says ${record.support ? "for" : "against"}, the chain says the opposite`
       );
     }
+  });
+
+  // --- the question channel and the protocol (27.2, 27.5) ---------------
+
+  check("the question channel endpoints are served", () => {
+    for (const route of ["/questions.json", "/answers.json"]) {
+      const got = channel[route];
+      assert.strictEqual(got.error, null, `${route} did not answer (${got.error})`);
+      assert.ok(got.ok, `${route} returned a non-2xx status`);
+      assert.ok(Array.isArray(got.records), `${route} did not return an array`);
+    }
+  });
+
+  check("every question and answer on file is a valid protocol message", () => {
+    for (const route of ["/questions.json", "/answers.json"]) {
+      (channel[route].records || []).forEach((record, i) => {
+        const result = P.validate(record);
+        assert.ok(result.ok, `${route}[${i}] (${record.id}): ${result.errors.join("; ")}`);
+      });
+    }
+  });
+
+  check("every answer points at a question that exists", () => {
+    const ids = new Set((channel["/questions.json"].records || []).map((q) => q.id));
+    (channel["/answers.json"].records || []).forEach((a) => {
+      assert.ok(ids.has(a.question), `answer ${a.id} answers unknown question ${a.question}`);
+    });
+  });
+
+  check("the protocol validator refuses a message without subject and summary", () => {
+    assert.strictEqual(P.validate({ from: "wren", type: "answer", subject: "x" }).ok, false);
+    assert.strictEqual(P.validate({ from: "wren", type: "answer", summary: "x" }).ok, false);
+    assert.strictEqual(P.validate({ from: "wren", type: "answer", subject: " ", summary: "x" }).ok, false);
+    assert.strictEqual(
+      P.validate({ from: "wren", type: "answer", subject: "x", summary: "y" }).ok,
+      true
+    );
+  });
+
+  check("the protocol validator refuses an unknown type and a bad shape", () => {
+    const bad = P.validate({ from: "wren", type: "gossip", subject: "x", summary: "y" });
+    assert.strictEqual(bad.ok, false);
+    assert.ok(bad.errors.join(" ").includes("gossip"));
+    assert.strictEqual(P.validate(null).ok, false);
+    assert.strictEqual(P.validate("a string").ok, false);
+    assert.strictEqual(
+      P.validate({ from: "wren", type: "answer", subject: "x", summary: "y", refs: "no" }).ok,
+      false
+    );
+  });
+
+  check("normalise fills id, ts, to and refs without touching what was written", () => {
+    const message = P.normalise({ from: "director", type: "question", subject: "s", summary: "m" });
+    assert.ok(message.id && message.ts, "id and ts were not filled");
+    assert.strictEqual(message.to, "all");
+    assert.deepStrictEqual(message.refs, []);
+    assert.strictEqual(message.subject, "s");
+    assert.strictEqual(P.validate(message).ok, true);
   });
 
   console.log("");
