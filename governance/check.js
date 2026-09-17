@@ -302,13 +302,16 @@ async function main() {
 
   check("the page shows one reason per proposal, the latest", () => {
     const ids = Object.keys(wrenByProposal).map(Number).sort((a, b) => a - b);
+    // A correction names no proposal -- it is Wren writing down that an earlier
+    // record was wrong -- so it is not a vote and must not be counted as one.
+    const voteRecords = wrenRecords.filter((r) => !r.correction);
     assert.strictEqual(
       ids.length,
-      new Set(wrenRecords.map((r) => r.proposalId)).size,
+      new Set(voteRecords.map((r) => r.proposalId)).size,
       "indexing lost or invented a proposal"
     );
     for (const id of ids) {
-      const forThisProposal = wrenRecords.filter((r) => Number(r.proposalId) === id);
+      const forThisProposal = voteRecords.filter((r) => Number(r.proposalId) === id);
       const latest = forThisProposal[forThisProposal.length - 1];
       assert.strictEqual(
         wrenByProposal[id].at,

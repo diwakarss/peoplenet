@@ -494,7 +494,13 @@
   function indexWrenVotes(records) {
     var best = {};
     (records || []).forEach(function (record, index) {
-      if (!record || record.proposalId === undefined || record.proposalId === null) return;
+      if (!record) return;
+      // A correction is Wren writing down that an earlier record was wrong. The
+      // log is append-only, so that is the only way to say so -- but a
+      // correction is not a vote, and showing its text as the card's reason
+      // would replace Wren's argument with a note about the bookkeeping.
+      if (record.correction) return;
+      if (record.proposalId === undefined || record.proposalId === null) return;
       var id = num(record.proposalId);
       if (!best[id] || isLater(record, index, best[id].record, best[id].index)) {
         best[id] = { record: record, index: index };

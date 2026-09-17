@@ -1,4 +1,4 @@
-// Wren's vote on a trilogy widget proposal (spec section 24, WP17d).
+// Wren's vote on a governance proposal (spec 24 WP17d, and 27.4a).
 //
 // Only the architect session runs this. The governance page never casts Wren's
 // vote: Wren states the reason in the chat first, then this script puts the vote
@@ -6,8 +6,16 @@
 // governance/wren-votes.jsonl so the record and the tally stay together.
 //
 // Usage (plain node -- `hardhat run` cannot forward arguments):
-//   node scripts/wren-vote.js <proposalId> <for|against> "<reason>"
+//   node scripts/wren-vote.js <proposalId> <for|against> "<reason>" [--aao <id>]
 //   node scripts/wren-vote.js 3 for "The cache key is the real fix."
+//   node scripts/wren-vote.js 34 for "Tied 1-1; this side is the safer one." --aao 1
+//
+// Wren does not have the same standing on every organisation. On AAO 0, the
+// trilogy widget, she is an ordinary voter alongside the Director. On AAO 1,
+// the widget-builder, the builder and the widget vote and Wren is the casting
+// vote -- so this refuses there unless the tally is level with both of their
+// votes in (27.4a). The rule lives in governance/read.js, which the page reads
+// too, so the script and the page cannot drift apart.
 //
 // The network defaults to localhost (127.0.0.1:8545); set HARDHAT_NETWORK to
 // point it somewhere else.
@@ -38,29 +46,40 @@ function parseArgs(argv) {
   var rest = argv.slice(2);
   if (rest[0] === "--") rest = rest.slice(1);
 
-  // --expect-title "..." says what Wren believes she is voting on. Pulled out
-  // of the positional arguments so the reason stays one free-text run.
+  // Flags are pulled out of the positional arguments so the reason stays one
+  // free-text run and nothing in it is mistaken for an option.
   var expectTitle = null;
+  var aaoId = AAO_ID;
   var positional = [];
   for (var i = 0; i < rest.length; i++) {
-    if (rest[i] === "--expect-title") { expectTitle = String(rest[++i] || ""); continue; }
-    if (rest[i] === "--expect") { expectTitle = String(rest[++i] || ""); continue; }
+    if (rest[i] === "--expect-title" || rest[i] === "--expect") {
+      expectTitle = String(rest[++i] || "");
+      continue;
+    }
+    if (rest[i] === "--aao") { aaoId = Number(rest[++i]); continue; }
     positional.push(rest[i]);
   }
   positional.expectTitle = expectTitle;
+  positional.aaoId = aaoId;
   return positional;
 }
 
 function usage(message) {
   console.error(message);
   console.error("");
-  console.error('  node scripts/wren-vote.js <proposalId> <for|against> "<reason>" [--expect-title "..."]');
+  console.error('  node scripts/wren-vote.js <proposalId> <for|against> "<reason>" \\');
+  console.error('      [--aao <id>] [--expect-title "..."]');
+  console.error("");
+  console.error("  --aao 0   the trilogy widget: Wren has an ordinary vote (the default)");
+  console.error("  --aao 1   widget-builder: Wren votes only to break a level tally,");
+  console.error("            after both the builder and the widget have voted");
   process.exit(1);
 }
 
 async function main() {
   const args = parseArgs(process.argv);
   const expectTitle = args.expectTitle;
+  const aaoId = args.aaoId;
   const [rawId, rawSupport, ...reasonParts] = args;
 
   if (rawId === undefined || rawSupport === undefined) {
@@ -91,10 +110,30 @@ async function main() {
 
   const aaoFacet = await ethers.getContractAt("AAOFacet", DIAMOND);
 
-  const isMember = await aaoFacet.isMember(AAO_ID, wren.address);
-  if (!isMember) {
-    throw new Error("Wren is not a member of AAO 0. Run scripts/setup-governance-members.js first.");
+  if (!Number.isInteger(aaoId) || aaoId < 0) {
+    usage(`wren-vote: --aao "${aaoId}" is not an organisation id.`);
   }
+  const organisation = await aaoFacet.getAAO(aaoId);
+  if (!organisation.topic) throw new Error(`There is no AAO ${aaoId} on this chain.`);
+  const rules = R.rulesFor({ topic: organisation.topic });
+
+  const isMember = await aaoFacet.isMember(aaoId, wren.address);
+  if (!isMember) {
+    throw new Error(
+      `Wren is not a member of AAO ${aaoId} ("${organisation.topic}"). ` +
+      "Run scripts/setup-governance-members.js for AAO 0, or " +
+      "scripts/create-widget-builder-aao.js for the sub-AAO."
+    );
+  }
+
+  // Wren does not have the same standing everywhere. On the trilogy widget she
+  // is an ordinary voter; on the widget-builder she is the casting vote, and
+  // 27.4a says that is used only to break a level tally after the builder and
+  // the widget have both voted. read.js holds the rule, so the page and this
+  // script refuse the same things for the same reasons.
+  const wrenProblem = R.voterProblem(rules, WREN);
+  if (wrenProblem) throw new Error(`On "${organisation.topic}": ${wrenProblem}`);
+  const wrenIsOrdinary = rules.voters.some((a) => R.sameAddress(a, WREN));
 
   const before = await aaoFacet.getProposal(proposalId);
 
@@ -117,11 +156,33 @@ async function main() {
     );
   }
 
-  if (Number(before.aaoId) !== AAO_ID) {
-    throw new Error(`Proposal ${proposalId} belongs to AAO ${Number(before.aaoId)}, not ${AAO_ID}.`);
+  if (Number(before.aaoId) !== aaoId) {
+    throw new Error(
+      `Proposal ${proposalId} belongs to AAO ${Number(before.aaoId)}, not ${aaoId}. ` +
+      `Pass --aao ${Number(before.aaoId)} if that is the one you meant.`
+    );
   }
   if (Number(before.status) !== 0) {
     throw new Error(`Proposal ${proposalId} is ${STATUS[Number(before.status)]}, not open for votes.`);
+  }
+
+  // Where Wren is the casting vote, the tally has to be level and both ordinary
+  // voters in before she may touch it. Voting early would decide a question the
+  // two members have not finished asking.
+  if (!wrenIsOrdinary) {
+    const enriched = (await R.readProposals(aaoFacet, aaoId))
+      .filter((p) => p.id === proposalId)[0];
+    if (!enriched) throw new Error(`Proposal ${proposalId} could not be read back from AAO ${aaoId}.`);
+    const casting = R.castingStateUnder(rules, enriched);
+    if (!casting.allowed) {
+      throw new Error(
+        `Wren is the casting vote on "${organisation.topic}", and it is not hers to cast yet.\n` +
+        `  ${casting.reason}\n\n` +
+        `Voters here: ${rules.voters.map(R.labelFor).join(" and ")}. ` +
+        "The casting vote breaks a level tally and nothing else."
+      );
+    }
+    console.log(`casting vote on "${organisation.topic}": ${casting.reason}`);
   }
 
   // A second reading of the same lesson: if this id already carries a vote from
@@ -152,7 +213,7 @@ async function main() {
 
   const record = {
     at: new Date().toISOString(),
-    aaoId: AAO_ID,
+    aaoId: aaoId,
     proposalId,
     voter: wren.address,
     role: "Wren",
