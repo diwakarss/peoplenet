@@ -6,3 +6,4 @@
 {"id":"filed-mu6q1ceh-lbpccw","draft":"draft-mu6q0ssw-bjctel","state":"filed","proposalId":42,"aaoId":2,"filedBy":"wren","at":"2026-09-18T08:53:29.993Z","txHash":"0x7326d559b44ebf19877891b93067a48e6c5a510778ff014319dec977fdc6ddf9","blockNumber":169}
 {"id":"draft-mu6q1ksn-9qj6ow","text":"all data from windows, mac and cloud sessions across providers should be consolidated","from":"director","at":"2026-09-18T08:53:40.871Z","aaoId":2,"state":"awaiting-wren"}
 {"id":"filed-mu6q25sx-i2o7fs","draft":"draft-mu6q1ksn-9qj6ow","state":"filed","proposalId":43,"aaoId":2,"filedBy":"wren","at":"2026-09-18T08:54:08.097Z","txHash":"0x7cb64109ae651bbf8e5df26171d1bff462e2580fd5d5cfc873e535a790236ded","blockNumber":170}
+{"id":"draft-mu6u5qs8-p5hfn9","text":"only use cloud agents so sessions can be resumed when needed","from":"director","at":"2026-09-18T10:48:53.721Z","aaoId":2,"state":"awaiting-wren"}
