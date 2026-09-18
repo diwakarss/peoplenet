@@ -797,6 +797,138 @@ async function main() {
     assert.strictEqual(P.validate(message).ok, true);
   });
 
+  // --- the message id (proposal 26) --------------------------------------
+
+  check("the same message written twice is one message, not two", () => {
+    // What proposal 26 is for. Under the old clock-based scheme these were two
+    // ids, so a retry after a crash counted as two incidents and could invent a
+    // builder item that never happened.
+    const say = () => P.normalise({
+      from: "widget", type: "incident",
+      subject: "Citations went stale for one turn after a KBA edit",
+      summary: "The citation cache kept the old body for one turn."
+    });
+    assert.strictEqual(say().id, say().id, "two writings of one message must share an id");
+
+    // And two messages that say different things do not.
+    const other = P.normalise({
+      from: "widget", type: "incident",
+      subject: "Citations went stale for one turn after a KBA edit",
+      summary: "Something else happened."
+    });
+    assert.notStrictEqual(say().id, other.id);
+
+    // ts is out of the fingerprint on purpose: a retry gets a new clock and must
+    // keep its id. refs are out too -- a corrector may add a reference without
+    // changing what was said.
+    const withTs = P.normalise(Object.assign(say(), { id: "", ts: "2020-01-01T00:00:00.000Z" }));
+    const withRefs = P.normalise(Object.assign(say(), { id: "", refs: ["incident-1", "commit abc"] }));
+    assert.strictEqual(withTs.id, say().id, "the clock must not change the id");
+    assert.strictEqual(withRefs.id, say().id, "a added reference must not change the id");
+  });
+
+  check("an id computed here is the id protocol.py computes", () => {
+    // The whole point of proposal 26 is that both implementations number the
+    // same message the same way. These ids were produced by the widget's
+    // protocol.py; if this file's scheme drifts -- a different field set, a
+    // different canonical form, a different digest length -- they stop matching
+    // and this says so before anything is written with the wrong number.
+    //
+    // Regenerate with, from the widget's directory:
+    //   python -c "import json,protocol as P; print(P.normalise({...})['id'])"
+    const fromPython = [
+      [{ from: "widget", type: "incident", subject: "S", summary: "P" },
+        "incident-5d629ac9f82cca"],
+      [{ from: "builder", to: "wren", type: "status",
+        subject: "Working on the cache key",
+        summary: "Half done. Nothing needed.",
+        details: "citations.py line 40" },
+        "status-6b55dd1ab61d33"],
+      [{ from: "wren", type: "decision",
+        subject: "Proposal 26: executed automatically",
+        summary: "It passed 2 to 0. Decisive with every vote in.",
+        details: "executed by Wren in block 7",
+        refs: ["proposal 26"] },
+        "decision-c226dbb8b4fabe"],
+      // Non-ASCII, because the canonical form is ensure_ascii=False on both
+      // sides and a wrong UTF-8 encoding would only show up here.
+      [{ from: "widget", type: "incident",
+        subject: "café — naïve 日本語",
+        summary: "unicode 🙂 in the subject",
+        details: "line one\nline two\ttabbed" },
+        "incident-349898fd758b9e"],
+      // Characters JSON has to escape, on both sides, the same way.
+      [{ from: "director", type: "question",
+        subject: 'a quote " and a backslash \\',
+        summary: "punctuation that JSON has to escape",
+        details: "carriage\rreturn and a null-ish \u0001 byte" },
+        "question-27a85f72ea8926"],
+      [{ from: "builder", type: "status", subject: "no details at all",
+        summary: "details defaults to the empty string" },
+        "status-f44bcf533173b0"]
+    ];
+
+    for (const [partial, expected] of fromPython) {
+      const got = P.normalise(JSON.parse(JSON.stringify(partial))).id;
+      assert.strictEqual(got, expected,
+        `protocol.py numbers this message ${expected}; protocol.js gave ${got}`);
+    }
+  });
+
+  check("the digest is sha256, the one everybody else computes", () => {
+    // protocol.js carries its own sha256 because it loads in the browser too,
+    // where the platform's is asynchronous and an id cannot wait for it. That
+    // is only safe while it agrees with a real one.
+    const crypto = require("crypto");
+    const cases = ["", "abc", "a".repeat(1000), "café 🙂", '{"a": null}'];
+    for (const text of cases) {
+      assert.strictEqual(
+        P.sha256Hex(text),
+        crypto.createHash("sha256").update(text, "utf8").digest("hex"),
+        `sha256 disagrees with node's on ${JSON.stringify(text.slice(0, 20))}`
+      );
+    }
+  });
+
+  check("a message whose identity is more than its words says which fields", () => {
+    // "Why?" asked on proposal 3 and on proposal 5 are two questions. The six
+    // fields do not tell them apart, so the question channel names the proposal
+    // as part of the identity -- and the answers that point at a question id
+    // then point at one question.
+    const ask = (proposalId) => P.normalise({
+      from: "director", to: "wren", type: "question",
+      subject: "Why?", summary: "Why?",
+      proposal: proposalId, aaoId: 0
+    }, { idFields: ["proposal", "aaoId"] });
+
+    assert.notStrictEqual(ask(3).id, ask(5).id, "one id for two questions");
+    assert.strictEqual(ask(3).id, ask(3).id, "and the same question is still one id");
+
+    // Without the extra fields they would collide, which is exactly why they
+    // are named.
+    const bare = (proposalId) => P.normalise({
+      from: "director", to: "wren", type: "question",
+      subject: "Why?", summary: "Why?", proposal: proposalId, aaoId: 0
+    });
+    assert.strictEqual(bare(3).id, bare(5).id,
+      "the six fields alone cannot tell these apart -- that is the reason for idFields");
+  });
+
+  check("every message already on file has an id nothing else shares", () => {
+    // The records written before proposal 26 carry clock-based ids and stay as
+    // they are -- the logs are append-only and nothing here rewrites one. What
+    // must hold either way is that no two messages answer to the same name.
+    const seen = new Map();
+    for (const route of ["/questions.json", "/answers.json", "/messages.json"]) {
+      for (const record of channel[route].records || []) {
+        if (!record || !record.id) continue;
+        const where = seen.get(record.id);
+        assert.ok(!where, `id ${record.id} is in both ${where} and ${route}`);
+        seen.set(record.id, route);
+      }
+    }
+  });
+
   // --- the trigger rules, evaluated against fixtures ---------------------
 
   async function checkAsync(name, fn) {

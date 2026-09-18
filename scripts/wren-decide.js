@@ -130,7 +130,9 @@ function main() {
     refs: [`proposal ${proposal}`].concat(args.refs),
     proposal: proposal,
     aaoId: args.aaoId
-  }, { idPrefix: "decision" });
+    // The subject names the proposal, so two decisions on two proposals are
+    // already two messages. The same decision posted twice is deliberately one.
+  });
 
   P.assertValid(message, "wren-decide");
 

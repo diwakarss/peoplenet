@@ -172,7 +172,11 @@ function postQuestion(req, res) {
       aaoId: body.aaoId === undefined ? R.AAO_ID : Number(body.aaoId),
       text: text,
       at: now
-    }, { idPrefix: type === "request-new-proposal" ? "req" : "q" });
+      // The same words asked on two different proposals are two different
+      // questions, so the proposal is part of this message's identity and not
+      // only of its body. Without this they would share one id, and every
+      // answer pointing at it would point at both.
+    }, { idFields: ["proposal", "aaoId"] });
 
     const check = P.validate(message);
     if (!check.ok) return sendJson(res, 400, { ok: false, errors: check.errors });
@@ -193,7 +197,9 @@ function postMessage(req, res) {
   readBody(req, (err, body) => {
     if (err) return send(res, err.status || 400, err.message);
 
-    const message = P.normalise(body, { idPrefix: body && body.type ? body.type : "msg" });
+    // Any agent's message, in the shape everyone writes, so it is numbered by
+    // the six fields alone -- the same message posted twice is one message.
+    const message = P.normalise(body);
     const check = P.validate(message);
     if (!check.ok) return sendJson(res, 400, { ok: false, errors: check.errors });
 

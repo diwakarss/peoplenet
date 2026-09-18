@@ -306,7 +306,9 @@ function firedMessage(proposal, trigger, result) {
     proposal: proposal.id,
     aaoId: proposal.aaoId,
     trigger: trigger.rule
-  }, { idPrefix: "watch" });
+    // The subject names the proposal, so the six fields already tell two of
+    // these apart and the id needs nothing added to it.
+  });
 }
 
 // Has this proposal's trigger already been reported? One message per proposal,
@@ -386,7 +388,9 @@ async function executeDecided(aaos, allProposals, options) {
           refs: ["proposal " + proposal.id],
           proposal: proposal.id,
           aaoId: proposal.aaoId
-        }, { idPrefix: "auto" });
+          // Numbered by what it says, which names the proposal, the tally and
+          // the block: two executions are never one message.
+        });
 
         fs.appendFileSync(opts.messagesFile || MESSAGES, P.toJsonl(message), "utf8");
         executed.push({ id: proposal.id, passed, block: receipt.blockNumber, reason: state.reason });

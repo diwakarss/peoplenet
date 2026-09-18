@@ -114,7 +114,10 @@ function main() {
     aaoId: question.aaoId === undefined ? 0 : question.aaoId,
     text: text,
     at: now
-  }, { idPrefix: "a" });
+    // The same words can answer two different questions -- "Yes, internal only"
+    // fits more than one -- so which question this answers is part of its
+    // identity, not only of its body.
+  }, { idFields: ["question"] });
 
   P.assertValid(message, "wren-answer");
 
