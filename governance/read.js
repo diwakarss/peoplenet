@@ -107,19 +107,20 @@
       ]
     },
     // JD, AAO 2: the working room from 2026-09-18. Same regime as the trilogy
-    // widget with Kural as the architect; the Director removed Wren from it.
+    // widget with Kural as the architect. The Director removed Wren from it and
+    // ruled Wren a viewer only.
     "JD": {
       key: "main",
       regime: null,
       voters: [DIRECTOR, KURAL],
       extraVoters: [],
-      viewers: [],
+      viewers: [WREN],
       casting: CASTING,
       autoExecute: "on-director-vote",
       executeAs: DIRECTOR,
       windowHours: null,
       plain: [
-        "The Director and Kural each have one vote.",
+        "The Director and Kural each have one vote. Wren watches and never votes here.",
         "The Director's vote settles it: the page executes straight away unless the tally is level.",
         "A level tally is broken by the Director's casting vote, and by nothing else."
       ]
