@@ -508,14 +508,15 @@ describe("the write scripts refuse before they send", function () {
       });
   });
 
-  // A third organisation was created on the chain by another session while this
-  // work was going on, with no rule set written for it here. The page has to
-  // show it like the others on the day it appears, not after a code change.
+  // An organisation created on the chain with no rule set written for it here.
+  // The page has to show it like the others on the day it appears, not after a
+  // code change. JD was the example until it got its own rule set on 2026-09-18;
+  // the fixture now uses a topic nothing will ever write a rule for.
   describe("an organisation nobody has written a rule for", function () {
     let otherId;
 
     before(async function () {
-      const tx = await aao.connect(director).createAAO("JD", 3600);
+      const tx = await aao.connect(director).createAAO("unruled-fixture", 3600);
       const receipt = await tx.wait();
       otherId = Number(receipt.logs
         .map((l) => { try { return aao.interface.parseLog(l); } catch (e) { return null; } })

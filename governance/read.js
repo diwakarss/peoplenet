@@ -36,12 +36,16 @@
   var BUILDER = "0x90F79bf6EB2c4f870365E785982E1f101E93b906"; // account 3
   var WIDGET = "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65";  // account 4
 
+  // The JD AAO (id 2, 2026-09-18) adds the second architect.
+  var KURAL = "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc";   // account 5, the architect on JD
+
   var ROLES = [
     { key: "director", label: "Director", address: DIRECTOR, ordinary: true },
     { key: "wren", label: "Wren", address: WREN, ordinary: true },
     { key: "casting", label: "Casting vote", address: CASTING, ordinary: false },
     { key: "builder", label: "Builder", address: BUILDER, ordinary: true },
-    { key: "widget", label: "Widget", address: WIDGET, ordinary: true }
+    { key: "widget", label: "Widget", address: WIDGET, ordinary: true },
+    { key: "kural", label: "Kural", address: KURAL, ordinary: true }
   ];
 
   // What each AAO is for, in one line, for the tree and the AAO list.
@@ -100,6 +104,24 @@
         "Wren votes only to break a level tally, after both have voted.",
         "Execution is automatic: a decisive tally with both votes in, or after 24 hours with at least one vote and a decisive tally.",
         "A level tally after both have voted notifies Wren and pins the proposal."
+      ]
+    },
+    // JD, AAO 2: the working room from 2026-09-18. Same regime as the trilogy
+    // widget with Kural as the architect; the Director removed Wren from it.
+    "JD": {
+      key: "main",
+      regime: null,
+      voters: [DIRECTOR, KURAL],
+      extraVoters: [],
+      viewers: [],
+      casting: CASTING,
+      autoExecute: "on-director-vote",
+      executeAs: DIRECTOR,
+      windowHours: null,
+      plain: [
+        "The Director and Kural each have one vote.",
+        "The Director's vote settles it: the page executes straight away unless the tally is level.",
+        "A level tally is broken by the Director's casting vote, and by nothing else."
       ]
     }
   };
@@ -924,6 +946,7 @@
     CASTING: CASTING,
     BUILDER: BUILDER,
     WIDGET: WIDGET,
+    KURAL: KURAL,
     ROLES: ROLES,
     AAO_NOTES: AAO_NOTES,
     AAO_RULES: AAO_RULES,
