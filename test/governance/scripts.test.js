@@ -600,6 +600,17 @@ describe("the write scripts refuse before they send", function () {
         const effective = R.effectiveRules(subAao, await R.readProposals(aao, subId));
         expect(effective.voters.length, "the sub-AAO has 4 members but 2 voters").to.equal(2);
       });
+
+    // Proposal 52: an organisation that builds for another says so in its rule
+    // set, and the page reads the tree off that one fact.
+    it("names the organisation each builder's room builds for", function () {
+      expect(R.parentOf({ topic: "widget-builder" })).to.equal("trilogy widget");
+      expect(R.parentOf({ topic: "JD-build" })).to.equal("JD");
+      expect(R.parentOf({ topic: "trilogy widget" })).to.equal(null);
+      expect(R.parentOf({ topic: "JD" })).to.equal(null);
+      // An organisation nobody has written a rule for builds for nobody.
+      expect(R.parentOf({ topic: "no rule written" })).to.equal(null);
+    });
   });
 
   describe("what a dry run prints", function () {

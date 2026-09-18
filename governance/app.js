@@ -256,13 +256,38 @@
     byId("refreshed").textContent = "read " + new Date().toLocaleTimeString();
   }
 
+  // The organisations as the tree they are: an organisation that builds for
+  // another sits under it. R.parentOf reads that off the rule set. An
+  // organisation whose parent is not on this chain is a root, not an orphan.
+  function aaoTree(aaos) {
+    var byTopic = {}, childrenOf = {}, roots = [];
+    aaos.forEach(function (a) { byTopic[a.topic] = a; });
+    aaos.forEach(function (a) {
+      var parent = R.parentOf(a);
+      if (parent && byTopic[parent]) (childrenOf[parent] = childrenOf[parent] || []).push(a);
+      else roots.push(a);
+    });
+    var rows = [];
+    (function walk(list, depth) {
+      list.forEach(function (a) {
+        rows.push({ aao: a, depth: depth, parent: depth ? R.parentOf(a) : null });
+        walk(childrenOf[a.topic] || [], depth + 1);
+      });
+    })(roots, 0);
+    return { roots: roots, childrenOf: childrenOf, rows: rows };
+  }
+
   function renderAaoTabs(data) {
     var host = byId("aao-tabs");
     host.textContent = "";
-    data.aaos.forEach(function (aao) {
-      var tab = el("button", "aao-tab" + (aao.id === data.aao.id ? " is-current" : ""));
+    aaoTree(data.aaos).rows.forEach(function (row) {
+      var aao = row.aao;
+      var tab = el("button", "aao-tab" + (aao.id === data.aao.id ? " is-current" : "") +
+        (row.depth ? " is-child" : ""));
       tab.type = "button";
-      tab.title = aao.note || "";
+      tab.title = row.parent ? "Under " + row.parent + ". " + (aao.note || "") : (aao.note || "");
+      // The prefix says it on a tab strip that has no room to indent far.
+      if (row.depth) tab.appendChild(el("span", "aao-tab-under", "└"));
       tab.appendChild(el("span", "aao-tab-topic", aao.topic));
       var count = (data.allProposals || []).filter(function (p) { return p.aaoId === aao.id; }).length;
       tab.appendChild(el("span", "aao-tab-count", count));
@@ -1208,7 +1233,9 @@
     if (!host || !data) return;
     host.textContent = "";
 
-    var aaoNodes = data.aaos.map(function (aao) {
+    var shape = aaoTree(data.aaos);
+
+    function aaoNode(aao) {
       var proposals = (data.allProposals || []).filter(function (p) { return p.aaoId === aao.id; });
 
       var memberNodes = aao.members.map(function (m, i) {
@@ -1245,13 +1272,20 @@
         return n;
       });
 
+      // A child organisation is drawn inside this one, under its members and
+      // its proposals: the tree is the shape of the record, and JD-build
+      // belongs under JD rather than beside it.
+      var kids = [
+        node("members-" + aao.id, "Members", aao.members.length + " on the roll", memberNodes),
+        node("proposals-" + aao.id, "Proposals", proposals.length + " filed", proposalNodes)
+      ];
+      (shape.childrenOf[aao.topic] || []).forEach(function (child) { kids.push(aaoNode(child)); });
+
       return node("aao-" + aao.id, "AAO " + aao.id + " · " + aao.topic,
-        aao.note || (aao.members.length + " members"),
-        [
-          node("members-" + aao.id, "Members", aao.members.length + " on the roll", memberNodes),
-          node("proposals-" + aao.id, "Proposals", proposals.length + " filed", proposalNodes)
-        ]);
-    });
+        aao.note || (aao.members.length + " members"), kids);
+    }
+
+    var aaoNodes = shape.roots.map(aaoNode);
 
     var factoryLine = data.factories && data.factories.length
       ? data.factories.length + " approved to create organisations"
@@ -1310,9 +1344,10 @@
     if (!data) return rows;
 
     data.aaos.forEach(function (aao) {
+      var parent = R.parentOf(aao);
       rows.push({
         kind: "Organisation",
-        where: "AAO " + aao.id,
+        where: "AAO " + aao.id + (parent ? " · under " + parent : ""),
         title: aao.topic,
         body: (aao.note || "") + " " + aao.members.map(function (m) { return m.label; }).join(" "),
         aaoId: aao.id,

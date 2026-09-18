@@ -98,6 +98,9 @@
     },
     "widget-builder": {
       key: "sub",
+      // The organisation this one builds for. The tree nests it under that
+      // node, the tabs indent it, and a search result says "under <parent>".
+      parent: "trilogy widget",
       regime: "The standing rule: the widget has voted here, so it votes and Wren only breaks ties.",
       architect: WREN,
       voters: [BUILDER, WIDGET],
@@ -140,6 +143,7 @@
     // builders build what JD decides. Builders never join JD itself.
     "JD-build": {
       key: "sub",
+      parent: "JD",
       regime: null,
       architect: KURAL,
       voters: [KALAM],
@@ -184,6 +188,12 @@
   function rulesFor(aao) {
     var topic = aao && aao.topic !== undefined ? aao.topic : aao;
     return AAO_RULES[topic] || DEFAULT_RULES;
+  }
+
+  // The topic of the organisation this one builds for, or null when it builds
+  // for nobody. Takes an organisation or a topic, as rulesFor does.
+  function parentOf(aao) {
+    return rulesFor(aao).parent || null;
   }
 
   // The architect's name for an organisation, for every prompt the page
@@ -996,6 +1006,7 @@
     AAO_RULES: AAO_RULES,
     DEFAULT_RULES: DEFAULT_RULES,
     rulesFor: rulesFor,
+    parentOf: parentOf,
     effectiveRules: effectiveRules,
     widgetHasVoted: widgetHasVoted,
     allVoters: allVoters,
