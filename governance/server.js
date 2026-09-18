@@ -8,7 +8,8 @@
 // with unlocked accounts and has no business being reachable from the network.
 //
 // Endpoints (spec section 27.2, 27.5):
-//   GET  /wren-votes.json   Wren's votes with the reason for each
+//   GET  /wren-votes.json    Wren's votes with the reason for each
+//   GET  /builder-votes.json the builder's, the same shape
 //   GET  /questions.json    the Director's questions, oldest first
 //   GET  /answers.json      Wren's answers
 //   POST /questions         file a question (or a request-new-proposal)
@@ -30,6 +31,7 @@ const PORT = Number(process.env.GOVERNANCE_PORT || 8787);
 // One place that says which log lives where.
 const LOGS = {
   "/wren-votes.json": "wren-votes.jsonl",
+  "/builder-votes.json": "builder-votes.jsonl",
   "/questions.json": "questions.jsonl",
   "/answers.json": "answers.jsonl",
   "/messages.json": "messages.jsonl",

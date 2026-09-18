@@ -43,6 +43,11 @@
   var wrenVotes = {};
   var wrenVotesError = null;
 
+  // The builder's votes, in the same shape and read the same way. Its reasons
+  // were being written to a file nothing served and nothing showed.
+  var builderVotes = {};
+  var builderVotesError = null;
+
   // The question channel (27.2) and the agent traffic (27.5).
   var questions = [];
   var answers = [];
@@ -841,6 +846,8 @@
     card.appendChild(voters);
 
     card.appendChild(renderWrenReason(p));
+    var builderBlock = renderBuilderReason(p);
+    if (builderBlock) card.appendChild(builderBlock);
     card.appendChild(renderActions(p, st));
 
     if (st.outcome) {
@@ -975,15 +982,46 @@
     render(lastData);
   }
 
-  function renderWrenReason(p) {
-    var record = wrenVotes[p.id];
+  // What a vote was cast against (proposal 29). A reason is the half another
+  // agent can answer; the refs are what makes it checkable rather than merely
+  // recorded. A URL is a link, everything else is text, exactly as a proposal's
+  // own refs render.
+  function renderVoteRefs(record) {
+    var refs = R.voteRefs(record);
+    if (!refs.length) return null;
+
+    var wrap = el("div", "vote-refs");
+    wrap.appendChild(el("span", "vote-refs-label", "cast against"));
+    var list = el("ul", "vote-refs-list");
+    refs.forEach(function (ref) {
+      var item = el("li", "vote-ref");
+      if (R.isUrl(ref)) {
+        var link = el("a", null, ref);
+        link.href = ref;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        item.appendChild(link);
+      } else {
+        item.appendChild(document.createTextNode(ref));
+      }
+      list.appendChild(item);
+    });
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  // One voter's reason on a card: who, which way, why, and what they were
+  // reading. Wren's and the builder's records are the same shape, so this is one
+  // function rather than two that drift.
+  function renderVoterReason(p, options) {
+    var record = options.records[p.id];
     var block = el("div", "wren");
 
     if (!record) {
       block.className = "wren wren-absent";
-      block.appendChild(el("span", "wren-who", "Wren has not voted"));
-      if (wrenVotesError) {
-        block.appendChild(el("span", "wren-note", "(reasons unavailable: " + wrenVotesError + ")"));
+      block.appendChild(el("span", "wren-who", options.label + " has not voted"));
+      if (options.error) {
+        block.appendChild(el("span", "wren-note", "(reasons unavailable: " + options.error + ")"));
       }
       return block;
     }
@@ -992,29 +1030,60 @@
     block.className = "wren wren-" + (support ? "for" : "against");
 
     var who = el("span", "wren-who");
-    who.appendChild(document.createTextNode("Wren voted "));
+    who.appendChild(document.createTextNode(options.label + " voted "));
     who.appendChild(el("b", null, support ? "FOR" : "AGAINST"));
     block.appendChild(who);
 
     var reason = String(record.reason || "").trim();
     block.appendChild(el("blockquote", "wren-reason", reason || "(no reason recorded)"));
 
-    var onChain = (p.votes || []).filter(function (v) { return R.sameAddress(v.voter, R.WREN); })[0];
+    var refs = renderVoteRefs(record);
+    if (refs) {
+      block.appendChild(refs);
+    } else {
+      // Said plainly rather than left blank. Every record written before
+      // proposal 29 is in this state, and so is any vote cast without --ref.
+      block.appendChild(el("span", "wren-note vote-refs-none",
+        "no references recorded — nothing says what this reason was written against."));
+    }
+
+    var onChain = (p.votes || []).filter(function (v) {
+      return R.sameAddress(v.voter, options.address);
+    })[0];
     if (!onChain) {
-      // The reason is on file but the chain has no VoteCast from Wren for this
-      // proposal. That happens when a vote was refused -- an id that already
-      // carried a stray vote, for instance. The reason still stands as Wren's
-      // position; it just is not counted in the tally.
+      // The reason is on file but the chain has no VoteCast from this voter for
+      // this proposal. That happens when a vote was refused -- an id that
+      // already carried a stray vote, for instance. The reason still stands as
+      // their position; it just is not counted in the tally.
       block.appendChild(el("span", "wren-note wren-offchain",
-        "not on chain — this is Wren's stated position, but no vote was recorded, " +
-        "so it is not in the tally."));
+        "not on chain — this is " + options.label + "'s stated position, but no vote " +
+        "was recorded, so it is not in the tally."));
     } else if (onChain.support !== support) {
       block.appendChild(el("span", "wren-note",
-        "The chain records Wren voting " + (onChain.support ? "for" : "against") +
+        "The chain records " + options.label + " voting " + (onChain.support ? "for" : "against") +
         " — the log disagrees. Trust the chain."));
     }
 
     return block;
+  }
+
+  function renderWrenReason(p) {
+    return renderVoterReason(p, {
+      label: "Wren", address: R.WREN, records: wrenVotes, error: wrenVotesError
+    });
+  }
+
+  // Only where the builder actually votes, and only once it has: an empty
+  // "Builder has not voted" on every card of an organisation it is not on would
+  // be noise, not information.
+  function renderBuilderReason(p) {
+    var rules = rulesForProposal(p);
+    var standing = R.mayVote(rules, R.BUILDER);
+    if (!standing && !builderVotes[p.id]) return null;
+    if (!builderVotes[p.id] && !R.hasVoted(p, R.BUILDER)) return null;
+    return renderVoterReason(p, {
+      label: "Builder", address: R.BUILDER, records: builderVotes, error: builderVotesError
+    });
   }
 
   function renderActions(p, st) {
@@ -1791,6 +1860,17 @@
     } catch (e) {
       wrenVotes = {};
       wrenVotesError = e && e.message ? e.message : String(e);
+    }
+
+    // The builder's log, read exactly the same way. One failing must not take
+    // the other's reasons off the card with it.
+    try {
+      var built = await R.fetchBuilderVotes(window.fetch.bind(window), "");
+      builderVotes = R.indexWrenVotes(built);
+      builderVotesError = null;
+    } catch (e2) {
+      builderVotes = {};
+      builderVotesError = e2 && e2.message ? e2.message : String(e2);
     }
   }
 

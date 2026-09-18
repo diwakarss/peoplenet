@@ -606,12 +606,14 @@
     return lines.join("\n");
   }
 
-  // --- Wren's reasons ----------------------------------------------------
+  // --- the voters' reasons -----------------------------------------------
 
   // scripts/wren-vote.js appends one JSON object per vote to
-  // governance/wren-votes.jsonl. The page's server re-reads that file on every
+  // governance/wren-votes.jsonl, and scripts/builder-vote.js does the same for
+  // its own log in the same shape. The page's server re-reads each file on every
   // request and serves it as a JSON array here.
   var WREN_VOTES_PATH = "/wren-votes.json";
+  var BUILDER_VOTES_PATH = "/builder-votes.json";
 
   // Parse the .jsonl text into records, skipping blank and malformed lines.
   function parseWrenVotesJsonl(text) {
@@ -657,15 +659,46 @@
     return out;
   }
 
-  // Fetch the served endpoint. The caller decides what a failure means; the page
-  // treats it as "no reasons available" and carries on.
-  async function fetchWrenVotes(fetchImpl, baseUrl) {
-    var url = (baseUrl || "") + WREN_VOTES_PATH;
+  // Fetch one of the served vote logs. The caller decides what a failure means;
+  // the page treats it as "no reasons available" and carries on.
+  async function fetchVoteLog(fetchImpl, baseUrl, logPath) {
+    var url = (baseUrl || "") + (logPath || WREN_VOTES_PATH);
     var response = await fetchImpl(url, { cache: "no-store" });
     if (!response.ok) throw new Error(url + " returned HTTP " + response.status);
     var body = await response.json();
     if (!Array.isArray(body)) throw new Error(url + " did not return a JSON array");
     return body;
+  }
+
+  async function fetchWrenVotes(fetchImpl, baseUrl) {
+    return fetchVoteLog(fetchImpl, baseUrl, WREN_VOTES_PATH);
+  }
+
+  async function fetchBuilderVotes(fetchImpl, baseUrl) {
+    return fetchVoteLog(fetchImpl, baseUrl, BUILDER_VOTES_PATH);
+  }
+
+  // --- what a vote points at (proposal 29) -------------------------------
+  //
+  // A vote's reason is the half another agent can answer, but nothing in the
+  // record said what the voter was LOOKING at when they wrote it. The builder
+  // found its own vote on proposal 26 unanchored that way: the reason said what
+  // it thought without saying what it had read, so nobody could check it against
+  // the commit. `refs` makes a vote answerable rather than merely recorded.
+  //
+  // Free-form strings, exactly as a proposal's own refs are -- a commit, another
+  // proposal, a spec entry, a URL, an incident id. The page renders a URL as a
+  // link and everything else as text. Records written before this carry none,
+  // and the card says so rather than pretending.
+  function voteRefs(record) {
+    var refs = record && record.refs;
+    if (!Array.isArray(refs)) return [];
+    var out = [];
+    refs.forEach(function (ref) {
+      var text = String(ref === undefined || ref === null ? "" : ref).trim();
+      if (text && out.indexOf(text) === -1) out.push(text);
+    });
+    return out;
   }
 
   // --- the tie rule ------------------------------------------------------
@@ -874,9 +907,13 @@
     sendHint: sendHint,
     isUrl: isUrl,
     WREN_VOTES_PATH: WREN_VOTES_PATH,
+    BUILDER_VOTES_PATH: BUILDER_VOTES_PATH,
     parseWrenVotesJsonl: parseWrenVotesJsonl,
     indexWrenVotes: indexWrenVotes,
+    fetchVoteLog: fetchVoteLog,
     fetchWrenVotes: fetchWrenVotes,
+    fetchBuilderVotes: fetchBuilderVotes,
+    voteRefs: voteRefs,
     getProvider: getProvider,
     getContract: getContract,
     readAAO: readAAO,

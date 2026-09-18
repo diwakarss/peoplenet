@@ -58,12 +58,15 @@ function parseArgs(argv) {
   var expectTitle = null;
   var aaoId = AAO_ID;
   var dryRun = !R.wantsSend(process.argv);
+  var refs = [];
   var positional = [];
   for (var i = 0; i < rest.length; i++) {
     if (rest[i] === "--expect-title" || rest[i] === "--expect") {
       expectTitle = String(rest[++i] || "");
       continue;
     }
+    // Repeatable: what this vote was cast against. Proposal 29.
+    if (rest[i] === "--ref") { refs.push(String(rest[++i] || "")); continue; }
     if (rest[i] === "--aao") { aaoId = Number(rest[++i]); continue; }
     if (rest[i] === "--dry-run") { dryRun = true; continue; }
     if (rest[i] === "--send") { continue; }
@@ -72,6 +75,7 @@ function parseArgs(argv) {
   positional.expectTitle = expectTitle;
   positional.aaoId = aaoId;
   positional.dryRun = dryRun;
+  positional.refs = R.voteRefs({ refs: refs });
   return positional;
 }
 
@@ -79,7 +83,11 @@ function usage(message) {
   console.error(message);
   console.error("");
   console.error('  node scripts/wren-vote.js <proposalId> <for|against> "<reason>" \\');
-  console.error('      [--aao <id>] [--expect-title "..."] [--dry-run]');
+  console.error('      [--ref <what you read>]... [--aao <id>] [--expect-title "..."] [--dry-run]');
+  console.error("");
+  console.error("  --ref     what this vote was cast against: a commit, another proposal,");
+  console.error("            a spec entry, a URL. Repeatable. It is what makes the reason");
+  console.error('            checkable rather than only recorded -- e.g. --ref "commit 1f8076d"');
   console.error("");
   console.error("  --aao 0   the trilogy widget: Wren has an ordinary vote (the default)");
   console.error("  --aao 1   widget-builder: under the standing rule Wren votes only to");
@@ -95,6 +103,7 @@ async function main() {
   const expectTitle = args.expectTitle;
   const aaoId = args.aaoId;
   const dryRun = args.dryRun;
+  const refs = args.refs;
   const [rawId, rawSupport, ...reasonParts] = args;
 
   if (rawId === undefined || rawSupport === undefined) {
@@ -224,6 +233,12 @@ async function main() {
 
   // The rehearsal goes here, after every check has run, so what it prints is
   // what the real run would actually do rather than what it hopes to.
+  // What the record would point at, said in the rehearsal so a vote cast with
+  // no --ref is a deliberate silence rather than an oversight (proposal 29).
+  const refsLine = refs.length
+    ? `The record would point at: ${refs.join(", ")}.`
+    : "The record would point at nothing. Pass --ref to say what you read.";
+
   if (dryRun) {
     console.log("");
     console.log(R.describePlan({
@@ -234,7 +249,8 @@ async function main() {
         `Tally now ${Number(before.forVotes)}-${Number(before.againstVotes)}.`,
         wrenIsOrdinary
           ? "No casting-vote condition applies."
-          : "The casting-vote condition is met."
+          : "The casting-vote condition is met.",
+        refsLine
       ],
       from: wren.address,
       call: `vote(${proposalId}, ${support})`,
@@ -262,6 +278,10 @@ async function main() {
     support,
     choice,
     reason,
+    // What the reason was written against (proposal 29). Empty when the caller
+    // passed none; the card says so rather than pretending there was nothing to
+    // read.
+    refs,
     proposalText: before.text,
     txHash: receipt.hash,
     blockNumber: receipt.blockNumber,

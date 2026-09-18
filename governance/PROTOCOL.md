@@ -195,7 +195,8 @@ message is numbered. On nothing else.
 GET  /questions.json     the Director's questions
 GET  /answers.json       Wren's answers
 GET  /messages.json      agent traffic
-GET  /wren-votes.json    Wren's votes with the reason for each
+GET  /wren-votes.json    Wren's votes, each with its reason and its refs
+GET  /builder-votes.json the builder's, in the same shape
 POST /questions          { proposal, aaoId, text, type? }  -> a question message
 POST /messages           a full protocol message
 ```

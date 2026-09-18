@@ -214,18 +214,44 @@ contract gives each of them exactly one vote.
 Wren states the reason in the chat first, then casts:
 
 ```bash
-node scripts/wren-vote.js 3 for "The cache key is the real fix; the rest is a workaround."
+node scripts/wren-vote.js 3 for "The cache key is the real fix; the rest is a workaround." \
+     --ref "commit 1f8076d" --ref "spec 27.1" --send
 ```
 
 The vote goes on chain and the reason is appended to `governance/wren-votes.jsonl`
 with the tally it produced, so the record and the number stay together.
 
-### Wren's reasons on the page
+### What a vote was cast against
+
+`--ref` is repeatable, and it is what makes a reason checkable rather than merely
+recorded. A commit, another proposal, a spec entry, an incident id, a URL — free
+form, exactly as a proposal's own refs are.
+
+This was proposal 29, and the builder asked for it after finding its own vote on
+proposal 26 unanchored: the reason said what it thought without saying what it
+had read, so nobody could check it against the commit. A reason is the half
+another agent can answer; the refs are what they answer it *against*.
+
+Both vote scripts take it, both rehearsals say what the record would point at,
+and a vote cast without one prints *"The record would point at nothing. Pass
+--ref to say what you read."* — so silence is a choice and not an oversight.
+
+Records written before proposal 29 carry no refs. The logs are append-only, so
+they stay that way, and the card says *no references recorded* rather than
+leaving a blank that could be read as "nothing to read".
+
+### The voters' reasons on the page
 
 Every proposal card carries Wren's line under the tally: **Wren voted FOR** or
-**AGAINST**, with the reason quoted, or *Wren has not voted* when there is no
-record. The tally is the chain's; the reason is Wren's argument for it, and the
-Director is meant to weigh the second, not just count the first.
+**AGAINST**, with the reason quoted, then what it was cast against, or *Wren has
+not voted* when there is no record. The tally is the chain's; the reason is
+Wren's argument for it, and the Director is meant to weigh the second, not just
+count the first.
+
+The builder's line sits under it, in the same shape, on the organisations where
+the builder votes. Its reasons were being written to `builder-votes.jsonl`, which
+nothing served and nothing showed; `GET /builder-votes.json` serves it now and
+one function on the page renders both, so the two cannot drift apart.
 
 The page gets it from `GET /wren-votes.json`, which `server.js` re-reads off
 `wren-votes.jsonl` on **every** request &mdash; `wren-vote.js` appends to that
@@ -330,7 +356,8 @@ not a prediction, the event. Once executed a proposal is closed for good.
 | `answers.jsonl` | Wren's answers, appended by `scripts/wren-answer.js`. |
 | `messages.jsonl` | Agent traffic, appended by `POST /messages`. |
 | `check.js` | Runs `read.js` against the live node **and** the served endpoint, prints what the page would show, asserts the AAO, the three members, the proposal floor, and Wren's twelve records. |
-| `wren-votes.jsonl` | Wren's votes with their stated reasons, one JSON object per line. |
+| `wren-votes.jsonl` | Wren's votes with their stated reasons and what each was cast against, one JSON object per line. |
+| `builder-votes.jsonl` | The builder's, in the same shape, served at `/builder-votes.json` and rendered by the same function. |
 | `watch.js` | The trigger watcher, and the automatic execution of what the rules say is decided. Runs with the server. |
 | `reports/` | Where a `count:` trigger reads from, and the only place it may read from. Tracked, with a README, because git cannot carry an empty directory and a `count:` rule cannot fire without it. |
 

@@ -340,6 +340,53 @@ describe("the write scripts refuse before they send", function () {
     });
   });
 
+  // A vote's reason is the half another agent can answer, but nothing in the
+  // record said what the voter was LOOKING at when they wrote it. The builder
+  // found its own vote on proposal 26 unanchored that way and asked for this.
+  describe("what a vote was cast against (proposal 29)", function () {
+    it("reads refs off a record the way the card renders them", function () {
+      expect(R.voteRefs({ refs: ["commit 1f8076d", "proposal 26"] }))
+        .to.deep.equal(["commit 1f8076d", "proposal 26"]);
+      expect(R.voteRefs({ refs: ["  spec 27.1  ", "", "  "] }), "blanks go, the rest is trimmed")
+        .to.deep.equal(["spec 27.1"]);
+      expect(R.voteRefs({ refs: ["proposal 26", "proposal 26"] }), "twice is once")
+        .to.deep.equal(["proposal 26"]);
+    });
+
+    it("treats a record with no refs as a record with no refs, not an error", function () {
+      // Every record written before proposal 29 is in this state. The logs are
+      // append-only, so they stay that way and the card has to cope.
+      expect(R.voteRefs({ reason: "an old record" })).to.deep.equal([]);
+      expect(R.voteRefs({ refs: null })).to.deep.equal([]);
+      expect(R.voteRefs({ refs: "not an array" })).to.deep.equal([]);
+      expect(R.voteRefs(undefined)).to.deep.equal([]);
+    });
+
+    it("has both vote scripts parse a repeatable --ref, and write it", function () {
+      // Reading the source, in the same spirit as the --dry-run wiring test
+      // below: the flag has to be parsed, carried into the record, and shown in
+      // the rehearsal, or a vote that says --ref would quietly record nothing.
+      for (const file of ["wren-vote.js", "builder-vote.js"]) {
+        const source = fs.readFileSync(path.join(__dirname, "..", "..", "scripts", file), "utf8");
+        expect(source, `${file} does not parse --ref`).to.contain('"--ref"');
+        expect(source, `${file} does not clean the refs through read.js`).to.contain("R.voteRefs(");
+        expect(source, `${file} does not put refs on the record`).to.match(/\n\s*refs,/);
+        expect(source, `${file}'s rehearsal does not say what it would point at`)
+          .to.contain("would point at");
+      }
+    });
+
+    it("serves the builder's log the same way it serves Wren's", function () {
+      // The builder's reasons were being written to a file nothing served and
+      // nothing showed, which is half of why its vote on 26 was unanchored.
+      const server = fs.readFileSync(
+        path.join(__dirname, "..", "..", "governance", "server.js"), "utf8");
+      expect(server).to.contain('"/builder-votes.json": "builder-votes.jsonl"');
+      expect(R.BUILDER_VOTES_PATH).to.equal("/builder-votes.json");
+      expect(R.fetchBuilderVotes).to.be.a("function");
+    });
+  });
+
   describe("what a dry run prints", function () {
     it("says the standing check and the exact transaction, and sends nothing", async function () {
       const plan = R.describePlan({

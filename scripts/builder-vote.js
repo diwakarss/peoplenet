@@ -31,7 +31,12 @@ const DEFAULT_AAO = 1;
 function usage(message) {
   console.error(message);
   console.error("");
-  console.error('  node scripts/builder-vote.js [--aao <id>] <proposalId> <for|against> "<reason>" [--dry-run]');
+  console.error('  node scripts/builder-vote.js [--aao <id>] <proposalId> <for|against> "<reason>" \\');
+  console.error("      [--ref <what you read>]... [--dry-run]");
+  console.error("");
+  console.error("  --ref   what this vote was cast against: a commit, another proposal, a");
+  console.error("          spec entry, a URL. Repeatable. It is what makes the reason");
+  console.error('          checkable rather than only recorded -- e.g. --ref "commit 1f8076d"');
   process.exit(1);
 }
 
@@ -40,18 +45,21 @@ function parseArgs(argv) {
   if (rest[0] === "--") rest = rest.slice(1);
   let aaoId = DEFAULT_AAO;
   let dryRun = !R.wantsSend(process.argv);
+  const refs = [];
   const positional = [];
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === "--aao") { aaoId = Number(rest[++i]); continue; }
+    // Repeatable: what this vote was cast against. Proposal 29.
+    if (rest[i] === "--ref") { refs.push(String(rest[++i] || "")); continue; }
     if (rest[i] === "--dry-run") { dryRun = true; continue; }
     if (rest[i] === "--send") { continue; }
     positional.push(rest[i]);
   }
-  return { aaoId, dryRun, positional };
+  return { aaoId, dryRun, refs: R.voteRefs({ refs }), positional };
 }
 
 async function main() {
-  const { aaoId, dryRun, positional } = parseArgs(process.argv);
+  const { aaoId, dryRun, refs, positional } = parseArgs(process.argv);
   const [rawId, rawSupport, ...reasonParts] = positional;
 
   if (rawId === undefined || rawSupport === undefined) {
@@ -113,13 +121,20 @@ async function main() {
 
   // The rehearsal goes here, after every check has run, so what it prints is
   // what the real run would actually do rather than what it hopes to.
+  // What the record would point at, said in the rehearsal so a vote cast with
+  // no --ref is a deliberate silence rather than an oversight (proposal 29).
+  const refsLine = refs.length
+    ? `The record would point at: ${refs.join(", ")}.`
+    : "The record would point at nothing. Pass --ref to say what you read.";
+
   if (dryRun) {
     console.log("");
     console.log(R.describePlan({
       standing: [
         `AAO ${aaoId}: the Builder is one of its voters.`,
         `Proposal ${proposalId} exists, is on AAO ${aaoId}, and is ${STATUS[Number(before.status)]}.`,
-        `Tally now ${Number(before.forVotes)}-${Number(before.againstVotes)}.`
+        `Tally now ${Number(before.forVotes)}-${Number(before.againstVotes)}.`,
+        refsLine
       ],
       from: builder.address,
       call: `vote(${proposalId}, ${support})`,
@@ -147,6 +162,10 @@ async function main() {
     support,
     choice,
     reason,
+    // What the reason was written against (proposal 29), which the builder asked
+    // for after finding its own vote on 26 unanchored: the reason said what it
+    // thought without saying what it had read.
+    refs,
     proposalText: before.text,
     txHash: receipt.hash,
     blockNumber: receipt.blockNumber,

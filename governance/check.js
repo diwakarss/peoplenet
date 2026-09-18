@@ -89,6 +89,16 @@ async function main() {
   }
   const wrenByProposal = R.indexWrenVotes(wrenRecords || []);
 
+  // The builder's log, the same shape through the same endpoint (proposal 29).
+  let builderRecords = null;
+  let builderError = null;
+  try {
+    builderRecords = await R.fetchBuilderVotes(fetch, PAGE_URL);
+  } catch (e) {
+    builderError = e && e.message ? e.message : String(e);
+  }
+  const builderByProposal = R.indexWrenVotes(builderRecords || []);
+
   // Wren's translations of the legacy proposals (27.10), read-only.
   let translations = {};
   let translationsError = null;
@@ -152,6 +162,12 @@ async function main() {
 
   console.log("");
   console.log(`wren-votes.json  ${wrenError ? `UNAVAILABLE (${wrenError})` : `${wrenRecords.length} records from ${PAGE_URL}${R.WREN_VOTES_PATH}`}`);
+  console.log(`builder-votes    ${builderError ? `UNAVAILABLE (${builderError})` : `${builderRecords.length} records from ${PAGE_URL}${R.BUILDER_VOTES_PATH}`}`);
+  if (!wrenError && !builderError) {
+    const withRefs = [...wrenRecords, ...builderRecords].filter((r) => R.voteRefs(r).length);
+    console.log(`vote refs        ${withRefs.length} of ` +
+      `${wrenRecords.length + builderRecords.length} records say what they were cast against`);
+  }
   for (const route of ["/questions.json", "/answers.json", "/messages.json", "/drafts.json"]) {
     const got = channel[route];
     console.log(`${route.padEnd(16)} ${got.error ? `UNAVAILABLE (${got.error})` : `${got.records.length} records`}`);
@@ -320,6 +336,60 @@ async function main() {
         `proposal ${id} shows a record that is not the latest of its ${forThisProposal.length}`
       );
     }
+  });
+
+  // --- what a vote points at (proposal 29) -------------------------------
+
+  check(`GET ${R.BUILDER_VOTES_PATH} is served, in the same shape`, () => {
+    assert.strictEqual(
+      builderError, null,
+      `${PAGE_URL}${R.BUILDER_VOTES_PATH} did not answer (${builderError}). Is "npm run governance" up?`
+    );
+    assert.ok(Array.isArray(builderRecords), "the endpoint did not return an array");
+    // The builder's reasons were being written to a file nothing served and
+    // nothing showed. Same fields as Wren's, so one reader does both.
+    builderRecords.forEach((record, i) => {
+      if (record.correction) return;
+      assert.ok(Number.isInteger(record.proposalId), `builder record ${i} has no proposalId`);
+      assert.strictEqual(typeof record.support, "boolean", `builder record ${i} has no support flag`);
+      assert.ok(typeof record.reason === "string" && record.reason.trim(),
+        `builder record ${i} has no reason`);
+      assert.ok(R.sameAddress(record.voter, R.BUILDER),
+        `builder record ${i} was cast by ${record.voter}, not the Builder`);
+    });
+  });
+
+  check("refs on a vote record are a list of non-empty strings, or absent", () => {
+    // Free-form, like a proposal's own refs -- a commit, another proposal, a
+    // spec entry, a URL. What must hold is the shape, so the card can render it
+    // without guessing. Records written before proposal 29 carry none, and that
+    // is a legitimate state: the log is append-only and nothing rewrites a line.
+    for (const [name, records] of [["wren", wrenRecords], ["builder", builderRecords]]) {
+      (records || []).forEach((record, i) => {
+        if (record.refs === undefined) return;
+        assert.ok(Array.isArray(record.refs), `${name} record ${i}: refs must be an array`);
+        record.refs.forEach((ref, j) => {
+          assert.strictEqual(typeof ref, "string", `${name} record ${i} ref ${j} is not a string`);
+          assert.ok(ref.trim(), `${name} record ${i} ref ${j} is empty`);
+        });
+        // What the card renders, which drops blanks and duplicates.
+        assert.deepStrictEqual(R.voteRefs(record), record.refs.map((r) => r.trim()).filter(Boolean)
+          .filter((r, k, all) => all.indexOf(r) === k));
+      });
+    }
+  });
+
+  check("voteRefs reads a record the way the card renders it", () => {
+    assert.deepStrictEqual(R.voteRefs({ refs: ["commit abc", "proposal 26"] }),
+      ["commit abc", "proposal 26"]);
+    assert.deepStrictEqual(R.voteRefs({ refs: ["  spec 27.1  ", "", "   "] }), ["spec 27.1"],
+      "blanks are dropped and the rest trimmed");
+    assert.deepStrictEqual(R.voteRefs({ refs: ["proposal 26", "proposal 26"] }), ["proposal 26"],
+      "the same reference twice is one reference");
+    // A record from before proposal 29, and a malformed one: no refs, no throw.
+    assert.deepStrictEqual(R.voteRefs({ reason: "an old record" }), []);
+    assert.deepStrictEqual(R.voteRefs({ refs: "not an array" }), []);
+    assert.deepStrictEqual(R.voteRefs(null), []);
   });
 
   check("each recorded direction matches the chain", () => {
