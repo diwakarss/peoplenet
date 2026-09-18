@@ -58,7 +58,8 @@
     "trilogy widget": "Where the Director decides what the widget should become.",
     "widget-builder": "Where the widget, its builder and Wren work out what to propose.",
     // Created by the Director on 2026-09-18, in its own announcement's words.
-    "JD": "The working room: the organisation for every task from here on."
+    "JD": "The working room: the organisation for every task from here on.",
+    "JD-build": "Where Kural's builders build what JD decides."
   };
 
   // --- who decides where -------------------------------------------------
@@ -133,6 +134,25 @@
         "The Director and Kural each have one vote. Wren watches and never votes here.",
         "The Director's vote settles it: the page executes straight away unless the tally is level.",
         "A level tally is broken by the Director's casting vote, and by nothing else."
+      ]
+    },
+    // JD-build, created by proposal 51: the room under JD where Kural's
+    // builders build what JD decides. Builders never join JD itself.
+    "JD-build": {
+      key: "sub",
+      regime: null,
+      architect: KURAL,
+      voters: [KALAM],
+      extraVoters: [],
+      viewers: [DIRECTOR],
+      casting: KURAL,
+      autoExecute: "automatic",
+      executeAs: KURAL,
+      windowHours: 24,
+      plain: [
+        "The builders vote. The Director watches and never votes here.",
+        "Kural votes only to break a level tally.",
+        "Execution is automatic: a decisive tally, after 24 hours with at least one vote."
       ]
     }
   };
