@@ -43,10 +43,14 @@
   var wrenVotes = {};
   var wrenVotesError = null;
 
-  // The builder's votes, in the same shape and read the same way. Its reasons
-  // were being written to a file nothing served and nothing showed.
+  // The builder's and the widget's votes, in the same shape and read the same
+  // way. The builder's reasons were being written to a file nothing served and
+  // nothing showed; the widget's log is empty until its add-on casts the first
+  // vote, and the card is right on that day without anybody deploying anything.
   var builderVotes = {};
   var builderVotesError = null;
+  var widgetVotes = {};
+  var widgetVotesError = null;
 
   // The question channel (27.2) and the agent traffic (27.5).
   var questions = [];
@@ -846,8 +850,7 @@
     card.appendChild(voters);
 
     card.appendChild(renderWrenReason(p));
-    var builderBlock = renderBuilderReason(p);
-    if (builderBlock) card.appendChild(builderBlock);
+    renderOtherReasons(p).forEach(function (block) { card.appendChild(block); });
     card.appendChild(renderActions(p, st));
 
     if (st.outcome) {
@@ -1073,17 +1076,22 @@
     });
   }
 
-  // Only where the builder actually votes, and only once it has: an empty
-  // "Builder has not voted" on every card of an organisation it is not on would
-  // be noise, not information.
-  function renderBuilderReason(p) {
+  // The other voters' blocks, on the organisations where they actually vote and
+  // only once they have. An empty "Builder has not voted" on every card of an
+  // organisation the builder is not on would be noise, not information.
+  function renderOtherReasons(p) {
     var rules = rulesForProposal(p);
-    var standing = R.mayVote(rules, R.BUILDER);
-    if (!standing && !builderVotes[p.id]) return null;
-    if (!builderVotes[p.id] && !R.hasVoted(p, R.BUILDER)) return null;
-    return renderVoterReason(p, {
-      label: "Builder", address: R.BUILDER, records: builderVotes, error: builderVotesError
+    var blocks = [];
+    [
+      { label: "Builder", address: R.BUILDER, records: builderVotes, error: builderVotesError },
+      { label: "Widget", address: R.WIDGET, records: widgetVotes, error: widgetVotesError }
+    ].forEach(function (voter) {
+      var recorded = voter.records[p.id];
+      if (!recorded && !R.hasVoted(p, voter.address)) return;
+      if (!recorded && !R.mayVote(rules, voter.address)) return;
+      blocks.push(renderVoterReason(p, voter));
     });
+    return blocks;
   }
 
   function renderActions(p, st) {
@@ -1862,8 +1870,9 @@
       wrenVotesError = e && e.message ? e.message : String(e);
     }
 
-    // The builder's log, read exactly the same way. One failing must not take
-    // the other's reasons off the card with it.
+    // The builder's and the widget's logs, read exactly the same way. Each is
+    // caught on its own: one failing must not take another's reasons off the
+    // card with it.
     try {
       var built = await R.fetchBuilderVotes(window.fetch.bind(window), "");
       builderVotes = R.indexWrenVotes(built);
@@ -1871,6 +1880,15 @@
     } catch (e2) {
       builderVotes = {};
       builderVotesError = e2 && e2.message ? e2.message : String(e2);
+    }
+
+    try {
+      var widgeted = await R.fetchWidgetVotes(window.fetch.bind(window), "");
+      widgetVotes = R.indexWrenVotes(widgeted);
+      widgetVotesError = null;
+    } catch (e3) {
+      widgetVotes = {};
+      widgetVotesError = e3 && e3.message ? e3.message : String(e3);
     }
   }
 

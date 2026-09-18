@@ -362,18 +362,33 @@ describe("the write scripts refuse before they send", function () {
       expect(R.voteRefs(undefined)).to.deep.equal([]);
     });
 
-    it("has both vote scripts parse a repeatable --ref, and write it", function () {
-      // Reading the source, in the same spirit as the --dry-run wiring test
-      // below: the flag has to be parsed, carried into the record, and shown in
-      // the rehearsal, or a vote that says --ref would quietly record nothing.
-      for (const file of ["wren-vote.js", "builder-vote.js"]) {
-        const source = fs.readFileSync(path.join(__dirname, "..", "..", "scripts", file), "utf8");
-        expect(source, `${file} does not parse --ref`).to.contain('"--ref"');
-        expect(source, `${file} does not clean the refs through read.js`).to.contain("R.voteRefs(");
-        expect(source, `${file} does not put refs on the record`).to.match(/\n\s*refs,/);
-        expect(source, `${file}'s rehearsal does not say what it would point at`)
-          .to.contain("would point at");
-      }
+    it("parses a repeatable --ref and carries it onto the record", function () {
+      // Every vote script shares one parser since proposal 30, so this is read
+      // once -- which is the whole argument for the shared module.
+      const V = require("../../governance/vote.js");
+      const parse = (argv) => V.parseArgs(["node", "vote.js"].concat(argv), { defaultAaoId: 1 });
+
+      expect(parse(["3", "for", "a", "reason"]).refs).to.deep.equal([]);
+      expect(parse(["3", "for", "why", "--ref", "commit abc"]).refs).to.deep.equal(["commit abc"]);
+      expect(parse(["3", "for", "why", "--ref", "commit abc", "--ref", "proposal 26"]).refs)
+        .to.deep.equal(["commit abc", "proposal 26"]);
+
+      // And the flag never eats the reason: the reason stays one free-text run.
+      const parsed = parse(["3", "for", "the", "cache", "key", "is", "it", "--ref", "spec 27.1"]);
+      expect(parsed.reason).to.equal("the cache key is it");
+      expect(parsed.refs).to.deep.equal(["spec 27.1"]);
+      expect(parsed.rawId).to.equal("3");
+      expect(parsed.rawSupport).to.equal("for");
+    });
+
+    it("writes the refs onto the record and shows them in the rehearsal", function () {
+      const source = fs.readFileSync(
+        path.join(__dirname, "..", "..", "governance", "vote.js"), "utf8");
+      expect(source, "does not parse --ref").to.contain('"--ref"');
+      expect(source, "does not clean the refs through read.js").to.contain("R.voteRefs(");
+      expect(source, "does not put refs on the record").to.match(/\n\s*refs: args\.refs,/);
+      expect(source, "the rehearsal does not say what it would point at")
+        .to.contain("would point at");
     });
 
     it("serves the builder's log the same way it serves Wren's", function () {
@@ -385,6 +400,112 @@ describe("the write scripts refuse before they send", function () {
       expect(R.BUILDER_VOTES_PATH).to.equal("/builder-votes.json");
       expect(R.fetchBuilderVotes).to.be.a("function");
     });
+  });
+
+  // One vote script, told which account it is (proposal 30). builder-vote.js was
+  // wren-vote.js with two names changed, so the guard against voting on an
+  // unfiled id had to be written twice and --dry-run had to be remembered twice.
+  describe("one vote script for all three agents (proposal 30)", function () {
+    const V = require("../../governance/vote.js");
+    const VOTERS = [
+      { file: "wren-vote.js", account: 1, label: "Wren",
+        log: "wren-votes.jsonl", defaultAaoId: 0 },
+      { file: "builder-vote.js", account: 3, label: "Builder",
+        log: "builder-votes.jsonl", defaultAaoId: 1 },
+      { file: "widget-vote.js", account: 4, label: "Widget",
+        log: "widget-votes.jsonl", defaultAaoId: 1 }
+    ];
+
+    function sourceOf(file) {
+      return fs.readFileSync(path.join(__dirname, "..", "..", "scripts", file), "utf8");
+    }
+
+    VOTERS.forEach((voter) => {
+      it(`${voter.file} is a wrapper: who it is, and nothing else`, function () {
+        const source = sourceOf(voter.file);
+
+        // It delegates rather than repeating.
+        expect(source, `${voter.file} does not use the shared script`)
+          .to.contain('require("../governance/vote.js").run(');
+        expect(source, `${voter.file} says who it is`).to.contain(`account: ${voter.account}`);
+        expect(source, `${voter.file} names its log`).to.contain(`"${voter.log}"`);
+        expect(source, `${voter.file} names its default organisation`)
+          .to.contain(`defaultAaoId: ${voter.defaultAaoId}`);
+
+        // And it does none of the work itself. These are the things that used to
+        // be copied, and a copy reappearing here is the regression.
+        for (const copied of ["getContractAt", "voteTargetProblem", "appendFileSync", "tallyAfter"]) {
+          expect(source.includes(copied), `${voter.file} has its own ${copied} again`)
+            .to.equal(false);
+        }
+
+        // Code, not comment: a wrapper this size is the proposal's whole point.
+        const code = source.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith("//"));
+        expect(code.length, `${voter.file} is ${code.length} lines of code, not a wrapper`)
+          .to.be.lessThan(25);
+      });
+    });
+
+    it("gives every voter the same default: rehearse, and send only on --send", function () {
+      for (const voter of VOTERS) {
+        const rehearsing = V.parseArgs(["node", voter.file, "3", "for", "why"], voter);
+        const sending = V.parseArgs(["node", voter.file, "3", "for", "why", "--send"], voter);
+        const both = V.parseArgs(["node", voter.file, "3", "for", "why", "--send", "--dry-run"], voter);
+        expect(rehearsing.dryRun, `${voter.file} sends by default`).to.equal(true);
+        expect(sending.dryRun, `${voter.file} ignores --send`).to.equal(false);
+        expect(both.dryRun, `${voter.file} lets --send beat --dry-run`).to.equal(true);
+      }
+    });
+
+    it("gives every voter the same default organisation it was told", function () {
+      for (const voter of VOTERS) {
+        expect(V.parseArgs(["node", voter.file, "3", "for", "why"], voter).aaoId).to.equal(voter.defaultAaoId);
+        expect(V.parseArgs(["node", voter.file, "--aao", "7", "3", "for", "why"], voter).aaoId)
+          .to.equal(7);
+      }
+    });
+
+    it("writes each voter's record to that voter's own log", function () {
+      for (const voter of VOTERS) {
+        const file = V.logPathFor({ logFile: voter.log });
+        expect(path.basename(file)).to.equal(voter.log);
+        expect(path.basename(path.dirname(file))).to.equal("governance");
+      }
+      // Three voters, three logs: a shared script must not pool them.
+      const logs = VOTERS.map((v) => v.log);
+      expect(new Set(logs).size).to.equal(3);
+    });
+
+    it("prints each script's own name and its own standing in its usage", function () {
+      for (const voter of VOTERS) {
+        const lines = V.usageLines({
+          command: voter.file, defaultAaoId: voter.defaultAaoId,
+          standingNotes: [`--aao ${voter.defaultAaoId}   the default for this one`]
+        }).join("\n");
+        expect(lines).to.contain(`node scripts/${voter.file}`);
+        expect(lines).to.contain(`(default ${voter.defaultAaoId})`);
+        expect(lines, "the usage must say sending is not the default")
+          .to.contain("Rehearsing is the default");
+      }
+    });
+
+    it("lets the widget vote at all, which is what ends the interim rule",
+      async function () {
+        // Before proposal 30 there was no widget-vote.js, and the rule that
+        // waits for the widget's first vote had nothing that could cast one.
+        expect(fs.existsSync(path.join(__dirname, "..", "..", "scripts", "widget-vote.js")))
+          .to.equal(true);
+
+        // And the rule in force really does turn on that vote, through the same
+        // read.js the script checks its standing against.
+        const before = R.effectiveRules({ topic: "widget-builder" }, []);
+        const after = R.effectiveRules({ topic: "widget-builder" },
+          [{ votes: [{ voter: R.WIDGET }] }]);
+        expect(before.interim).to.equal(true);
+        expect(after.interim).to.not.equal(true);
+        expect(R.voterProblem(before, R.WIDGET), "the widget must be able to cast it")
+          .to.equal(null);
+      });
   });
 
   describe("what a dry run prints", function () {
@@ -412,17 +533,19 @@ describe("the write scripts refuse before they send", function () {
   // checked before the send, in every script that writes.
   describe("--dry-run is actually wired, in every write script", function () {
     const scripts = [
-      { file: "wren-vote.js", send: "connect(wren).vote(" },
-      { file: "builder-vote.js", send: "connect(builder).vote(" },
-      { file: "wren-decide.js", send: "appendFileSync(MESSAGES" },
-      { file: "wren-file-draft.js", send: "connect(signer).submitProposal(" },
-      { file: "propose.js", send: "connect(signer).submitProposal(" }
+      // Since proposal 30 the three vote scripts share one module, so the flag
+      // is wired once and this reads it there. That is the point of the shared
+      // module: one place to get this right, and one place to get it wrong.
+      { dir: "governance", file: "vote.js", send: "connect(signer).vote(" },
+      { dir: "scripts", file: "wren-decide.js", send: "appendFileSync(MESSAGES" },
+      { dir: "scripts", file: "wren-file-draft.js", send: "connect(signer).submitProposal(" },
+      { dir: "scripts", file: "propose.js", send: "connect(signer).submitProposal(" }
     ];
 
-    scripts.forEach(({ file, send }) => {
+    scripts.forEach(({ dir, file, send }) => {
       it(`${file} declares the flag, returns it, and checks it before it writes`, function () {
         const source = fs.readFileSync(
-          path.join(__dirname, "..", "..", "scripts", file), "utf8");
+          path.join(__dirname, "..", "..", dir, file), "utf8");
 
         expect(source, "takes --dry-run").to.contain("--dry-run");
 
@@ -451,8 +574,10 @@ describe("the write scripts refuse before they send", function () {
   // one you had to remember, and twice it was not remembered: two real votes
   // went out with meaningless reasons on them, and neither could be taken back.
   describe("rehearsing is the default; sending takes --send", function () {
+    // The three vote scripts decide through governance/vote.js since proposal
+    // 30, so that is where their half of this is read.
     const WRITERS = [
-      "wren-vote.js", "builder-vote.js", "wren-decide.js", "wren-file-draft.js",
+      "../governance/vote.js", "wren-decide.js", "wren-file-draft.js",
       "propose.js", "submit-widget-proposals.js", "builder-propose.js",
       "execute-decided.js", "cut-aao-facet.js"
     ];
@@ -595,6 +720,8 @@ describe("the write scripts refuse before they send", function () {
     const ONCHAIN = [
       { file: "wren-vote.js", args: () => [String(filedId), "for", "a rehearsed reason"] },
       { file: "builder-vote.js", args: () => ["--aao", "0", String(filedId), "for", "a rehearsed reason"] },
+      // Added by proposal 30: the widget's script, which cost five lines.
+      { file: "widget-vote.js", args: () => ["--aao", "1", String(filedId), "for", "a rehearsed reason"] },
       { file: "execute-decided.js", args: () => [], env: () => ({ IDS: String(filedId) }) }
     ];
 
@@ -625,7 +752,7 @@ describe("the write scripts refuse before they send", function () {
     const REPO = path.join(__dirname, "..", "..");
 
     const ALL = [
-      "wren-vote.js", "builder-vote.js", "wren-decide.js", "wren-answer.js",
+      "wren-vote.js", "builder-vote.js", "widget-vote.js", "wren-decide.js", "wren-answer.js",
       "wren-file-draft.js", "propose.js", "submit-widget-proposals.js",
       "builder-propose.js", "execute-decided.js", "cut-aao-facet.js",
       "snapshot-chain-state.js", "verify-after-cut.js",

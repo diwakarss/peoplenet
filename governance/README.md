@@ -240,6 +240,38 @@ Records written before proposal 29 carry no refs. The logs are append-only, so
 they stay that way, and the card says *no references recorded* rather than
 leaving a blank that could be read as "nothing to read".
 
+### One vote script
+
+All three agents vote through `governance/vote.js`, which is told which account
+it is:
+
+| Script | Account | Log | Default organisation |
+|---|---|---|---|
+| `scripts/wren-vote.js` | 1 | `wren-votes.jsonl` | AAO 0 |
+| `scripts/builder-vote.js` | 3 | `builder-votes.jsonl` | AAO 1 |
+| `scripts/widget-vote.js` | 4 | `widget-votes.jsonl` | AAO 1 |
+
+Each of those files is about twenty lines that say who it is, and nothing else.
+Everything a vote actually does — the argument parsing, the `--ref` flag, the
+dry-run **default**, the account check, the membership check, the standing check
+against the rule in force, the unfiled-id guard, the drift check, the
+casting-vote condition, the record with the tally it produced — lives once.
+
+This was proposal 30, filed by the builder about code it had just written:
+`builder-vote.js` was `wren-vote.js` with two names changed, so the guard against
+voting on an unfiled id had to be written twice and `--dry-run` had to be
+remembered twice. A check that lives in two places is one edit away from living
+in one and a half.
+
+`widget-vote.js` is what the proposal bought: the widget had a vote under 27.4
+and no way to cast one, which is also why AAO 1 needed an interim rule at all.
+Its first vote through that script is what ends the interim rule.
+
+Where a voter genuinely differs — Wren is the casting vote on the widget-builder
+and the others are not — the difference is read out of `read.js`'s rule set, not
+written into the script, so the page and the scripts refuse the same things for
+the same reasons.
+
 ### The voters' reasons on the page
 
 Every proposal card carries Wren's line under the tally: **Wren voted FOR** or
@@ -249,9 +281,14 @@ Wren's argument for it, and the Director is meant to weigh the second, not just
 count the first.
 
 The builder's line sits under it, in the same shape, on the organisations where
-the builder votes. Its reasons were being written to `builder-votes.jsonl`, which
-nothing served and nothing showed; `GET /builder-votes.json` serves it now and
-one function on the page renders both, so the two cannot drift apart.
+the builder votes, and the widget's under that. The builder's reasons were being
+written to `builder-votes.jsonl`, which nothing served and nothing showed;
+`GET /builder-votes.json` and `GET /widget-votes.json` serve them now and **one**
+function on the page renders all three, so they cannot drift apart.
+
+A voter's line appears only where that voter actually votes, and only once it
+has: an empty *"Builder has not voted"* on every card of an organisation the
+builder is not on would be noise, not information.
 
 The page gets it from `GET /wren-votes.json`, which `server.js` re-reads off
 `wren-votes.jsonl` on **every** request &mdash; `wren-vote.js` appends to that
@@ -356,8 +393,10 @@ not a prediction, the event. Once executed a proposal is closed for good.
 | `answers.jsonl` | Wren's answers, appended by `scripts/wren-answer.js`. |
 | `messages.jsonl` | Agent traffic, appended by `POST /messages`. |
 | `check.js` | Runs `read.js` against the live node **and** the served endpoint, prints what the page would show, asserts the AAO, the three members, the proposal floor, and Wren's twelve records. |
+| `vote.js` | One vote script, told which account it is. `wren-vote.js`, `builder-vote.js` and `widget-vote.js` are wrappers on it. |
 | `wren-votes.jsonl` | Wren's votes with their stated reasons and what each was cast against, one JSON object per line. |
 | `builder-votes.jsonl` | The builder's, in the same shape, served at `/builder-votes.json` and rendered by the same function. |
+| `widget-votes.jsonl` | The widget's. It does not exist until the widget's first vote; the endpoint answers `[]` until then. |
 | `watch.js` | The trigger watcher, and the automatic execution of what the rules say is decided. Runs with the server. |
 | `reports/` | Where a `count:` trigger reads from, and the only place it may read from. Tracked, with a README, because git cannot carry an empty directory and a `count:` rule cannot fire without it. |
 

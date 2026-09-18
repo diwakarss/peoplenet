@@ -99,6 +99,15 @@ async function main() {
   }
   const builderByProposal = R.indexWrenVotes(builderRecords || []);
 
+  // The widget's, empty until its add-on casts the first vote (proposal 30).
+  let widgetRecords = null;
+  let widgetError = null;
+  try {
+    widgetRecords = await R.fetchWidgetVotes(fetch, PAGE_URL);
+  } catch (e) {
+    widgetError = e && e.message ? e.message : String(e);
+  }
+
   // Wren's translations of the legacy proposals (27.10), read-only.
   let translations = {};
   let translationsError = null;
@@ -163,10 +172,12 @@ async function main() {
   console.log("");
   console.log(`wren-votes.json  ${wrenError ? `UNAVAILABLE (${wrenError})` : `${wrenRecords.length} records from ${PAGE_URL}${R.WREN_VOTES_PATH}`}`);
   console.log(`builder-votes    ${builderError ? `UNAVAILABLE (${builderError})` : `${builderRecords.length} records from ${PAGE_URL}${R.BUILDER_VOTES_PATH}`}`);
-  if (!wrenError && !builderError) {
-    const withRefs = [...wrenRecords, ...builderRecords].filter((r) => R.voteRefs(r).length);
-    console.log(`vote refs        ${withRefs.length} of ` +
-      `${wrenRecords.length + builderRecords.length} records say what they were cast against`);
+  console.log(`widget-votes     ${widgetError ? `UNAVAILABLE (${widgetError})` : `${widgetRecords.length} records from ${PAGE_URL}${R.WIDGET_VOTES_PATH}`}`);
+  if (!wrenError && !builderError && !widgetError) {
+    const all = [...wrenRecords, ...builderRecords, ...widgetRecords];
+    const withRefs = all.filter((r) => R.voteRefs(r).length);
+    console.log(`vote refs        ${withRefs.length} of ${all.length} ` +
+      "records say what they were cast against");
   }
   for (const route of ["/questions.json", "/answers.json", "/messages.json", "/drafts.json"]) {
     const got = channel[route];
@@ -357,6 +368,48 @@ async function main() {
       assert.ok(R.sameAddress(record.voter, R.BUILDER),
         `builder record ${i} was cast by ${record.voter}, not the Builder`);
     });
+  });
+
+  check(`GET ${R.WIDGET_VOTES_PATH} answers before the widget has ever voted`, () => {
+    // The widget's log does not exist until its add-on casts the first vote, and
+    // an endpoint that 404s then would mean deploying something on the day it
+    // does. A missing log answers [] instead, so the card is simply right.
+    assert.strictEqual(
+      widgetError, null,
+      `${PAGE_URL}${R.WIDGET_VOTES_PATH} did not answer (${widgetError}). Is "npm run governance" up?`
+    );
+    assert.ok(Array.isArray(widgetRecords), "the endpoint did not return an array");
+    widgetRecords.forEach((record, i) => {
+      if (record.correction) return;
+      assert.ok(R.sameAddress(record.voter, R.WIDGET),
+        `widget record ${i} was cast by ${record.voter}, not the Widget`);
+    });
+  });
+
+  check("one vote script, and each agent's is a wrapper on it", () => {
+    // Proposal 30. builder-vote.js was wren-vote.js with two names changed, so
+    // the unfiled-id guard was written twice and --dry-run remembered twice.
+    const V = require("./vote.js");
+    const scriptsDir = path.join(__dirname, "..", "scripts");
+
+    for (const [file, account, log] of [
+      ["wren-vote.js", 1, "wren-votes.jsonl"],
+      ["builder-vote.js", 3, "builder-votes.jsonl"],
+      ["widget-vote.js", 4, "widget-votes.jsonl"]
+    ]) {
+      const source = fs.readFileSync(path.join(scriptsDir, file), "utf8");
+      assert.ok(source.includes('require("../governance/vote.js").run('),
+        `${file} does not use the shared vote script`);
+      assert.ok(source.includes(`account: ${account}`), `${file} does not say which account it is`);
+      assert.ok(source.includes(`"${log}"`), `${file} does not name its own log`);
+      assert.ok(!source.includes("getContractAt"), `${file} has its own chain code again`);
+    }
+
+    // Rehearsing is the default for all three, decided in one place.
+    const rehearse = V.parseArgs(["node", "v.js", "3", "for", "why"], { defaultAaoId: 1 });
+    const send = V.parseArgs(["node", "v.js", "3", "for", "why", "--send"], { defaultAaoId: 1 });
+    assert.strictEqual(rehearse.dryRun, true, "the shared script sends by default");
+    assert.strictEqual(send.dryRun, false, "the shared script ignores --send");
   });
 
   check("refs on a vote record are a list of non-empty strings, or absent", () => {

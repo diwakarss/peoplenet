@@ -614,6 +614,10 @@
   // request and serves it as a JSON array here.
   var WREN_VOTES_PATH = "/wren-votes.json";
   var BUILDER_VOTES_PATH = "/builder-votes.json";
+  // The widget's, empty until its add-on casts the first one. An endpoint that
+  // answers [] is what lets the card be right on the day that changes without
+  // anybody deploying anything.
+  var WIDGET_VOTES_PATH = "/widget-votes.json";
 
   // Parse the .jsonl text into records, skipping blank and malformed lines.
   function parseWrenVotesJsonl(text) {
@@ -676,6 +680,10 @@
 
   async function fetchBuilderVotes(fetchImpl, baseUrl) {
     return fetchVoteLog(fetchImpl, baseUrl, BUILDER_VOTES_PATH);
+  }
+
+  async function fetchWidgetVotes(fetchImpl, baseUrl) {
+    return fetchVoteLog(fetchImpl, baseUrl, WIDGET_VOTES_PATH);
   }
 
   // --- what a vote points at (proposal 29) -------------------------------
@@ -908,11 +916,13 @@
     isUrl: isUrl,
     WREN_VOTES_PATH: WREN_VOTES_PATH,
     BUILDER_VOTES_PATH: BUILDER_VOTES_PATH,
+    WIDGET_VOTES_PATH: WIDGET_VOTES_PATH,
     parseWrenVotesJsonl: parseWrenVotesJsonl,
     indexWrenVotes: indexWrenVotes,
     fetchVoteLog: fetchVoteLog,
     fetchWrenVotes: fetchWrenVotes,
     fetchBuilderVotes: fetchBuilderVotes,
+    fetchWidgetVotes: fetchWidgetVotes,
     voteRefs: voteRefs,
     getProvider: getProvider,
     getContract: getContract,

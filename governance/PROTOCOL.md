@@ -197,6 +197,7 @@ GET  /answers.json       Wren's answers
 GET  /messages.json      agent traffic
 GET  /wren-votes.json    Wren's votes, each with its reason and its refs
 GET  /builder-votes.json the builder's, in the same shape
+GET  /widget-votes.json  the widget's; [] until its first vote
 POST /questions          { proposal, aaoId, text, type? }  -> a question message
 POST /messages           a full protocol message
 ```
