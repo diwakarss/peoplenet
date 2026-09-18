@@ -895,5 +895,31 @@ describe("the write scripts refuse before they send", function () {
       expect(A.stateOf({ summary: "closed: superseded by proposal 31." }).key).to.equal("closed");
       expect(A.stateOf({ summary: "I looked at it." }).key).to.equal("unknown");
     });
+
+    // governance/check.js used to judge every decision ever written, so one of
+    // Kural's on proposal 38 with no state word held the check red after a
+    // later decision on 38 had already said where it got to. The log is
+    // append-only: that line cannot be edited, so the check could never be made
+    // green by writing the right thing next.
+    it("judges a proposal by its latest decision, so a superseded one is history",
+      function () {
+        const log = [
+          { id: "decision-older", type: "decision", ts: "2026-01-01T00:00:00Z",
+            refs: ["proposal 38"], summary: "The Director ruled Wren a viewer on JD." },
+          { id: "decision-newer", type: "decision", ts: "2026-01-02T00:00:00Z",
+            refs: ["proposal 38"], summary: "Built in commit abc1234." }
+        ];
+        expect(A.stateOf(log[0]).key, "the older one says nothing").to.equal("unknown");
+
+        const latest = A.indexDecisions(log);
+        expect(latest[38].id).to.equal("decision-newer");
+        expect(A.stateOf(latest[38]).key).to.equal("built");
+
+        // The check, in the one line it is: no proposal's latest decision is
+        // unknown. The older, stateless message is not judged at all.
+        const unknown = Object.keys(latest)
+          .filter((id) => A.stateOf(latest[id]).key === "unknown");
+        expect(unknown).to.deep.equal([]);
+      });
   });
 });

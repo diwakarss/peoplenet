@@ -703,19 +703,28 @@ async function main() {
     // So the rule is conditional now, and the part that matters is unchanged: a
     // decision that DOES name a proposal must say where that proposal has got
     // to, because the card reads its state out of those words.
+    //
+    // And only the LATEST decision on a proposal is judged, which is the one
+    // the card reads. This check used to judge every decision ever written, so
+    // decision-e1f41a459a58a2 -- a decision of Kural's on proposal 38 with no
+    // state word -- held the check red after a later decision on 38 had already
+    // said "waiting:". The log is append-only and nothing can edit that line;
+    // a superseded message is history, not a failure, and a check that cannot
+    // be made green by writing the right thing next is a check nobody can act
+    // on. A.indexDecisions is the same index the card reads.
     decisions.forEach((m) => {
-      const id = A.proposalOf(m);
-      if (!Number.isInteger(id)) {
-        // Not about a proposal. It still has to be a message a person can read,
-        // which the protocol validator already requires of every message.
-        assert.strictEqual(P.validate(m).ok, true,
-          `decision ${m.id} names no proposal and is not a readable message either`);
-        return;
-      }
-      const state = A.stateOf(m);
+      if (Number.isInteger(A.proposalOf(m))) return;
+      // Not about a proposal. It still has to be a message a person can read,
+      // which the protocol validator already requires of every message.
+      assert.strictEqual(P.validate(m).ok, true,
+        `decision ${m.id} names no proposal and is not a readable message either`);
+    });
+
+    Object.keys(adoptions).forEach((id) => {
+      const m = adoptions[id];
       assert.notStrictEqual(
-        state.key, "unknown",
-        `decision ${m.id} does not say where proposal ${id} has got to: "${String(m.summary).slice(0, 70)}"`
+        A.stateOf(m).key, "unknown",
+        `the latest decision on proposal ${id}, ${m.id}, does not say where it has got to: "${String(m.summary).slice(0, 70)}"`
       );
     });
   });
