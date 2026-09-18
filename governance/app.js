@@ -500,7 +500,8 @@
     var box = el("textarea", "np-input");
     box.rows = 4;
     box.name = "draft";
-    box.placeholder = "In your own words. Wren turns it into a proposal and files it on the chain.";
+    var architect = R.architectLabel(data.aao);
+    box.placeholder = "In your own words. " + architect + " turns it into a proposal and files it on the chain.";
     box.setAttribute("data-draft", "np:draft");
     box.value = newProposal.text || "";
     box.disabled = newProposal.busy;
@@ -509,12 +510,12 @@
     form.appendChild(row);
 
     var actions = el("div", "np-actions");
-    var submit = el("button", "np-send", newProposal.busy ? "sending…" : "Send to Wren");
+    var submit = el("button", "np-send", newProposal.busy ? "sending…" : "Send to " + architect);
     submit.type = "submit";
     submit.disabled = newProposal.busy;
     actions.appendChild(submit);
     actions.appendChild(el("span", "np-note",
-      "Goes to " + data.aao.topic + " as a draft. Wren files it on the chain."));
+      "Goes to " + data.aao.topic + " as a draft. " + architect + " files it on the chain."));
     form.appendChild(actions);
 
     if (newProposal.error) form.appendChild(el("p", "err", newProposal.error));
@@ -550,7 +551,7 @@
         throw new Error((result.errors || ["HTTP " + response.status]).join("; "));
       }
       newProposal.text = "";
-      newProposal.filed = "Sent. It shows as “draft, awaiting Wren” until she files it.";
+      newProposal.filed = "Sent. It shows as “draft, awaiting " + architectFor(selectedAaoId) + "” until it is filed.";
     } catch (e) {
       newProposal.error = "Could not send the draft: " + (e.message || e);
     } finally {
@@ -622,7 +623,7 @@
     var anyAnswered = mine.some(function (q) { return answersTo(q.id).length > 0; });
 
     var head = el("div", "thread-head");
-    head.appendChild(el("h4", "thread-title", "Questions to Wren"));
+    head.appendChild(el("h4", "thread-title", "Questions to " + architectFor(p.aaoId)));
     if (mine.length) {
       var answered = mine.filter(function (q) { return answersTo(q.id).length > 0; }).length;
       head.appendChild(el("span", "thread-count", mine.length + " asked · " + answered + " answered"));
@@ -663,7 +664,7 @@
       pending.appendChild(document.createTextNode(
         isRequest
           ? "Sent to the proposer. Awaiting a revised proposal — "
-          : "Answer pending. Wren has it — "));
+          : "Answer pending. " + architectFor(q.aaoId) + " has it — "));
       pending.appendChild(el("b", "pending-seconds", elapsedSince(q)));
       item.appendChild(pending);
       return item;
@@ -696,7 +697,7 @@
     var box = el("form", "ask");
     var input = el("input", "ask-input");
     input.type = "text";
-    input.placeholder = "Ask Wren about this proposal…";
+    input.placeholder = "Ask " + architectFor(p.aaoId) + " about this proposal…";
     input.value = questionDrafts[p.id] || "";
     input.setAttribute("data-draft", String(p.id));
     input.disabled = Boolean(asking[p.id]);
@@ -889,7 +890,7 @@
 
       if (adoption.message.details && String(adoption.message.details).trim()) {
         var fold = el("details", "proposal-details");
-        fold.appendChild(el("summary", null, "What Wren did"));
+        fold.appendChild(el("summary", null, "What " + P.label(adoption.message.from || "wren") + " did"));
         fold.appendChild(el("pre", "pre", adoption.message.details));
         wrap.appendChild(fold);
       }
@@ -1331,17 +1332,19 @@
         aaoId: p.aaoId,
         proposalId: p.id
       });
-      var reason = wrenVotes[p.id];
-      if (reason) {
-        rows.push({
-          kind: "Vote reason",
-          where: "AAO " + p.aaoId + " · #" + p.id,
-          title: "Wren voted " + (reason.support ? "for" : "against"),
-          body: reason.reason || "",
-          aaoId: p.aaoId,
-          proposalId: p.id
+      [["Wren", wrenVotes], ["Kural", kuralVotes], ["Builder", builderVotes], ["Widget", widgetVotes]]
+        .forEach(function (log) {
+          var reason = log[1][p.id];
+          if (!reason) return;
+          rows.push({
+            kind: "Vote reason",
+            where: "AAO " + p.aaoId + " · #" + p.id,
+            title: log[0] + " voted " + (reason.support ? "for" : "against"),
+            body: reason.reason || "",
+            aaoId: p.aaoId,
+            proposalId: p.id
+          });
         });
-      }
     });
 
     questions.concat(answers).concat(messages).forEach(function (m) {
@@ -1495,7 +1498,7 @@
         seen.answers.add(a.id);
         var asked = questions.filter(function (q) { return q.id === a.question; })[0];
         if (!asked || asked.from !== "director") return;
-        notify("Wren answered on proposal " + a.proposal,
+        notify(P.label(a.from || "wren") + " answered on proposal " + a.proposal,
           textOf(a.text || a.summary).slice(0, 180),
           Number(a.aaoId || 0), Number(a.proposal));
       });
@@ -1670,6 +1673,15 @@
   }
 
   // The casting-vote rule of whichever organisation the proposal is on.
+  // The architect's name for an organisation, by id, or for the one on screen.
+  // Every prompt that names who answers, files or acts reads it from here.
+  function architectFor(aaoId) {
+    var aaos = (lastData && lastData.aaos) || [];
+    var aao = aaoId === undefined ? (lastData && lastData.aao)
+      : aaos.filter(function (a) { return a.id === Number(aaoId); })[0];
+    return R.architectLabel(aao || null);
+  }
+
   function rulesForProposal(p) {
     var aao = lastData && (lastData.aaos || []).filter(function (a) { return a.id === p.aaoId; })[0];
     // The rules in force, not the ones written down: the widget-builder runs an
@@ -1810,7 +1822,8 @@
 
     var head = el("div", "proposal-head");
     head.appendChild(el("span", "pid", d.id));
-    head.appendChild(el("span", "chip chip-draft", "draft, awaiting Wren"));
+    var architect = architectFor(d.aaoId);
+    head.appendChild(el("span", "chip chip-draft", "draft, awaiting " + architect));
     var by = el("span", "by");
     by.appendChild(document.createTextNode("by "));
     by.appendChild(el("b", null, "Director"));
@@ -1823,7 +1836,7 @@
     card.appendChild(body);
 
     card.appendChild(el("p", "draft-note",
-      "Wren turns this into a proposal and files it on the chain, keeping these words as the " +
+      architect + " turns this into a proposal and files it on the chain, keeping these words as the " +
       "summary's first sentence. Until then there is nothing to vote on."));
 
     var how = el("details", "proposal-details");

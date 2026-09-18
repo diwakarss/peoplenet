@@ -12,7 +12,7 @@ const P = require("../governance/protocol.js");
 
 const AAO = 2;
 const GOV = path.join(__dirname, "..", "governance");
-const LOGS = ["questions.jsonl", "answers.jsonl", "messages.jsonl", "wren-votes.jsonl", "builder-votes.jsonl"];
+const LOGS = ["questions.jsonl", "answers.jsonl", "messages.jsonl", "drafts.jsonl", "wren-votes.jsonl", "builder-votes.jsonl"];
 const fromArg = process.argv.indexOf("--from");
 const INTERVAL = 5000;
 

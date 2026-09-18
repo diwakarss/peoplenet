@@ -71,6 +71,9 @@
       // One organisation, one regime: there is nothing to tell apart, so the
       // header says nothing rather than saying "standing rule" forever.
       regime: null,
+      // The architect: who answers the Director's questions here, files the
+      // Director's drafts, and whom the page names in every prompt.
+      architect: WREN,
       voters: [DIRECTOR, WREN],
       // Accounts allowed to vote whose vote nothing waits for. Empty here.
       extraVoters: [],
@@ -90,6 +93,7 @@
     "widget-builder": {
       key: "sub",
       regime: "The standing rule: the widget has voted here, so it votes and Wren only breaks ties.",
+      architect: WREN,
       voters: [BUILDER, WIDGET],
       extraVoters: [],
       viewers: [DIRECTOR],
@@ -112,6 +116,7 @@
     "JD": {
       key: "main",
       regime: null,
+      architect: KURAL,
       voters: [DIRECTOR, KURAL],
       extraVoters: [],
       viewers: [WREN],
@@ -135,6 +140,7 @@
   var DEFAULT_RULES = {
     key: "default",
     regime: null,
+    architect: null,
     voters: [],
     extraVoters: [],
     viewers: [],
@@ -153,6 +159,13 @@
   function rulesFor(aao) {
     var topic = aao && aao.topic !== undefined ? aao.topic : aao;
     return AAO_RULES[topic] || DEFAULT_RULES;
+  }
+
+  // The architect's name for an organisation, for every prompt the page
+  // prints. "Ask Wren" on JD was wrong: Kural is the architect there.
+  function architectLabel(aao) {
+    var rules = rulesFor(aao);
+    return rules.architect ? labelFor(rules.architect) : "the architect";
   }
 
   // --- the interim regime on the widget-builder --------------------------
@@ -987,6 +1000,7 @@
     WIDGET_VOTES_PATH: WIDGET_VOTES_PATH,
     KURAL_VOTES_PATH: KURAL_VOTES_PATH,
     fetchKuralVotes: fetchKuralVotes,
+    architectLabel: architectLabel,
     parseWrenVotesJsonl: parseWrenVotesJsonl,
     indexWrenVotes: indexWrenVotes,
     fetchVoteLog: fetchVoteLog,
