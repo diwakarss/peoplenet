@@ -34,6 +34,7 @@ const LOGS = {
   "/wren-votes.json": "wren-votes.jsonl",
   "/builder-votes.json": "builder-votes.jsonl",
   "/widget-votes.json": "widget-votes.jsonl",
+  "/kural-votes.json": "kural-votes.jsonl",
   "/questions.json": "questions.jsonl",
   "/answers.json": "answers.jsonl",
   "/messages.json": "messages.jsonl",

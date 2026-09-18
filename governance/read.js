@@ -680,6 +680,7 @@
   // answers [] is what lets the card be right on the day that changes without
   // anybody deploying anything.
   var WIDGET_VOTES_PATH = "/widget-votes.json";
+  var KURAL_VOTES_PATH = "/kural-votes.json";
 
   // Parse the .jsonl text into records, skipping blank and malformed lines.
   function parseWrenVotesJsonl(text) {
@@ -746,6 +747,10 @@
 
   async function fetchWidgetVotes(fetchImpl, baseUrl) {
     return fetchVoteLog(fetchImpl, baseUrl, WIDGET_VOTES_PATH);
+  }
+
+  async function fetchKuralVotes(fetchImpl, baseUrl) {
+    return fetchVoteLog(fetchImpl, baseUrl, KURAL_VOTES_PATH);
   }
 
   // --- what a vote points at (proposal 29) -------------------------------
@@ -980,6 +985,8 @@
     WREN_VOTES_PATH: WREN_VOTES_PATH,
     BUILDER_VOTES_PATH: BUILDER_VOTES_PATH,
     WIDGET_VOTES_PATH: WIDGET_VOTES_PATH,
+    KURAL_VOTES_PATH: KURAL_VOTES_PATH,
+    fetchKuralVotes: fetchKuralVotes,
     parseWrenVotesJsonl: parseWrenVotesJsonl,
     indexWrenVotes: indexWrenVotes,
     fetchVoteLog: fetchVoteLog,

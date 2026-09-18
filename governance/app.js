@@ -51,6 +51,8 @@
   var builderVotesError = null;
   var widgetVotes = {};
   var widgetVotesError = null;
+  var kuralVotes = {};
+  var kuralVotesError = null;
 
   // The question channel (27.2) and the agent traffic (27.5).
   var questions = [];
@@ -849,7 +851,6 @@
     }
     card.appendChild(voters);
 
-    card.appendChild(renderWrenReason(p));
     renderOtherReasons(p).forEach(function (block) { card.appendChild(block); });
     card.appendChild(renderActions(p, st));
 
@@ -1070,19 +1071,16 @@
     return block;
   }
 
-  function renderWrenReason(p) {
-    return renderVoterReason(p, {
-      label: "Wren", address: R.WREN, records: wrenVotes, error: wrenVotesError
-    });
-  }
-
-  // The other voters' blocks, on the organisations where they actually vote and
-  // only once they have. An empty "Builder has not voted" on every card of an
-  // organisation the builder is not on would be noise, not information.
+  // Every agent voter's block, on the organisations where that agent votes and
+  // only once it has or may. Wren used to be printed on every card regardless,
+  // which read "Wren has not voted" on JD, where Wren is a viewer; one list and
+  // one rule for all of them means a new organisation shows its own voters.
   function renderOtherReasons(p) {
     var rules = rulesForProposal(p);
     var blocks = [];
     [
+      { label: "Wren", address: R.WREN, records: wrenVotes, error: wrenVotesError },
+      { label: "Kural", address: R.KURAL, records: kuralVotes, error: kuralVotesError },
       { label: "Builder", address: R.BUILDER, records: builderVotes, error: builderVotesError },
       { label: "Widget", address: R.WIDGET, records: widgetVotes, error: widgetVotesError }
     ].forEach(function (voter) {
@@ -1218,9 +1216,11 @@
 
       var proposalNodes = proposals.map(function (p) {
         var voteNodes = p.votes.map(function (v, i) {
-          var reason = wrenVotes[p.id] && R.sameAddress(v.voter, R.WREN)
-            ? " — " + String(wrenVotes[p.id].reason || "").slice(0, 90)
-            : "";
+          var log = R.sameAddress(v.voter, R.WREN) ? wrenVotes
+            : R.sameAddress(v.voter, R.KURAL) ? kuralVotes
+            : R.sameAddress(v.voter, R.BUILDER) ? builderVotes
+            : R.sameAddress(v.voter, R.WIDGET) ? widgetVotes : {};
+          var reason = log[p.id] ? " — " + String(log[p.id].reason || "").slice(0, 90) : "";
           return node("v-" + p.id + "-" + i, v.label + " voted " + (v.support ? "for" : "against"),
             "Block " + v.blockNumber + reason);
         });
@@ -1895,6 +1895,15 @@
     } catch (e3) {
       widgetVotes = {};
       widgetVotesError = e3 && e3.message ? e3.message : String(e3);
+    }
+
+    try {
+      var kuraled = await R.fetchKuralVotes(window.fetch.bind(window), "");
+      kuralVotes = R.indexWrenVotes(kuraled);
+      kuralVotesError = null;
+    } catch (e4) {
+      kuralVotes = {};
+      kuralVotesError = e4 && e4.message ? e4.message : String(e4);
     }
   }
 
