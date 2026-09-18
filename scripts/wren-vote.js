@@ -12,10 +12,17 @@
 //
 // Wren does not have the same standing on every organisation. On AAO 0, the
 // trilogy widget, she is an ordinary voter alongside the Director. On AAO 1,
-// the widget-builder, the builder and the widget vote and Wren is the casting
-// vote -- so this refuses there unless the tally is level with both of their
-// votes in (27.4a). The rule lives in governance/read.js, which the page reads
-// too, so the script and the page cannot drift apart.
+// the widget-builder, the standing rule is that the builder and the widget vote
+// and Wren is the casting vote -- so this refuses there unless the tally is
+// level with both of their votes in (27.4a).
+//
+// AAO 1 has a second, interim rule, and which one is in force is not a setting:
+// it is read off the chain. Until account 4, the widget, has cast its first vote
+// there, Wren is the second ordinary voter instead of the tie-breaker. The
+// script prints the rule it found before it checks anything against it.
+//
+// Both rules live in governance/read.js, which the page reads too, so the
+// script and the page cannot drift apart.
 //
 // The network defaults to localhost (127.0.0.1:8545); set HARDHAT_NETWORK to
 // point it somewhere else.
@@ -75,8 +82,11 @@ function usage(message) {
   console.error('      [--aao <id>] [--expect-title "..."] [--dry-run]');
   console.error("");
   console.error("  --aao 0   the trilogy widget: Wren has an ordinary vote (the default)");
-  console.error("  --aao 1   widget-builder: Wren votes only to break a level tally,");
-  console.error("            after both the builder and the widget have voted");
+  console.error("  --aao 1   widget-builder: under the standing rule Wren votes only to");
+  console.error("            break a level tally, after the builder and the widget have");
+  console.error("            voted. Until the widget casts its first vote there, the");
+  console.error("            interim rule applies and Wren is the second ordinary voter;");
+  console.error("            the script names the rule in force before it does anything.");
   process.exit(1);
 }
 
@@ -120,7 +130,11 @@ async function main() {
   }
   const organisation = await aaoFacet.getAAO(aaoId);
   if (!organisation.topic) throw new Error(`There is no AAO ${aaoId} on this chain.`);
-  const rules = R.rulesFor({ topic: organisation.topic });
+  // The rules in force, which on the widget-builder depend on whether the
+  // widget has ever voted. Read the organisation's proposals to find out.
+  const onThisAao = await R.readProposals(aaoFacet, aaoId);
+  const rules = R.effectiveRules({ topic: organisation.topic }, onThisAao);
+  if (rules.regime) console.log(`AAO ${aaoId}: ${rules.regime}`);
 
   const isMember = await aaoFacet.isMember(aaoId, wren.address);
   if (!isMember) {
@@ -175,8 +189,7 @@ async function main() {
   // voters in before she may touch it. Voting early would decide a question the
   // two members have not finished asking.
   if (!wrenIsOrdinary) {
-    const enriched = (await R.readProposals(aaoFacet, aaoId))
-      .filter((p) => p.id === proposalId)[0];
+    const enriched = onThisAao.filter((p) => p.id === proposalId)[0];
     if (!enriched) throw new Error(`Proposal ${proposalId} could not be read back from AAO ${aaoId}.`);
     const casting = R.castingStateUnder(rules, enriched);
     if (!casting.allowed) {

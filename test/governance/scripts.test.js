@@ -172,6 +172,152 @@ describe("the write scripts refuse before they send", function () {
     });
   });
 
+  // The widget cannot vote: its add-on does not exist, so nothing on the
+  // widget-builder ever reached "both voted" and three proposals sat there
+  // with no exit but a 24-hour timer. The interim rule makes Wren the second
+  // ordinary voter until account 4 casts its first vote, and the chain itself
+  // says when that is -- there is no flag to unset.
+  describe("the widget-builder before and after the widget can vote", function () {
+    let interimId;
+    let quietId;   // a widget-builder the widget has never voted on
+
+    before(async function () {
+      // The block above has the widget voting, which is precisely what ends
+      // the interim regime. So this one gets its own organisation, where
+      // account 4 is a member and has never cast anything.
+      const tx = await aao.connect(director).createAAO("widget-builder", 3600);
+      const receipt = await tx.wait();
+      quietId = Number(receipt.logs
+        .map((l) => { try { return aao.interface.parseLog(l); } catch (e) { return null; } })
+        .find((x) => x && x.name === "AAOCreated").args.aaoId);
+      await aao.connect(wren).joinAAO(quietId);
+      await aao.connect(builder).joinAAO(quietId);
+      await aao.connect(widget).joinAAO(quietId);
+    });
+
+    async function subProposals() {
+      return R.readProposals(aao, quietId);
+    }
+
+    it("is under the interim rule while account 4 has never voted", async function () {
+      const rules = R.effectiveRules({ topic: "widget-builder" }, await subProposals());
+      expect(rules.interim, "the interim rule should be in force").to.equal(true);
+      expect(rules.voters.map(R.labelFor)).to.deep.equal(["Builder", "Wren"]);
+      expect(rules.casting, "nobody breaks a tie between two voters").to.equal(null);
+      expect(rules.windowHours).to.equal(1);
+      expect(rules.plain[0]).to.contain("Interim");
+    });
+
+    it("lets Wren vote as an ordinary member, not only to break a tie", async function () {
+      const rules = R.effectiveRules({ topic: "widget-builder" }, await subProposals());
+      expect(R.voterProblem(rules, R.WREN)).to.equal(null);
+      expect(rules.voters.some((a) => R.sameAddress(a, R.WREN))).to.equal(true);
+      // And the Director is still only watching.
+      expect(R.voterProblem(rules, R.DIRECTOR)).to.contain("watches");
+    });
+
+    it("executes as soon as the builder and Wren agree", async function () {
+      interimId = await submit(quietId, builder, JSON.stringify({
+        title: "Something for the interim rule to finish",
+        summary: "Filed so the two voters that exist can actually close it.",
+        why: "A proposal nobody can close is not governance."
+      }));
+
+      await aao.connect(builder).vote(interimId, true);
+      let p = (await subProposals()).filter((x) => x.id === interimId)[0];
+      let rules = R.effectiveRules({ topic: "widget-builder" }, await subProposals());
+
+      // One vote, inside the hour: it waits.
+      let state = R.autoExecuteState(rules, p, Number(p.createdAt) + 60);
+      expect(state.should, state.reason).to.equal(false);
+      expect(state.reason).to.contain("1-hour window");
+
+      // Wren votes: both voters are in and the tally is decisive.
+      await aao.connect(wren).vote(interimId, true);
+      p = (await subProposals()).filter((x) => x.id === interimId)[0];
+      rules = R.effectiveRules({ topic: "widget-builder" }, await subProposals());
+      state = R.autoExecuteState(rules, p, Number(p.createdAt) + 60);
+      expect(state.should, state.reason).to.equal(true);
+      expect(R.sameAddress(state.by, R.WREN)).to.equal(true);
+
+      // And it really closes.
+      await expect(aao.connect(wren).executeProposal(interimId))
+        .to.emit(aao, "ProposalExecuted")
+        .withArgs(quietId, interimId, true);
+    });
+
+    it("lets a lone vote carry after the hour, not the day", async function () {
+      const id = await submit(quietId, builder, JSON.stringify({
+        title: "A lone vote under the interim rule",
+        summary: "Only the builder votes on this one.",
+        why: "The window has to be short enough to be a rule and not a wall."
+      }));
+      await aao.connect(builder).vote(id, true);
+
+      const p = (await subProposals()).filter((x) => x.id === id)[0];
+      const rules = R.effectiveRules({ topic: "widget-builder" }, await subProposals());
+      const at = Number(p.createdAt);
+
+      // The window runs from the first vote, not from filing. Measuring it from
+      // filing meant a proposal older than the window executed the instant one
+      // vote arrived -- which is how 26, 29 and 30 closed six minutes after the
+      // builder voted, before the Director had seen them.
+      const votedAt = p.votes[0].at;
+      expect(votedAt, "the vote should carry a timestamp").to.be.greaterThan(0);
+      expect(R.autoExecuteState(rules, p, votedAt + 30 * 60).should, "half an hour").to.equal(false);
+      expect(R.autoExecuteState(rules, p, votedAt + 61 * 60).should, "an hour and a minute").to.equal(true);
+
+      // And filing long ago must not shorten it.
+      const aged = Object.assign({}, p, { createdAt: at - 90 * 24 * 3600 });
+      expect(R.autoExecuteState(rules, aged, votedAt + 30 * 60).should,
+        "an old proposal must still get its window").to.equal(false);
+    });
+
+    it("returns to the standing rule the moment the widget votes", async function () {
+      const id = await submit(quietId, builder, JSON.stringify({
+        title: "The one the widget votes on",
+        summary: "Its first vote ends the interim rule for everything here.",
+        why: "The chain should say when a temporary rule stops, not a person."
+      }));
+
+      // Before: interim.
+      expect(R.effectiveRules({ topic: "widget-builder" }, await subProposals()).interim)
+        .to.equal(true);
+
+      await aao.connect(widget).vote(id, true);
+
+      // After: the written rule, with no flag touched anywhere.
+      const rules = R.effectiveRules({ topic: "widget-builder" }, await subProposals());
+      expect(rules.interim, "the interim rule should have ended").to.not.equal(true);
+      expect(rules.voters.map(R.labelFor)).to.deep.equal(["Builder", "Widget"]);
+      expect(R.sameAddress(rules.casting, R.WREN)).to.equal(true);
+      expect(rules.windowHours).to.equal(24);
+
+      // And Wren is the tie-breaker again, not an ordinary voter. The widget
+      // voted; the builder has not, so the casting vote waits for both -- which
+      // is exactly the difference from the interim rule.
+      const p = (await subProposals()).filter((x) => x.id === id)[0];
+      const casting = R.castingStateUnder(rules, p);
+      expect(casting.allowed, casting.reason).to.equal(false);
+      expect(casting.reason).to.contain("Waiting for Builder and Widget");
+
+      // Once the builder is in too it is a tally, not a tie.
+      await aao.connect(builder).vote(id, true);
+      const both = (await subProposals()).filter((x) => x.id === id)[0];
+      const after = R.castingStateUnder(rules, both);
+      expect(after.allowed, after.reason).to.equal(false);
+      expect(after.reason).to.contain("No tie to break");
+    });
+
+    it("leaves the main organisation alone throughout", async function () {
+      const main = R.effectiveRules({ topic: "trilogy widget" }, await R.readProposals(aao, mainId));
+      expect(main.interim).to.not.equal(true);
+      expect(main.voters.map(R.labelFor)).to.deep.equal(["Director", "Wren"]);
+      expect(R.sameAddress(main.casting, R.CASTING)).to.equal(true);
+      expect(main.autoExecute).to.equal("on-director-vote");
+    });
+  });
+
   describe("the page's buttons apply the same rule as the scripts", function () {
     it("uses one casting-vote function for both organisations", async function () {
       // The page calls castingStateUnder through rulesForProposal; the scripts

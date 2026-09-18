@@ -307,6 +307,88 @@ function alreadyFired(messages, proposalId) {
   });
 }
 
+// --- executing what the rules say is decided --------------------------
+
+// Nobody presses a button on the widget-builder: once the tally is decisive
+// and the rule in force says so, the watcher executes. That is what makes it
+// an organisation the agents can finish something in, rather than a queue that
+// only fills up.
+//
+// It signs by asking the node for a signer on one of its own unlocked
+// accounts, exactly as the page does. No key is held here.
+//
+// `opts.nowSeconds` is the clock the window is measured against. The caller
+// passes the latest block's timestamp, so chain time is compared with chain
+// time: the votes are dated by the blocks that carried them, and a node whose
+// clock has drifted from the wall must not shorten anybody's window. Without
+// it the wall clock is used, which is right often enough and wrong silently,
+// so `start` always supplies it.
+async function executeDecided(aaos, allProposals, options) {
+  const opts = options || {};
+  const R = require("./read.js");
+  const executed = [];
+  const waiting = [];
+
+  if (!opts.signerFor || !opts.ethers) return { executed, waiting };
+
+  for (const aao of aaos || []) {
+    const mine = (allProposals || []).filter((p) => p.aaoId === aao.id);
+    const rules = R.effectiveRules(aao, mine);
+    if (rules.autoExecute !== "automatic") continue;
+
+    for (const proposal of mine) {
+      const state = R.autoExecuteState(rules, proposal, opts.nowSeconds);
+      if (!state.should) {
+        if (state.tied) waiting.push({ id: proposal.id, reason: state.reason });
+        else if (state.reason && /window/.test(state.reason)) {
+          waiting.push({ id: proposal.id, reason: state.reason, holding: true });
+        }
+        continue;
+      }
+
+      try {
+        const signer = await opts.signerFor(state.by);
+        const contract = R.getContract(opts.ethers, signer, opts.diamond);
+        const tx = await contract.executeProposal(proposal.id);
+        const receipt = await tx.wait();
+
+        let passed = null;
+        for (const log of receipt.logs) {
+          try {
+            const parsed = contract.interface.parseLog(log);
+            if (parsed && parsed.name === "ProposalExecuted") passed = Boolean(parsed.args.passed);
+          } catch (e) { /* a log from another facet */ }
+        }
+
+        // Say so where the Director reads it, in the shape everything uses.
+        const message = P.normalise({
+          from: "watch",
+          to: "all",
+          type: "decision",
+          subject: `Proposal ${proposal.id}: executed automatically`,
+          summary:
+            (passed ? "Built into the record: it passed " : "Closed: it was rejected ") +
+            `${proposal.forVotes} to ${proposal.againstVotes}. ` + state.reason +
+            (rules.interim ? " Under the interim rule, while the widget cannot vote." : ""),
+          details:
+            `executed by ${R.labelFor(state.by)} in block ${receipt.blockNumber}` +
+            `\ntx ${receipt.hash}`,
+          refs: ["proposal " + proposal.id],
+          proposal: proposal.id,
+          aaoId: proposal.aaoId
+        }, { idPrefix: "auto" });
+
+        fs.appendFileSync(opts.messagesFile || MESSAGES, P.toJsonl(message), "utf8");
+        executed.push({ id: proposal.id, passed, block: receipt.blockNumber, reason: state.reason });
+      } catch (e) {
+        console.warn(`watch: could not execute proposal ${proposal.id} -- ${e.message || e}`);
+      }
+    }
+  }
+
+  return { executed, waiting };
+}
+
 // One pass. Returns what fired, and appends a message for each.
 async function runOnce(proposals, options) {
   const opts = Object.assign({}, DEFAULTS, options || {});
@@ -356,6 +438,25 @@ function start(readProposals, options) {
       if (watched && !fired.length && !broken.length) {
         console.log(`watch: ${watched} trigger(s) checked, none fired`);
       }
+
+      // Then close whatever the rules say is decided. On the widget-builder
+      // nobody presses a button, so if the watcher does not do this, nothing
+      // does -- which is how three proposals sat there with no way out.
+      if (opts.readAaos && opts.signerFor) {
+        const aaos = await opts.readAaos();
+        const nowSeconds = await chainNow(opts);
+        const { executed, waiting } =
+          await executeDecided(aaos, proposals, Object.assign({}, opts, { nowSeconds }));
+        executed.forEach((e) => console.log(
+          `watch: proposal ${e.id} executed -> ${e.passed ? "passed" : "rejected"} ` +
+          `(block ${e.block}) -- ${e.reason}`
+        ));
+        waiting.forEach((w) => console.log(
+          w.holding
+            ? `watch: proposal ${w.id} is holding -- ${w.reason}`
+            : `watch: proposal ${w.id} needs a tie broken -- ${w.reason}`
+        ));
+      }
     } catch (e) {
       console.warn("watch: pass failed -- " + (e.message || e));
     } finally {
@@ -369,6 +470,22 @@ function start(readProposals, options) {
   return { tick: tick, stop: function () { clearInterval(timer); } };
 }
 
+// Chain time, so the execution window is measured against the same clock that
+// dated the votes. Falls back to the wall clock when there is no way to ask.
+async function chainNow(options) {
+  const opts = options || {};
+  if (typeof opts.nowSeconds === "number") return opts.nowSeconds;
+  try {
+    if (opts.latestBlock) {
+      const block = await opts.latestBlock();
+      if (block && block.timestamp) return Number(block.timestamp);
+    }
+  } catch (e) {
+    // A node that will not answer is not a reason to stop watching.
+  }
+  return Math.floor(Date.now() / 1000);
+}
+
 module.exports = {
   DEFAULTS,
   parseRule,
@@ -376,6 +493,8 @@ module.exports = {
   globToRegExp,
   evaluate,
   runOnce,
+  executeDecided,
+  chainNow,
   firedMessage,
   alreadyFired,
   start,

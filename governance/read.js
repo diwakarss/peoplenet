@@ -62,7 +62,12 @@
   var AAO_RULES = {
     "trilogy widget": {
       key: "main",
+      // One organisation, one regime: there is nothing to tell apart, so the
+      // header says nothing rather than saying "standing rule" forever.
+      regime: null,
       voters: [DIRECTOR, WREN],
+      // Accounts allowed to vote whose vote nothing waits for. Empty here.
+      extraVoters: [],
       viewers: [],
       casting: CASTING,
       // The Director's vote settles it: the page executes as soon as the vote
@@ -78,7 +83,9 @@
     },
     "widget-builder": {
       key: "sub",
+      regime: "The standing rule: the widget has voted here, so it votes and Wren only breaks ties.",
       voters: [BUILDER, WIDGET],
+      extraVoters: [],
       viewers: [DIRECTOR],
       casting: WREN,
       // Nobody presses a button here: the watcher, or the last voter's script,
@@ -97,7 +104,9 @@
 
   var DEFAULT_RULES = {
     key: "default",
+    regime: null,
     voters: [],
+    extraVoters: [],
     viewers: [],
     casting: null,
     autoExecute: "none",
@@ -112,16 +121,80 @@
     return AAO_RULES[topic] || DEFAULT_RULES;
   }
 
-  function mayVote(rules, address) {
+  // --- the interim regime on the widget-builder --------------------------
+  //
+  // 27.4a gives the widget-builder two ordinary voters, the builder and the
+  // widget, with Wren breaking a tie. But the widget cannot vote yet: its
+  // add-on does not exist, account 4 has never cast anything, and so nothing
+  // reaches "both voted". Three proposals sat there with no exit but a 24-hour
+  // timer -- a rule doing the opposite of what it was written for.
+  //
+  // So, until account 4's first vote lands here: Wren is the second ordinary
+  // voter rather than the tie-breaker, execution is automatic as soon as the
+  // builder and Wren have both voted with a decisive tally, and a lone vote
+  // carries after one hour instead of twenty-four.
+  //
+  // The moment the widget votes, this stops applying. There is no flag to
+  // unset and nobody has to remember: the chain says when the regime ends.
+  function widgetHasVoted(proposals) {
+    return (proposals || []).some(function (p) {
+      return (p.votes || []).some(function (v) { return sameAddress(v.voter, WIDGET); });
+    });
+  }
+
+  var INTERIM_REGIME =
+    "The interim rule, because the widget has never voted here: Wren votes in its place.";
+
+  var INTERIM_PLAIN = [
+    "Interim, until the widget can vote: the builder and Wren are the two voters here.",
+    "Execution is automatic as soon as both have voted and the tally is decisive.",
+    "A lone vote carries after one hour, so nothing stalls waiting for a voter that cannot arrive.",
+    "The widget may still vote at any time, and nothing waits for it.",
+    "The moment the widget casts its first vote, the standing rule resumes: builder and widget vote, Wren breaks a tie."
+  ];
+
+  // The rules actually in force, given what the chain shows. Callers holding
+  // the organisation's proposals should use this: rulesFor is the written rule,
+  // this is the one being applied.
+  function effectiveRules(aao, proposals) {
+    var base = rulesFor(aao);
+    if (base.key !== "sub") return base;
+    if (widgetHasVoted(proposals)) return base;
+
+    return {
+      key: base.key,
+      interim: true,
+      regime: INTERIM_REGIME,
+      voters: [BUILDER, WREN],
+      // The widget keeps its standing throughout. It has to: its first vote is
+      // the only thing that ends this regime, so a rule that barred it would be
+      // a rule that could never be lifted. Nothing waits for that vote, which is
+      // why it is not in `voters`.
+      extraVoters: [WIDGET],
+      viewers: base.viewers,
+      casting: null,          // with only two voters there is nobody to break a tie
+      autoExecute: "automatic",
+      executeAs: WREN,
+      windowHours: 1,
+      plain: INTERIM_PLAIN
+    };
+  }
+
+  // Everyone allowed to cast a vote here: the voters the rule waits for, the
+  // ones it does not, and the casting vote.
+  function allVoters(rules) {
     var r = rules || DEFAULT_RULES;
-    if (r.voters.some(function (a) { return sameAddress(a, address); })) return true;
-    return Boolean(r.casting && sameAddress(r.casting, address));
+    return (r.voters || []).concat(r.extraVoters || [], r.casting ? [r.casting] : []);
+  }
+
+  function mayVote(rules, address) {
+    return allVoters(rules).some(function (a) { return sameAddress(a, address); });
   }
 
   function isViewerOnly(rules, address) {
     var r = rules || DEFAULT_RULES;
     return r.viewers.some(function (a) { return sameAddress(a, address); }) &&
-      !r.voters.some(function (a) { return sameAddress(a, address); });
+      !mayVote(r, address);
   }
 
   // Why an account may not vote here, in a sentence, or null when it may.
@@ -253,6 +326,23 @@
     var voteLogs = await contract.queryFilter(contract.filters.VoteCast(id), 0, "latest");
     var executedLogs = await contract.queryFilter(contract.filters.ProposalExecuted(id), 0, "latest");
 
+    // When each vote was cast, not only in which block. The automatic-execution
+    // window runs from the first vote, so the clock has to be readable.
+    // Timestamps are fetched once per block rather than once per vote.
+    var blockTimes = {};
+    var wantedBlocks = voteLogs
+      .map(function (log) { return log.blockNumber; })
+      .filter(function (v, i, a) { return a.indexOf(v) === i; });
+    for (var b = 0; b < wantedBlocks.length; b++) {
+      try {
+        var block = await contract.runner.provider.getBlock(wantedBlocks[b]);
+        if (block) blockTimes[wantedBlocks[b]] = num(block.timestamp);
+      } catch (e) {
+        // Without a timestamp the window falls back to the filing time, which is
+        // the old behaviour: looser, never tighter.
+      }
+    }
+
     var votesByProposal = {};
     voteLogs.forEach(function (log) {
       var pid = num(log.args.proposalId);
@@ -260,7 +350,8 @@
         voter: log.args.voter,
         label: labelFor(log.args.voter),
         support: Boolean(log.args.support),
-        blockNumber: log.blockNumber
+        blockNumber: log.blockNumber,
+        at: blockTimes[log.blockNumber] || 0
       });
     });
 
@@ -656,11 +747,17 @@
 
     if (level) {
       if (allVoted) {
+        // A level tally pins the proposal. Who unpins it depends on whether the
+        // rule in force has a tie-breaker at all: the standing rule has Wren,
+        // the interim rule has nobody, because two voters and a third who breaks
+        // their tie would be three voters.
         return {
           should: false,
           tied: true,
           reason: "Level at " + proposal.forVotes + "-" + proposal.againstVotes +
-            " with both votes in. " + labelFor(r.casting) + " breaks it."
+            " with both votes in. " + (r.casting
+              ? labelFor(r.casting) + " breaks it."
+              : "This rule has no tie-breaker, so it waits for the widget's vote or a re-filed proposal.")
         };
       }
       return { should: false, reason: "Level, and not everyone has voted yet." };
@@ -683,7 +780,32 @@
     var now = nowSeconds === undefined || nowSeconds === null
       ? Math.floor(Date.now() / 1000)
       : num(nowSeconds);
-    var age = now - num(proposal.createdAt);
+    // Measured from the first vote, not from filing.
+    //
+    // It used to run from createdAt, which meant a proposal older than the
+    // window was executed the instant one vote arrived -- no window at all. That
+    // closed proposals 26, 29 and 30 within six minutes of the builder voting,
+    // before the Director had seen them. The window exists to give the other
+    // voters, and the Director watching, time to react to the vote; so it starts
+    // when there is something to react to.
+    var firstVote = (proposal.votes || []).reduce(function (earliest, v) {
+      var at = num(v.at || v.timestamp || 0);
+      if (!at) return earliest;
+      return earliest === null || at < earliest ? at : earliest;
+    }, null);
+    // No timestamp, no window. Falling back to the filing time is what executed
+    // 26, 29 and 30 on the spot, so the only safe answer when the clock cannot
+    // be read is to wait and say why: a missed execution is a five-minute delay,
+    // an early one is a closed proposal nobody can reopen.
+    if (firstVote === null) {
+      return {
+        should: false,
+        reason: "Decisive at " + proposal.forVotes + "-" + proposal.againstVotes +
+          ", but not everyone has voted and the votes carry no timestamp, so the " +
+          hours + "-hour window cannot be measured."
+      };
+    }
+    var age = now - firstVote;
     var windowSeconds = hours * 3600;
     if (age < windowSeconds) {
       var left = Math.ceil((windowSeconds - age) / 3600);
@@ -727,6 +849,9 @@
     AAO_RULES: AAO_RULES,
     DEFAULT_RULES: DEFAULT_RULES,
     rulesFor: rulesFor,
+    effectiveRules: effectiveRules,
+    widgetHasVoted: widgetHasVoted,
+    allVoters: allVoters,
     mayVote: mayVote,
     isViewerOnly: isViewerOnly,
     voterProblem: voterProblem,

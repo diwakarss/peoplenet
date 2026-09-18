@@ -341,8 +341,20 @@ if (!process.env.GOVERNANCE_NO_WATCH) {
       return R.readAllProposals(contract, aaos);
     };
 
-    watch.start(readProposals, {});
-    console.log(`watching         triggers, every ${watch.DEFAULTS.intervalMs / 60000} minutes`);
+    watch.start(readProposals, {
+      ethers: ethers,
+      readAaos: () => R.readAAOs(contract),
+      // Signs through the node's own unlocked accounts, as the page does.
+      // No key is held here either.
+      signerFor: (address) => provider.getSigner(address),
+      // Chain time for the execution window, so the votes' block timestamps and
+      // the clock they are measured against come from the same place.
+      latestBlock: () => provider.getBlock("latest")
+    });
+    console.log(
+      "watching         triggers and decided proposals, every " +
+      `${watch.DEFAULTS.intervalMs / 60000} minutes`
+    );
   } catch (e) {
     // A watcher that cannot start must not take the page down with it.
     console.warn("watch: not started -- " + (e.message || e));

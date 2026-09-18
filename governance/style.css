@@ -644,6 +644,24 @@ code, .addr, .pre { font-family: var(--mono); font-size: .86em; }
   text-overflow: ellipsis;
 }
 
+/* Which regime is running, in a whole sentence. An organisation with only one
+   regime stays quiet; the widget-builder has two, and the Director should be
+   able to tell them apart without opening the fold. */
+.orgbar-regime {
+  flex: 0 1 auto;
+  margin: 0;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  background: var(--tag-bg, rgba(0, 0, 0, 0.06));
+  color: var(--ink);
+}
+
+.orgbar-regime.is-interim {
+  background: rgba(196, 120, 0, 0.14);
+  color: #7a4a00;
+}
+
 .rules {
   list-style: none;
   counter-reset: rule;

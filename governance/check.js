@@ -934,10 +934,13 @@ async function main() {
   check("the sub-AAO executes automatically, on the rules it publishes", () => {
     const sub = R.rulesFor("widget-builder");
     const now = 1000000;
-    const make = (f, a, voters, ageHours) => ({
+    // The window runs from the first vote, so the votes carry the age, not the
+    // filing. `filedHoursAgo` is separate and deliberately long: a proposal that
+    // has been sitting there for a month must still give its window.
+    const make = (f, a, voters, voteAgeHours, filedHoursAgo) => ({
       status: 0, forVotes: f, againstVotes: a,
-      createdAt: now - ageHours * 3600,
-      votes: voters.map((v) => ({ voter: v, support: true }))
+      createdAt: now - (filedHoursAgo === undefined ? 30 * 24 : filedHoursAgo) * 3600,
+      votes: voters.map((v) => ({ voter: v, support: true, at: now - voteAgeHours * 3600 }))
     });
 
     const both = R.autoExecuteState(sub, make(2, 0, [R.BUILDER, R.WIDGET], 1), now);
@@ -947,6 +950,7 @@ async function main() {
     const level = R.autoExecuteState(sub, make(1, 1, [R.BUILDER, R.WIDGET], 1), now);
     assert.strictEqual(level.should, false);
     assert.strictEqual(level.tied, true, "a level tally with both votes in notifies Wren");
+    assert.ok(/Wren breaks it/.test(level.reason), level.reason);
 
     const fresh = R.autoExecuteState(sub, make(1, 0, [R.BUILDER], 1), now);
     assert.strictEqual(fresh.should, false, "a builder-only vote waits out the window");
@@ -957,9 +961,88 @@ async function main() {
     const none = R.autoExecuteState(sub, make(0, 0, [], 48), now);
     assert.strictEqual(none.should, false, "no votes, nothing to execute");
 
+    // A vote nobody can date does not start a window. Falling back to the filing
+    // time is what closed 26, 29 and 30 on the spot: the proposals were older
+    // than the window, so the first vote executed them immediately.
+    const undated = {
+      status: 0, forVotes: 1, againstVotes: 0, createdAt: now - 30 * 24 * 3600,
+      votes: [{ voter: R.BUILDER, support: true }]
+    };
+    const blind = R.autoExecuteState(sub, undated, now);
+    assert.strictEqual(blind.should, false,
+      "an undated vote must not execute a month-old proposal on the spot");
+    assert.ok(/cannot be measured/.test(blind.reason), blind.reason);
+
     const main = R.rulesFor("trilogy widget");
     assert.strictEqual(R.autoExecuteState(main, make(1, 0, [R.DIRECTOR], 1), now).should, false,
       "the main organisation executes on the Director's vote, not on a timer");
+  });
+
+  // --- the interim rule on the widget-builder ----------------------------
+
+  check("the widget-builder runs whichever rule the chain says, and says which", () => {
+    const now = 1000000;
+    const under = (voters) => R.effectiveRules(
+      { topic: "widget-builder" },
+      [{ votes: voters.map((v) => ({ voter: v })) }]
+    );
+
+    const interim = under([R.BUILDER]);
+    assert.strictEqual(interim.interim, true, "the widget has never voted, so the interim rule runs");
+    assert.ok(interim.regime && /interim/i.test(interim.regime), interim.regime);
+    assert.deepStrictEqual(interim.voters.map(R.labelFor), ["Builder", "Wren"]);
+    assert.strictEqual(interim.casting, null, "two voters leave nobody to break their tie");
+    assert.strictEqual(interim.windowHours, 1);
+
+    // The widget keeps its standing throughout: its first vote is the only thing
+    // that ends this regime, so a rule that barred it could never be lifted.
+    assert.strictEqual(R.voterProblem(interim, R.WIDGET), null,
+      "the widget must still be able to cast the vote that ends the interim rule");
+    assert.strictEqual(R.voterProblem(interim, R.WREN), null);
+    assert.ok(/watches/.test(R.voterProblem(interim, R.DIRECTOR) || ""),
+      "the Director still only watches");
+
+    const standing = under([R.WIDGET]);
+    assert.notStrictEqual(standing.interim, true, "the widget has voted, so the standing rule is back");
+    assert.deepStrictEqual(standing.voters.map(R.labelFor), ["Builder", "Widget"]);
+    assert.strictEqual(R.sameAddress(standing.casting, R.WREN), true);
+    assert.strictEqual(standing.windowHours, 24);
+
+    // And the interim window really is one hour, measured from the vote.
+    const lone = {
+      status: 0, forVotes: 1, againstVotes: 0, createdAt: now - 30 * 24 * 3600,
+      votes: [{ voter: R.BUILDER, support: true, at: now - 30 * 60 }]
+    };
+    assert.strictEqual(R.autoExecuteState(interim, lone, now).should, false,
+      "half an hour after a lone vote it holds");
+    lone.votes[0].at = now - 61 * 60;
+    assert.strictEqual(R.autoExecuteState(interim, lone, now).should, true,
+      "an hour and a minute after a lone vote it carries");
+
+    // Both voters in and decisive: no window at all.
+    const agreed = {
+      status: 0, forVotes: 2, againstVotes: 0, createdAt: now - 3600,
+      votes: [
+        { voter: R.BUILDER, support: true, at: now - 60 },
+        { voter: R.WREN, support: true, at: now - 30 }
+      ]
+    };
+    const decided = R.autoExecuteState(interim, agreed, now);
+    assert.strictEqual(decided.should, true, decided.reason);
+    assert.strictEqual(R.sameAddress(decided.by, R.WREN), true);
+
+    // Level, with no tie-breaker: it pins and says so rather than naming nobody.
+    const tied = {
+      status: 0, forVotes: 1, againstVotes: 1, createdAt: now - 3600,
+      votes: [
+        { voter: R.BUILDER, support: true, at: now - 60 },
+        { voter: R.WREN, support: false, at: now - 30 }
+      ]
+    };
+    const pinned = R.autoExecuteState(interim, tied, now);
+    assert.strictEqual(pinned.should, false);
+    assert.strictEqual(pinned.tied, true);
+    assert.ok(/no tie-breaker/.test(pinned.reason), pinned.reason);
   });
 
   // --- no control characters in tracked source ---------------------------

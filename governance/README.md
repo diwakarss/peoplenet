@@ -23,6 +23,16 @@ nothing that needs two.
 
 You need two things up: the chain, and the page.
 
+**On a fresh clone, first:** `git config core.hooksPath .githooks`. Git does not
+carry hook configuration in a repository, so a clone has the hooks on disk and
+none of them installed. The pre-commit hook is the one that refuses a raw
+control character in a source file, after two edits made through a shell heredoc
+lost the backslashes in a regex and left literal backspace bytes behind — the
+regex still parsed, still ran, and quietly matched nothing, and the vote guard it
+broke let a real vote reach the chain. `npm run governance:check` runs the same
+check, so it is not lost on a clone where nobody ran that line, but the hook is
+what catches it before the commit rather than after.
+
 ```bash
 npm run node                    # terminal 1 -- Hardhat node on 127.0.0.1:8545 (chain id 31337)
 npm run deploy:local            # once, if the diamond is not deployed yet
@@ -39,6 +49,34 @@ Two more commands worth knowing:
 ```bash
 npm run governance:check        # render the data layer in the terminal and assert it
 npx hardhat test test/governance/tiebreak.test.js
+```
+
+### Two commands that must not be run in the foreground
+
+An agent session is killed by a watchdog if a single command goes ten minutes
+without printing anything. Exactly two commands here do that, and both have a
+form that does not.
+
+**The server never returns.** `npm run governance` serves until it is stopped,
+so start it detached and leave it:
+
+```bash
+# stop whatever is already on 8787, then start the server in its own process
+powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id \$_.OwningProcess -Force }"
+powershell -NoProfile -Command "Start-Process node -ArgumentList 'governance/server.js' -WindowStyle Hidden"
+
+# then check it came up, which returns immediately
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8787/
+```
+
+**The full test run is long.** `npx hardhat test` takes tens of seconds to
+minutes and prints nothing useful until the end, so send it to a file in the
+background and poll that file with short commands:
+
+```bash
+npx hardhat test > /tmp/hardhat-test.log 2>&1 &
+tail -5 /tmp/hardhat-test.log        # repeat; short, returns at once
+grep -E "passing|failing" /tmp/hardhat-test.log
 ```
 
 ## The question channel
@@ -207,6 +245,49 @@ keeps everything else.
 **Hide closed**, above the proposal list, drops everything that is not Active. The
 count then reads `(3 of 12)` so you can see what is hidden. The preference is
 remembered per browser in `localStorage` and affects nothing but this list.
+
+## The widget-builder's two rules
+
+AAO 1 has two rule sets, and which one is in force is not a setting anybody can
+change. It is read off the chain, by `effectiveRules()` in `read.js`, from one
+fact: **has account 4, the widget, ever cast a vote on this organisation?**
+
+| | The interim rule (now) | The standing rule (once the widget votes) |
+|---|---|---|
+| Who votes | Builder and Wren | Builder and Widget |
+| Wren | an ordinary voter | breaks a level tally, and nothing else |
+| The widget | may vote at any time; nothing waits for it | one of the two voters |
+| The Director | watches | watches |
+| A level tally | no tie-breaker; the proposal is pinned | Wren breaks it |
+| A lone vote carries after | 1 hour | 24 hours |
+
+The interim rule exists because the widget's add-on does not: account 4 has never
+cast anything, so nothing on AAO 1 could ever reach "both have voted", and three
+proposals sat there with no exit. It ends the moment the widget votes once. There
+is no flag to unset, and nobody has to remember — which is the point.
+
+The regime in force is printed as a sentence on the AAO's header on the page, and
+`wren-vote.js` prints it before it checks anything.
+
+### The window runs from the first vote
+
+Both rules carry a window: a decisive tally with one voter missing carries once
+the window has passed. That window is measured **from the first vote**, never
+from the filing.
+
+Measuring it from the filing is what closed proposals 26, 29 and 30 on
+2026-09-17 within six minutes of the builder voting on them: they had been filed
+days earlier, so the window had "already passed" before anybody voted, and the
+first vote executed them on the spot. The window exists to give the other voters
+and the Director time to react to a vote, so it starts when there is a vote to
+react to.
+
+A vote whose block timestamp cannot be read starts no window at all, and the
+watcher says so rather than guessing. A missed pass costs five minutes; an early
+execution closes a proposal nobody can reopen.
+
+`test/governance/watch.test.js` pins all of this on the in-process network, under
+both rules.
 
 ## The tie rule
 

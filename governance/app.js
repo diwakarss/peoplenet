@@ -283,7 +283,16 @@
     // The organisation's rule set, in its own words (read.js owns the rules;
     // this only prints them). A rule nobody can read is a rule nobody can be
     // held to, so the first line sits on the bar and all of them in the fold.
-    var rules = R.rulesFor(aao);
+    //
+    // The widget-builder has two regimes and runs whichever one the chain says,
+    // so the header names the one in force in a whole sentence before it quotes
+    // the rule. An organisation with only one regime says nothing.
+    var onThisAao = (data.allProposals || []).filter(function (p) { return p.aaoId === aao.id; });
+    var rules = R.effectiveRules(aao, onThisAao);
+    var regime = byId("orgbar-regime");
+    regime.textContent = rules.regime || "";
+    regime.className = "orgbar-regime" + (rules.interim ? " is-interim" : "");
+    regime.hidden = !rules.regime;
     byId("orgbar-rule").textContent = rules.plain[0] || "";
     var ruleList = byId("rules");
     ruleList.textContent = "";
@@ -1580,7 +1589,11 @@
   // The casting-vote rule of whichever organisation the proposal is on.
   function rulesForProposal(p) {
     var aao = lastData && (lastData.aaos || []).filter(function (a) { return a.id === p.aaoId; })[0];
-    return R.rulesFor(aao || (lastData && lastData.aao));
+    // The rules in force, not the ones written down: the widget-builder runs an
+    // interim regime until the widget can vote, and the chain says when it ends.
+    var onThatAao = ((lastData && lastData.allProposals) || [])
+      .filter(function (x) { return x.aaoId === p.aaoId; });
+    return R.effectiveRules(aao || (lastData && lastData.aao), onThatAao);
   }
 
   function castingState(p) {
