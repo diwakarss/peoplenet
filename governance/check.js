@@ -692,13 +692,26 @@ async function main() {
   const decisions = (channel["/messages.json"].records || []).filter((m) => m.type === "decision");
   const adoptions = A.indexDecisions(decisions);
 
-  check("every decision names a proposal and says where it has got to", () => {
+  check("a decision about a proposal says where that proposal has got to", () => {
+    // This used to demand that EVERY decision name a proposal. That held while
+    // the only decisions were about proposals, and stopped holding the moment a
+    // third organisation was created: "AAO 2 JD created; the working room from
+    // now on" is an outcome, which is what PROTOCOL.md says a decision is, and
+    // it is not about a proposal. Demanding a proposal id of it would have meant
+    // either a false red forever or a made-up id on a real record.
+    //
+    // So the rule is conditional now, and the part that matters is unchanged: a
+    // decision that DOES name a proposal must say where that proposal has got
+    // to, because the card reads its state out of those words.
     decisions.forEach((m) => {
       const id = A.proposalOf(m);
-      assert.ok(
-        Number.isInteger(id),
-        `decision ${m.id} names no proposal; it needs refs ["proposal N"]`
-      );
+      if (!Number.isInteger(id)) {
+        // Not about a proposal. It still has to be a message a person can read,
+        // which the protocol validator already requires of every message.
+        assert.strictEqual(P.validate(m).ok, true,
+          `decision ${m.id} names no proposal and is not a readable message either`);
+        return;
+      }
       const state = A.stateOf(m);
       assert.notStrictEqual(
         state.key, "unknown",

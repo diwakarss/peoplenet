@@ -47,7 +47,9 @@
   // What each AAO is for, in one line, for the tree and the AAO list.
   var AAO_NOTES = {
     "trilogy widget": "Where the Director decides what the widget should become.",
-    "widget-builder": "Where the widget, its builder and Wren work out what to propose."
+    "widget-builder": "Where the widget, its builder and Wren work out what to propose.",
+    // Created by the Director on 2026-09-18, in its own announcement's words.
+    "JD": "The working room: the organisation for every task from here on."
   };
 
   // --- who decides where -------------------------------------------------
@@ -102,6 +104,11 @@
     }
   };
 
+  // An organisation nobody has written a rule set for. Its rule is the
+  // contract's own, and `voters` is filled in from its members by
+  // effectiveRules() below -- the members are on chain, so a new organisation
+  // does not have to wait for a code change before the page will let anyone
+  // vote in it.
   var DEFAULT_RULES = {
     key: "default",
     regime: null,
@@ -112,7 +119,11 @@
     autoExecute: "none",
     executeAs: null,
     windowHours: null,
-    plain: ["Every member has one vote, and a proposal passes on more for than against."]
+    plain: [
+      "Every member has one vote, and a proposal passes on more for than against.",
+      "A level tally rejects: there is no tie-breaker here, because nobody has named one.",
+      "Nothing executes on its own. A member executes it, and the chain reports the outcome."
+    ]
   };
 
   // The rule set for an organisation. Takes an AAO object or a topic.
@@ -158,6 +169,34 @@
   // this is the one being applied.
   function effectiveRules(aao, proposals) {
     var base = rulesFor(aao);
+
+    // An organisation nobody has written a rule for votes the way the contract
+    // does: one vote per member. Its members are on chain, so read them off it
+    // rather than leaving `voters` empty -- an empty list makes the page tell
+    // every member, including the organisation's own creator, that they are
+    // "not one of its voters ()", which is both wrong and unreadable.
+    //
+    // A new organisation therefore works on the page the day it is created,
+    // without waiting for a code change here. Naming one properly -- who votes,
+    // who breaks a tie, what executes on its own -- is a rule set above, and
+    // that is a decision for the organisation, not a default.
+    if (base.key === "default") {
+      var members = (aao && aao.members) || [];
+      if (!members.length) return base;
+      return {
+        key: base.key,
+        regime: base.regime,
+        voters: members.map(function (m) { return m.address || m; }),
+        extraVoters: [],
+        viewers: [],
+        casting: null,
+        autoExecute: base.autoExecute,
+        executeAs: base.executeAs,
+        windowHours: base.windowHours,
+        plain: base.plain
+      };
+    }
+
     if (base.key !== "sub") return base;
     if (widgetHasVoted(proposals)) return base;
 

@@ -508,6 +508,99 @@ describe("the write scripts refuse before they send", function () {
       });
   });
 
+  // A third organisation was created on the chain by another session while this
+  // work was going on, with no rule set written for it here. The page has to
+  // show it like the others on the day it appears, not after a code change.
+  describe("an organisation nobody has written a rule for", function () {
+    let otherId;
+
+    before(async function () {
+      const tx = await aao.connect(director).createAAO("JD", 3600);
+      const receipt = await tx.wait();
+      otherId = Number(receipt.logs
+        .map((l) => { try { return aao.interface.parseLog(l); } catch (e) { return null; } })
+        .find((x) => x && x.name === "AAOCreated").args.aaoId);
+      await aao.connect(wren).joinAAO(otherId);
+      await aao.connect(casting).joinAAO(otherId);
+      await aao.connect(outsider).joinAAO(otherId);
+    });
+
+    async function rulesHere() {
+      const contract = aao;
+      const all = await R.readAAOs(contract);
+      const mine = all.filter((a) => a.id === otherId)[0];
+      return R.effectiveRules(mine, await R.readProposals(contract, otherId));
+    }
+
+    it("takes its voters from its members, so everyone on it can vote", async function () {
+      const rules = await rulesHere();
+      // Empty voters would have the page tell the organisation's own creator
+      // they are "not one of its voters ()" -- wrong, and unreadable with it.
+      expect(rules.voters.length, "an organisation with members has voters").to.equal(4);
+      expect(R.voterProblem(rules, R.DIRECTOR)).to.equal(null);
+      expect(R.voterProblem(rules, R.WREN)).to.equal(null);
+      expect(R.voterProblem(rules, R.CASTING)).to.equal(null);
+      expect(R.voterProblem(rules, outsider.address),
+        "a member with no role label still votes").to.equal(null);
+    });
+
+    it("keeps an account that is not on it out", async function () {
+      const rules = await rulesHere();
+      expect(R.voterProblem(rules, R.BUILDER)).to.be.a("string");
+      await expect(aao.connect(builder).vote(4242, true)).to.be.reverted;
+    });
+
+    it("says what its rule is, in plain English, without one being written",
+      async function () {
+        const rules = await rulesHere();
+        expect(rules.plain[0]).to.contain("Every member has one vote");
+        rules.plain.forEach((line) => expect(line.trim()).to.not.equal(""));
+        // No regime chip: it has only one rule, so there is nothing to tell apart.
+        expect(rules.regime).to.equal(null);
+      });
+
+    it("offers no casting vote, because nobody has named one", async function () {
+      const id = await submit(otherId, director, JSON.stringify({
+        title: "A proposal on the new organisation", summary: "s", why: "w"
+      }));
+      await aao.connect(director).vote(id, true);
+      await aao.connect(wren).vote(id, false);
+
+      const rules = await rulesHere();
+      const p = (await R.readProposals(aao, otherId)).filter((x) => x.id === id)[0];
+      const casting = R.castingStateUnder(rules, p);
+      expect(casting.allowed).to.equal(false);
+      expect(casting.reason).to.contain("no casting vote");
+
+      // Which is the contract's own behaviour: a level tally rejects.
+      await expect(aao.connect(director).executeProposal(id))
+        .to.emit(aao, "ProposalExecuted").withArgs(otherId, id, false);
+    });
+
+    it("executes on nobody's timer: the watcher leaves it alone", async function () {
+      const rules = await rulesHere();
+      expect(rules.autoExecute).to.equal("none");
+      const state = R.autoExecuteState(rules, {
+        status: 0, forVotes: 2, againstVotes: 0, createdAt: 0,
+        votes: [{ voter: R.DIRECTOR, support: true, at: 1 }]
+      }, 10 ** 9);
+      expect(state.should, state.reason).to.equal(false);
+    });
+
+    it("leaves the two organisations that do have rules exactly as they were",
+      async function () {
+        const main = R.rulesFor({ topic: "trilogy widget" });
+        const sub = R.rulesFor({ topic: "widget-builder" });
+        expect(main.voters.map(R.labelFor)).to.deep.equal(["Director", "Wren"]);
+        expect(sub.voters.map(R.labelFor)).to.deep.equal(["Builder", "Widget"]);
+        // And a named rule set is not overwritten by its members.
+        const all = await R.readAAOs(aao);
+        const subAao = all.filter((a) => a.id === subId)[0];
+        const effective = R.effectiveRules(subAao, await R.readProposals(aao, subId));
+        expect(effective.voters.length, "the sub-AAO has 4 members but 2 voters").to.equal(2);
+      });
+  });
+
   describe("what a dry run prints", function () {
     it("says the standing check and the exact transaction, and sends nothing", async function () {
       const plan = R.describePlan({

@@ -1104,8 +1104,14 @@
     // The Director does not vote on every organisation. On the widget-builder
     // they watch: the builder and the widget vote, and Wren breaks a tie. The
     // rule lives in read.js, so the page and the scripts refuse the same things.
-    var directorMayVote = R.mayVote(rules, R.DIRECTOR) &&
-      R.sameAddress(rules.voters[0], R.DIRECTOR);
+    //
+    // Being an ordinary voter is the test, not being the FIRST one: an
+    // organisation with no rule set of its own takes its voters from its members
+    // in the order they joined, and the Director's place in that list is an
+    // accident of who ran joinAAO when.
+    var directorMayVote = rules.voters.some(function (a) {
+      return R.sameAddress(a, R.DIRECTOR);
+    });
     var directorVoted = R.hasVoted(p, R.DIRECTOR);
 
     function button(className, label, key, disabled, onClick) {
