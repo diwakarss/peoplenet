@@ -331,6 +331,8 @@ not a prediction, the event. Once executed a proposal is closed for good.
 | `messages.jsonl` | Agent traffic, appended by `POST /messages`. |
 | `check.js` | Runs `read.js` against the live node **and** the served endpoint, prints what the page would show, asserts the AAO, the three members, the proposal floor, and Wren's twelve records. |
 | `wren-votes.jsonl` | Wren's votes with their stated reasons, one JSON object per line. |
+| `watch.js` | The trigger watcher, and the automatic execution of what the rules say is decided. Runs with the server. |
+| `reports/` | Where a `count:` trigger reads from, and the only place it may read from. Tracked, with a README, because git cannot carry an empty directory and a `count:` rule cannot fire without it. |
 
 `read.js` is the join: the page, `check.js`, and the Hardhat test all read through
 the same functions, so a change that would break the page breaks a test first.

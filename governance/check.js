@@ -862,6 +862,27 @@ async function main() {
     assert.ok(/outside the reports directory/.test(result.because), result.because);
   });
 
+  check("the reports directory a count rule reads from exists", () => {
+    // Without it no count: trigger can ever fire, and the failure reads exactly
+    // like a count that has not been reached yet. Git cannot carry an empty
+    // directory, so governance/reports/README.md is what keeps this true.
+    assert.ok(fs.existsSync(W.DEFAULTS.reportDir),
+      `there is no reports directory at ${W.DEFAULTS.reportDir}; ` +
+      "no count: trigger can fire until there is one");
+  });
+
+  await checkAsync("a missing reports directory says so, instead of looking like a low count",
+    async () => {
+      const os = require("os");
+      const gone = path.join(os.tmpdir(), "governance-reports-gone-" + Date.now());
+      const proposal = withTrigger("count:anything.json:1");
+      const result = await W.evaluate(
+        W.triggerOf(proposal), proposal, Object.assign({}, FIXTURES, { reportDir: gone }));
+      assert.strictEqual(result.fired, false);
+      assert.strictEqual(result.invalid, true, "a rule that can never fire must be reported as broken");
+      assert.ok(/no reports directory/.test(result.because), result.because);
+    });
+
   await checkAsync("a broken rule reports itself instead of firing", async () => {
     for (const rule of ["nonsense", "teleport:now", "date:"]) {
       const proposal = withTrigger(rule);

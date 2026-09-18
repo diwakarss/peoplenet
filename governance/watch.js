@@ -233,6 +233,16 @@ function checkCount(argument, proposal, options) {
   if (!target.startsWith(path.resolve(options.reportDir))) {
     return { fired: false, because: "a count rule may not read outside the reports directory" };
   }
+  // A missing directory and a missing file are different problems, and a rule
+  // that can never fire should say which one it has rather than look like a
+  // count that has not been reached yet.
+  if (!fs.existsSync(options.reportDir)) {
+    return {
+      fired: false,
+      invalid: true,
+      because: `there is no reports directory at ${options.reportDir}, so no count rule can ever fire`
+    };
+  }
   if (!fs.existsSync(target)) return { fired: false, because: `no report at ${file}` };
 
   const text = fs.readFileSync(target, "utf8").trim();
