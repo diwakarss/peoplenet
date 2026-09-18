@@ -48,6 +48,7 @@
     director: "Director",
     wren: "Wren",
     kural: "Kural",
+    kalam: "Kalam",
     builder: "Builder",
     widget: "Widget",
     all: "Everyone"

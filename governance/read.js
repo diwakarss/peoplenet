@@ -39,13 +39,18 @@
   // The JD AAO (id 2, 2026-09-18) adds the second architect.
   var KURAL = "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc";   // account 5, the architect on JD
 
+  // Kural's builder on proposal 50. Not a member of JD: builders work on the
+  // sub-organisation JD-build, which the Director's vote creates.
+  var KALAM = "0x976EA74026E726554dB657fA54763abd0C3a0aa9";   // account 6, builder
+
   var ROLES = [
     { key: "director", label: "Director", address: DIRECTOR, ordinary: true },
     { key: "wren", label: "Wren", address: WREN, ordinary: true },
     { key: "casting", label: "Casting vote", address: CASTING, ordinary: false },
     { key: "builder", label: "Builder", address: BUILDER, ordinary: true },
     { key: "widget", label: "Widget", address: WIDGET, ordinary: true },
-    { key: "kural", label: "Kural", address: KURAL, ordinary: true }
+    { key: "kural", label: "Kural", address: KURAL, ordinary: true },
+    { key: "kalam", label: "Kalam", address: KALAM, ordinary: true }
   ];
 
   // What each AAO is for, in one line, for the tree and the AAO list.
