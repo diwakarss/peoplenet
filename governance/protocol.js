@@ -47,6 +47,7 @@
   var PARTY_LABELS = {
     director: "Director",
     wren: "Wren",
+    kural: "Kural",
     builder: "Builder",
     widget: "Widget",
     all: "Everyone"
