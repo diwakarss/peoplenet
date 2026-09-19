@@ -6,7 +6,18 @@
 
   var R = window.GovernanceRead;
   var S = window.GovernanceSwarm;
+  var K = window.GovernanceKolam;
   var REFRESH_MS = 15000;
+
+  // A kolam is redrawn only when its queue actually changed. Rebuilding the
+  // SVG on every poll would restart a pulsing dot's animation four times a
+  // minute and throw away the dot the operator is hovering.
+  var drawn = {};
+
+  function signatureOf(agent) {
+    return agent.tasks.map(function (t) { return t.proposalId + ":" + t.state; }).join("|") +
+      "#" + agent.now;
+  }
 
   function byId(id) { return document.getElementById(id); }
 
@@ -76,23 +87,43 @@
 
   function renderStreet(agents) {
     var host = byId("agents");
+    var fresh = {};
+    agents.forEach(function (agent) { fresh[agent.key] = signatureOf(agent); });
+
+    // Nothing moved: leave the street exactly as it is, animations and focus
+    // and all.
+    if (agents.every(function (a) { return drawn[a.key] === fresh[a.key]; }) &&
+        host.children.length === agents.length) {
+      return;
+    }
+    drawn = fresh;
+
     host.textContent = "";
     agents.forEach(function (agent) {
       var item = el("li", "agent" + (agent.silent ? " is-silent" : ""));
 
-      // The kolam goes here. Until the Director has seen the samples it is an
-      // empty threshold, not a stand-in drawing: a placeholder that looks like
-      // art is a decision taken without him.
-      var square = el("div", "kolam");
-      square.setAttribute("aria-hidden", "true");
-      square.title = "The kolam goes here.";
-      item.appendChild(square);
+      // The agent's threshold: its dots are its tasks, and the line is drawn as
+      // far as the queue is done (proposal 64, carried on the Director's vote).
+      var threshold = el("div", "threshold");
+      threshold.innerHTML = K.toSVG(agent.address, {
+        tasks: agent.tasks,
+        agent: agent.key,
+        label: agent.label,
+        now: agent.now,
+        id: "kolam-" + agent.key,
+        width: 96,
+        height: 96
+      });
+      item.appendChild(threshold);
 
       var body = el("div", "agent-body");
       body.appendChild(el("p", "agent-name", agent.label));
       body.appendChild(el("p", "agent-org", agent.organisation || "—"));
       body.appendChild(el("p", "agent-now", agent.now || "silent"));
       body.appendChild(el("p", "agent-age", age(agent.ageMs)));
+      body.appendChild(el("p", "agent-queue", agent.tasks.length
+        ? agent.done + " of " + agent.tasks.length + " done"
+        : "no tasks"));
       item.appendChild(body);
       host.appendChild(item);
     });
@@ -126,4 +157,8 @@
 
   read();
   window.setInterval(read, REFRESH_MS);
+
+  // One listener for the whole street, attached once: the kolams come and go
+  // under it, and a listener per kolam would leak one on every redraw.
+  window.GovernanceKolamInteract.attach(byId("agents"));
 }());

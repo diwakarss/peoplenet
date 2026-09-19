@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>The swarm</title>
   <link rel="stylesheet" href="swarm.css">
+  <link rel="stylesheet" href="kolam.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>&#x25CC;</text></svg>">
 </head>
 <body>
@@ -40,8 +41,10 @@
     <section class="street">
       <h2>The street</h2>
       <p class="column-note">
-        One threshold per agent. The kolam goes in the square; the Director sees
-        the samples before it is drawn here.
+        One kolam per agent, and its dots are its tasks: a ring is queued, a
+        pulse is being built, filled is done, amber is blocked, faint is open
+        ground. The line reaches a dot only when its task is done. Hover a dot
+        or tab to it for the task; click it to open the proposal.
       </p>
       <ul class="agents" id="agents"></ul>
     </section>
@@ -52,6 +55,8 @@
   <script src="../adoption.js"></script>
   <script src="../read.js"></script>
   <script src="../swarm.js"></script>
+  <script src="kolam.js"></script>
+  <script src="interact.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
