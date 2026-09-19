@@ -1,0 +1,26 @@
+/* The kolam tooltip, shared by the dashboard and the sample page so the two
+   cannot drift. The kolam's own colours live inside each SVG, so a kolam
+   dropped anywhere still looks right with this file missing. */
+
+.kolam-tip {
+  position: fixed;
+  z-index: 40;
+  max-width: 280px;
+  padding: 8px 11px 9px;
+  background: #1d1c1a;
+  color: #fbfaf7;
+  border-radius: 3px;
+  font: 12px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
+  pointer-events: none;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.22);
+}
+
+.kolam-tip p { margin: 0; }
+.kolam-tip .tip-title { font-weight: 600; margin-bottom: 2px; }
+.kolam-tip .tip-line { opacity: 0.82; }
+.kolam-tip .tip-block { margin-top: 4px; color: #f0a49d; }
+.kolam-tip .tip-foot { margin-top: 5px; font-size: 11px; opacity: 0.55; }
+
+/* A kolam on a threshold: a little air around it, and never wider than its
+   column. */
+.kolam { display: block; max-width: 100%; height: auto; overflow: visible; }
