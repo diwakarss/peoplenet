@@ -1130,6 +1130,115 @@ describe("the write scripts refuse before they send", function () {
     });
   });
 
+  // The kolam is not wired into the page: the Director sees the samples first.
+  // These pin the rules a pulli kolam has to obey, because a drawing that
+  // quietly breaks them is worse than no drawing.
+  describe("the kolam a chain address draws", function () {
+    const K = require("../../governance/swarm/kolam.js");
+    const KALAM = "0x976EA74026E726554dB657fA54763abd0C3a0aa9";
+
+    // Every point of the line, sampled, so the rules can be measured.
+    function trace(k) {
+      const points = [];
+      const turn = (v) => ((v % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      k.loop.forEach((step) => {
+        const piece = k.arcs[step.arc];
+        const from = K.pointOf(step.from, k.grid);
+        const to = K.pointOf(step.to, k.grid);
+        const a0 = Math.atan2(from.y - piece.cy, from.x - piece.cx);
+        const a1 = Math.atan2(to.y - piece.cy, to.x - piece.cx);
+        const sweep = step.from === piece.a ? piece.sweep : 1 - piece.sweep;
+        const span = sweep === 1 ? turn(a1 - a0) : -turn(a0 - a1);
+        for (let i = 0; i < 24; i++) {
+          const angle = a0 + (span * i) / 24;
+          points.push([piece.cx + piece.r * Math.cos(angle), piece.cy + piece.r * Math.sin(angle)]);
+        }
+      });
+      return points;
+    }
+
+    it("is one continuous closed line, not several", function () {
+      const k = K.kolam(KALAM);
+      expect(K.loopsOf(k.arcs).length).to.equal(1);
+      expect(k.loop.length, "and it uses every arc in the figure").to.equal(k.arcs.length);
+      const start = K.pointOf(k.loop[0].from, k.grid);
+      const end = K.pointOf(k.loop[k.loop.length - 1].to, k.grid);
+      expect(start).to.deep.equal(end);
+    });
+
+    it("never touches a dot: it circles each one at a constant distance", function () {
+      const k = K.kolam(KALAM);
+      const points = trace(k);
+      let nearest = Infinity;
+      k.dots.forEach((dot) => points.forEach((p) => {
+        nearest = Math.min(nearest, Math.hypot(p[0] - dot.x, p[1] - dot.y));
+      }));
+      expect(nearest).to.be.closeTo(k.grid.unit / 2, 0.001);
+    });
+
+    it("is symmetric under a half turn, to the point", function () {
+      const k = K.kolam(KALAM);
+      const points = trace(k);
+      const key = (p) => Math.round(p[0] * 4) / 4 + "," + Math.round(p[1] * 4) / 4;
+      const drawn = new Set(points.map(key));
+      const centre = k.size / 2;
+      const missing = points
+        .map((p) => [2 * centre - p[0], 2 * centre - p[1]])
+        .filter((p) => !drawn.has(key(p)));
+      expect(missing.length, "every point's opposite is on the line too").to.equal(0);
+    });
+
+    it("draws the same kolam for the same address, and a different one for another",
+      function () {
+        expect(K.kolam(KALAM).path).to.equal(K.kolam(KALAM).path);
+        expect(K.kolam(KALAM).path).to.not.equal(K.kolam(R.KURAL).path);
+        expect(K.kolam(KALAM).path, "the address is not case sensitive on chain")
+          .to.equal(K.kolam(KALAM.toLowerCase()).path);
+      });
+
+    it("draws one for any address, not just the lucky ones", function () {
+      for (let i = 0; i < 25; i++) {
+        const address = "0x" + require("crypto").createHash("sha1").update("agent" + i)
+          .digest("hex").slice(0, 40);
+        expect(K.loopsOf(K.kolam(address).arcs).length, address).to.equal(1);
+      }
+    });
+
+    it("refuses an even grid, which cannot be joined into one loop", function () {
+      // A half turn pairs every cell with another, so flips come two at a time
+      // and the loop count keeps its parity. The odd grid's centre cell is its
+      // own partner, and that single flip is what makes one loop reachable.
+      expect(() => K.kolam(KALAM, { cells: 6 })).to.throw(/odd/);
+    });
+
+    it("closes the line when idle, leaves it part drawn when working", function () {
+      const idle = K.toSVG(KALAM, { state: "idle" });
+      const working = K.toSVG(KALAM, { state: "working", progress: 0.45 });
+      expect(idle).to.contain(" Z");
+      expect(idle).to.not.contain("stroke-dasharray");
+      expect(working).to.contain("stroke-dasharray");
+    });
+
+    it("opens the line at a lit dot when blocked", function () {
+      const k = K.kolam(KALAM);
+      const open = K.openPath(k);
+      expect(open.path, "an open line has no close command").to.not.contain(" Z");
+      expect(
+        k.dots.some((d) => Math.abs(d.x - open.lit.x) < 0.01 && Math.abs(d.y - open.lit.y) < 0.01),
+        "and it stops at a real dot, not at a point in the air"
+      ).to.equal(true);
+      expect(K.toSVG(KALAM, { state: "blocked" })).to.contain("#a8322a");
+    });
+
+    it("writes an SVG that stands on its own", function () {
+      const svg = K.toSVG(KALAM);
+      expect(svg.indexOf("<svg xmlns=")).to.equal(0);
+      expect(svg).to.contain("</svg>");
+      expect((svg.match(/<circle/g) || []).length, "one per dot").to.equal(K.kolam(KALAM).dots.length);
+      expect((svg.match(/<path/g) || []).length, "one line").to.equal(1);
+    });
+  });
+
   describe("wren-decide's state reader, which writes no transaction at all", function () {
     it("reads the state out of the words, and refuses words that say nothing", async function () {
       expect(A.stateOf({ summary: "queued behind S12." }).key).to.equal("queued");

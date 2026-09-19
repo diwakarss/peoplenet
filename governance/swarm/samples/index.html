@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kolam samples</title>
+  <style>
+    body { margin: 0; padding: 30px 22px 60px; background: #fbfaf7; color: #1d1c1a;
+           font: 14px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .sheet { max-width: 960px; margin: 0 auto; }
+    h1, h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; }
+    h1 { font-size: 25px; margin: 0 0 6px; }
+    h2 { font-size: 16px; margin: 34px 0 4px; padding-bottom: 6px; border-bottom: 1px solid #ddd9d1; }
+    p { max-width: 64ch; color: #55524c; margin: 0 0 8px; }
+    .row { display: flex; flex-wrap: wrap; gap: 30px; margin-top: 18px; }
+    figure { margin: 0; }
+    figcaption { font-size: 12px; color: #8b877f; margin-top: 6px; }
+    img { display: block; }
+  </style>
+</head>
+<body>
+<div class="sheet">
+  <h1>Kolam samples</h1>
+  <p>
+    One kolam per agent, drawn from that agent's chain address. A grid of dots,
+    and one continuous closed line that loops around them and never touches
+    one. The figure is symmetric under a half turn. The same address always
+    draws the same kolam, and no two addresses draw the same one.
+  </p>
+  <p>
+    Nothing here is wired into the dashboard. This is the look, for the
+    Director to accept or send back.
+  </p>
+
+  <h2>One per agent</h2>
+  <div class="row">
+    <figure><img src="kolam-kural.svg" alt="Kural's kolam" width="168" height="168">
+      <figcaption>Kural &middot; 0x9965&hellip;A4dc</figcaption></figure>
+    <figure><img src="kolam-kalam.svg" alt="Kalam's kolam" width="168" height="168">
+      <figcaption>Kalam &middot; 0x976E&hellip;0aa9</figcaption></figure>
+    <figure><img src="kolam-wren.svg" alt="Wren's kolam" width="168" height="168">
+      <figcaption>Wren &middot; 0x7099&hellip;c79C8</figcaption></figure>
+  </div>
+
+  <h2>The three states, on one kolam</h2>
+  <p>
+    Idle is the line complete and closed: the threshold is finished and the
+    agent is at rest. Working is the same line part drawn, and still drawing.
+    Blocked breaks the line &mdash; it stops at a dot, and that dot stays lit
+    until the block clears.
+  </p>
+  <div class="row">
+    <figure><img src="kolam-kalam-idle.svg" alt="Idle" width="168" height="168">
+      <figcaption>Idle &mdash; at rest, the line closed</figcaption></figure>
+    <figure><img src="kolam-kalam-working.svg" alt="Working" width="168" height="168">
+      <figcaption>Working &mdash; the line is being drawn</figcaption></figure>
+    <figure><img src="kolam-kalam-blocked.svg" alt="Blocked" width="168" height="168">
+      <figcaption>Blocked &mdash; stopped at a lit dot</figcaption></figure>
+  </div>
+</div>
+</body>
+</html>
