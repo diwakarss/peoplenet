@@ -1,41 +1,43 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 168 168" width="168" height="168" role="img">
-  <title>idle kolam for 0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc</title>
-  <rect width="168" height="168" fill="none"/>
-  <circle cx="34" cy="34" r="1.7" fill="#8b877f"/>
-  <circle cx="54" cy="34" r="1.7" fill="#8b877f"/>
-  <circle cx="74" cy="34" r="1.7" fill="#8b877f"/>
-  <circle cx="94" cy="34" r="1.7" fill="#8b877f"/>
-  <circle cx="114" cy="34" r="1.7" fill="#8b877f"/>
-  <circle cx="134" cy="34" r="1.7" fill="#8b877f"/>
-  <circle cx="34" cy="54" r="1.7" fill="#8b877f"/>
-  <circle cx="54" cy="54" r="1.7" fill="#8b877f"/>
-  <circle cx="74" cy="54" r="1.7" fill="#8b877f"/>
-  <circle cx="94" cy="54" r="1.7" fill="#8b877f"/>
-  <circle cx="114" cy="54" r="1.7" fill="#8b877f"/>
-  <circle cx="134" cy="54" r="1.7" fill="#8b877f"/>
-  <circle cx="34" cy="74" r="1.7" fill="#8b877f"/>
-  <circle cx="54" cy="74" r="1.7" fill="#8b877f"/>
-  <circle cx="74" cy="74" r="1.7" fill="#8b877f"/>
-  <circle cx="94" cy="74" r="1.7" fill="#8b877f"/>
-  <circle cx="114" cy="74" r="1.7" fill="#8b877f"/>
-  <circle cx="134" cy="74" r="1.7" fill="#8b877f"/>
-  <circle cx="34" cy="94" r="1.7" fill="#8b877f"/>
-  <circle cx="54" cy="94" r="1.7" fill="#8b877f"/>
-  <circle cx="74" cy="94" r="1.7" fill="#8b877f"/>
-  <circle cx="94" cy="94" r="1.7" fill="#8b877f"/>
-  <circle cx="114" cy="94" r="1.7" fill="#8b877f"/>
-  <circle cx="134" cy="94" r="1.7" fill="#8b877f"/>
-  <circle cx="34" cy="114" r="1.7" fill="#8b877f"/>
-  <circle cx="54" cy="114" r="1.7" fill="#8b877f"/>
-  <circle cx="74" cy="114" r="1.7" fill="#8b877f"/>
-  <circle cx="94" cy="114" r="1.7" fill="#8b877f"/>
-  <circle cx="114" cy="114" r="1.7" fill="#8b877f"/>
-  <circle cx="134" cy="114" r="1.7" fill="#8b877f"/>
-  <circle cx="34" cy="134" r="1.7" fill="#8b877f"/>
-  <circle cx="54" cy="134" r="1.7" fill="#8b877f"/>
-  <circle cx="74" cy="134" r="1.7" fill="#8b877f"/>
-  <circle cx="94" cy="134" r="1.7" fill="#8b877f"/>
-  <circle cx="114" cy="134" r="1.7" fill="#8b877f"/>
-  <circle cx="134" cy="134" r="1.7" fill="#8b877f"/>
-  <path d="M 24 14 A 10 10 0 0 1 14 24 A 10 10 0 0 0 14 44 A 10 10 0 0 1 24 54 A 10 10 0 0 0 34 64 A 10 10 0 0 0 44 54 A 10 10 0 0 0 34 44 A 10 10 0 0 1 24 34 A 10 10 0 0 1 34 24 A 10 10 0 0 1 44 34 A 10 10 0 0 0 54 44 A 10 10 0 0 1 64 54 A 10 10 0 0 0 74 64 A 10 10 0 0 1 84 74 A 10 10 0 0 1 74 84 A 10 10 0 0 0 64 94 A 10 10 0 0 0 74 104 A 10 10 0 0 1 84 114 A 10 10 0 0 0 94 124 A 10 10 0 0 1 104 134 A 10 10 0 0 1 94 144 A 10 10 0 0 1 84 134 A 10 10 0 0 0 74 124 A 10 10 0 0 1 64 114 A 10 10 0 0 0 54 104 A 10 10 0 0 1 44 94 A 10 10 0 0 1 54 84 A 10 10 0 0 0 64 74 A 10 10 0 0 0 54 64 A 10 10 0 0 0 44 74 A 10 10 0 0 1 34 84 A 10 10 0 0 1 24 74 A 10 10 0 0 0 14 64 A 10 10 0 0 0 14 84 A 10 10 0 0 1 24 94 A 10 10 0 0 1 14 104 A 10 10 0 0 0 14 124 A 10 10 0 0 0 24 114 A 10 10 0 0 1 34 104 A 10 10 0 0 1 44 114 A 10 10 0 0 0 54 124 A 10 10 0 0 1 64 134 A 10 10 0 0 1 54 144 A 10 10 0 0 1 44 134 A 10 10 0 0 0 34 124 A 10 10 0 0 0 24 134 A 10 10 0 0 1 14 144 A 10 10 0 1 0 24 154 A 10 10 0 0 1 34 144 A 10 10 0 0 1 44 154 A 10 10 0 0 0 64 154 A 10 10 0 0 1 74 144 A 10 10 0 0 1 84 154 A 10 10 0 0 0 104 154 A 10 10 0 0 1 114 144 A 10 10 0 0 1 124 154 A 10 10 0 0 0 144 154 A 10 10 0 0 1 154 144 A 10 10 0 0 0 154 124 A 10 10 0 0 1 144 114 A 10 10 0 0 0 134 104 A 10 10 0 0 0 124 114 A 10 10 0 0 0 134 124 A 10 10 0 0 1 144 134 A 10 10 0 0 1 134 144 A 10 10 0 0 1 124 134 A 10 10 0 0 0 114 124 A 10 10 0 0 1 104 114 A 10 10 0 0 0 94 104 A 10 10 0 0 1 84 94 A 10 10 0 0 1 94 84 A 10 10 0 0 0 104 74 A 10 10 0 0 0 94 64 A 10 10 0 0 1 84 54 A 10 10 0 0 0 74 44 A 10 10 0 0 1 64 34 A 10 10 0 0 1 74 24 A 10 10 0 0 1 84 34 A 10 10 0 0 0 94 44 A 10 10 0 0 1 104 54 A 10 10 0 0 0 114 64 A 10 10 0 0 1 124 74 A 10 10 0 0 1 114 84 A 10 10 0 0 0 104 94 A 10 10 0 0 0 114 104 A 10 10 0 0 0 124 94 A 10 10 0 0 1 134 84 A 10 10 0 0 1 144 94 A 10 10 0 0 0 154 104 A 10 10 0 0 0 154 84 A 10 10 0 0 1 144 74 A 10 10 0 0 1 154 64 A 10 10 0 0 0 154 44 A 10 10 0 0 0 144 54 A 10 10 0 0 1 134 64 A 10 10 0 0 1 124 54 A 10 10 0 0 0 114 44 A 10 10 0 0 1 104 34 A 10 10 0 0 1 114 24 A 10 10 0 0 1 124 34 A 10 10 0 0 0 134 44 A 10 10 0 0 0 144 34 A 10 10 0 0 1 154 24 A 10 10 0 1 0 144 14 A 10 10 0 0 1 134 24 A 10 10 0 0 1 124 14 A 10 10 0 0 0 104 14 A 10 10 0 0 1 94 24 A 10 10 0 0 1 84 14 A 10 10 0 0 0 64 14 A 10 10 0 0 1 54 24 A 10 10 0 0 1 44 14 A 10 10 0 0 0 24 14 Z" fill="none" stroke="#1d1c1a" stroke-width="2" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 168 168" width="168" height="168" class="kolam" data-agent="kural" data-label="Kural" data-now="" data-done="2" data-total="8" role="img">
+  <title>Kural: 2 of 8 done</title>
+  <style>#kolam-kural .line{fill:none;stroke:#1d1c1a;stroke-width:2;stroke-linecap:round}#kolam-kural .line.is-broken{stroke:#a8322a}#kolam-kural .pulli{stroke-width:1.4}#kolam-kural .is-open{fill:#d8d4cc;stroke:none}#kolam-kural .is-queued{fill:none;stroke:#8b877f}#kolam-kural .is-built{fill:#1d1c1a;stroke:none}#kolam-kural .is-blocked{fill:#a8322a;stroke:none}#kolam-kural .is-building{fill:#8b877f;stroke:#8b877f;animation:kolam-pulse 1.6s ease-in-out infinite}#kolam-kural .pulli[tabindex]{cursor:pointer}#kolam-kural .pulli[tabindex]:hover,#kolam-kural .pulli[tabindex]:focus{stroke:#a8322a;stroke-width:2.8;outline:none}@keyframes kolam-pulse{0%,100%{opacity:.35}50%{opacity:1}}@media (prefers-reduced-motion:reduce){#kolam-kural .is-building{animation:none;opacity:.7}}</style>
+  <g id="kolam-kural">
+    <circle class="pulli is-open" cx="34" cy="34" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="54" cy="34" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="74" cy="34" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="94" cy="34" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="114" cy="34" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="134" cy="34" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="34" cy="54" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="54" cy="54" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-blocked" cx="74" cy="54" r="3.4" tabindex="0" role="link" data-proposal="61" data-aao="2" data-state="blocked" data-title="Blocked on the Director: the Mac and the four chat exports" data-at="1789800097000" data-who="the Director" data-what="the Mac and the four chat exports"><title>Proposal 61: Blocked on the Director: the Mac and the four chat exports — blocked, waiting on the Director for the Mac and the four chat exports</title></circle>
+    <circle class="pulli is-blocked" cx="94" cy="54" r="3.4" tabindex="0" role="link" data-proposal="62" data-aao="2" data-state="blocked" data-title="Blocked on the Director: three answers proposal 39 could not default" data-at="1789800102000" data-who="the Director" data-what="three answers proposal 39 could not default"><title>Proposal 62: Blocked on the Director: three answers proposal 39 could not default — blocked, waiting on the Director for three answers proposal 39 could not default</title></circle>
+    <circle class="pulli is-open" cx="114" cy="54" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="134" cy="54" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="34" cy="74" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-blocked" cx="54" cy="74" r="3.4" tabindex="0" role="link" data-proposal="60" data-aao="2" data-state="blocked" data-title="Blocked on the Director: the Hetzner API token" data-at="1789800094000" data-who="the Director" data-what="the Hetzner API token"><title>Proposal 60: Blocked on the Director: the Hetzner API token — blocked, waiting on the Director for the Hetzner API token</title></circle>
+    <circle class="pulli is-queued" cx="74" cy="74" r="3.4" tabindex="0" role="link" data-proposal="38" data-aao="2" data-state="queued" data-title="JD is the working AAO from 2026-09-19" data-at="1789727284826" data-who="" data-what=""><title>Proposal 38: JD is the working AAO from 2026-09-19 — queued</title></circle>
+    <circle class="pulli is-building" cx="94" cy="74" r="3.4" tabindex="0" role="link" data-proposal="50" data-aao="2" data-state="building" data-title="Move the chain and the governance page to the cloud first" data-at="1789734306908" data-who="" data-what=""><title>Proposal 50: Move the chain and the governance page to the cloud first — building</title></circle>
+    <circle class="pulli is-queued" cx="114" cy="74" r="3.4" tabindex="0" role="link" data-proposal="63" data-aao="2" data-state="queued" data-title="One secrets vault in the cloud: need-to-know for each agent, everything for the Director" data-at="1789801013322" data-who="" data-what=""><title>Proposal 63: One secrets vault in the cloud: need-to-know for each agent, everything for the Director — queued</title></circle>
+    <circle class="pulli is-open" cx="134" cy="74" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="34" cy="94" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="54" cy="94" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-built" cx="74" cy="94" r="3.4" tabindex="0" role="link" data-proposal="52" data-aao="2" data-state="built" data-title="The explorer nests a sub-organisation under its parent" data-at="1789736140576" data-who="" data-what=""><title>Proposal 52: The explorer nests a sub-organisation under its parent — built</title></circle>
+    <circle class="pulli is-built" cx="94" cy="94" r="3.4" tabindex="0" role="link" data-proposal="51" data-aao="2" data-state="built" data-title="Builders work in a sub-organisation of JD, never on JD itself" data-at="1789736140571" data-who="" data-what=""><title>Proposal 51: Builders work in a sub-organisation of JD, never on JD itself — built</title></circle>
+    <circle class="pulli is-open" cx="114" cy="94" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="134" cy="94" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="34" cy="114" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="54" cy="114" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="74" cy="114" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="94" cy="114" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="114" cy="114" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="134" cy="114" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="34" cy="134" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="54" cy="134" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="74" cy="134" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="94" cy="134" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="114" cy="134" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <circle class="pulli is-open" cx="134" cy="134" r="1.6"><title>Open ground: no task on this dot.</title></circle>
+    <path class="line" d="M 24 14 A 10 10 0 0 1 14 24 A 10 10 0 0 0 14 44 A 10 10 0 0 1 24 54 A 10 10 0 0 0 34 64 A 10 10 0 0 0 44 54 A 10 10 0 0 0 34 44 A 10 10 0 0 1 24 34 A 10 10 0 0 1 34 24 A 10 10 0 0 1 44 34 A 10 10 0 0 0 54 44 A 10 10 0 0 1 64 54 A 10 10 0 0 0 74 64 A 10 10 0 0 1 84 74 A 10 10 0 0 1 74 84 A 10 10 0 0 0 64 94 A 10 10 0 0 0 74 104 A 10 10 0 0 1 84 114 A 10 10 0 0 0 94 124 A 10 10 0 0 1 104 134 A 10 10 0 0 1 94 144 A 10 10 0 0 1 84 134 A 10 10 0 0 0 74 124 A 10 10 0 0 1 64 114 A 10 10 0 0 0 54 104 A 10 10 0 0 1 44 94 A 10 10 0 0 1 54 84 A 10 10 0 0 0 64 74 A 10 10 0 0 0 54 64 A 10 10 0 0 0 44 74 A 10 10 0 0 1 34 84 A 10 10 0 0 1 24 74 A 10 10 0 0 0 14 64 A 10 10 0 0 0 14 84 A 10 10 0 0 1 24 94 A 10 10 0 0 1 14 104 A 10 10 0 0 0 14 124 A 10 10 0 0 0 24 114 A 10 10 0 0 1 34 104 A 10 10 0 0 1 44 114 A 10 10 0 0 0 54 124 A 10 10 0 0 1 64 134 A 10 10 0 0 1 54 144 A 10 10 0 0 1 44 134 A 10 10 0 0 0 34 124 A 10 10 0 0 0 24 134 A 10 10 0 0 1 14 144 A 10 10 0 1 0 24 154 A 10 10 0 0 1 34 144 A 10 10 0 0 1 44 154 A 10 10 0 0 0 64 154 A 10 10 0 0 1 74 144 A 10 10 0 0 1 84 154 A 10 10 0 0 0 104 154 A 10 10 0 0 1 114 144 A 10 10 0 0 1 124 154 A 10 10 0 0 0 144 154 A 10 10 0 0 1 154 144 A 10 10 0 0 0 154 124 A 10 10 0 0 1 144 114 A 10 10 0 0 0 134 104 A 10 10 0 0 0 124 114 A 10 10 0 0 0 134 124 A 10 10 0 0 1 144 134 A 10 10 0 0 1 134 144 A 10 10 0 0 1 124 134 A 10 10 0 0 0 114 124 A 10 10 0 0 1 104 114 A 10 10 0 0 0 94 104 A 10 10 0 0 1 84 94 A 10 10 0 0 1 94 84 A 10 10 0 0 0 104 74 A 10 10 0 0 0 94 64 A 10 10 0 0 1 84 54 A 10 10 0 0 0 74 44 A 10 10 0 0 1 64 34 A 10 10 0 0 1 74 24 A 10 10 0 0 1 84 34 A 10 10 0 0 0 94 44 A 10 10 0 0 1 104 54 A 10 10 0 0 0 114 64 A 10 10 0 0 1 124 74 A 10 10 0 0 1 114 84 A 10 10 0 0 0 104 94 A 10 10 0 0 0 114 104 A 10 10 0 0 0 124 94 A 10 10 0 0 1 134 84 A 10 10 0 0 1 144 94 A 10 10 0 0 0 154 104 A 10 10 0 0 0 154 84 A 10 10 0 0 1 144 74 A 10 10 0 0 1 154 64 A 10 10 0 0 0 154 44 A 10 10 0 0 0 144 54 A 10 10 0 0 1 134 64 A 10 10 0 0 1 124 54 A 10 10 0 0 0 114 44 A 10 10 0 0 1 104 34 A 10 10 0 0 1 114 24 A 10 10 0 0 1 124 34 A 10 10 0 0 0 134 44 A 10 10 0 0 0 144 34 A 10 10 0 0 1 154 24 A 10 10 0 1 0 144 14 A 10 10 0 0 1 134 24 A 10 10 0 0 1 124 14 A 10 10 0 0 0 104 14 A 10 10 0 0 1 94 24 A 10 10 0 0 1 84 14 A 10 10 0 0 0 64 14 A 10 10 0 0 1 54 24 A 10 10 0 0 1 44 14 A 10 10 0 0 0 24 14 Z" stroke-dasharray="2010.62" stroke-dashoffset="1507.97"/>
+  </g>
 </svg>
