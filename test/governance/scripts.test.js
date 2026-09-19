@@ -1312,11 +1312,15 @@ describe("the write scripts refuse before they send", function () {
       expect(S.dotStateOf("unknown")).to.equal("queued");
     });
 
-    it("gives an architect the proposals it filed that are still open", function () {
-      const kural = S.tasksFor("kural", MESSAGES, PROPOSALS, AAOS).map((t) => t.proposalId);
-      expect(kural, "72 decided on, 73 filed and open").to.contain(73);
-      expect(kural, "74 is closed, so it is not held any more").to.not.contain(74);
-      expect(kural, "and it does not pick up what Kalam filed").to.not.contain(71);
+    it("gives an architect the proposals it filed, open or passed", function () {
+      const kural = S.tasksFor("kural", MESSAGES, PROPOSALS, AAOS);
+      const ids = kural.map((t) => t.proposalId);
+      expect(ids, "72 decided on, 73 filed and open").to.contain(73);
+      // Proposal 66: it used to drop off here the moment it passed, which is
+      // how finished work vanished instead of filling its dot.
+      expect(ids, "74 passed, and passed work is done work").to.contain(74);
+      expect(kural.filter((t) => t.proposalId === 74)[0].state).to.equal("built");
+      expect(ids, "and it does not pick up what Kalam filed").to.not.contain(71);
     });
 
     it("does not give a builder its filed proposals: only an architect holds those",
@@ -1351,6 +1355,57 @@ describe("the write scripts refuse before they send", function () {
           .filter((t) => t.proposalId === 70)[0];
         expect(task.at).to.equal(Date.parse("2026-09-19T01:00:00Z"));
       });
+
+    // Proposal 66. An architect's passed proposal used to vanish from its kolam
+    // the moment it passed, so the line could never complete; a rejected one
+    // lingered as a queued ring. Both made the drawing disagree with the chain.
+    describe("the chain has the last word on a proposal the agent filed", function () {
+      const filed = (id, status, proposer, title) =>
+        ({ id, aaoId: 2, status, proposer, createdAt: 1758000000,
+           text: JSON.stringify({ title: title || ("Proposal " + id) }) });
+      const CHAIN = [
+        filed(80, 1, R.KURAL, "Kural filed it and it passed"),
+        filed(81, 2, R.KURAL, "Kural filed it and it was rejected"),
+        filed(82, 0, R.KURAL, "Kural filed it and it is open"),
+        filed(83, 1, R.DIRECTOR, "The Director filed it and it passed")
+      ];
+      // Every one carries a decision that says something ELSE, so the fold is
+      // what is being read, not the decision.
+      const SAID = [80, 81, 82].map((id) =>
+        ({ from: "kural", type: "decision", ts: "2026-01-01T00:00:00Z",
+           refs: ["proposal " + id], summary: "waiting: not yet.", subject: "s" }))
+        .concat([{ from: "kural", type: "decision", ts: "2026-01-01T00:00:00Z",
+                   refs: ["proposal 83"], summary: "building: in hand.", subject: "s" }]);
+      const kural = () => S.tasksFor("kural", SAID, CHAIN, AAOS);
+      const one = (id) => kural().filter((t) => t.proposalId === id)[0];
+
+      it("folds Executed to built, whatever the agent last said", function () {
+        expect(one(80).state, "it passed, so the work is done").to.equal("built");
+      });
+
+      it("drops a Rejected one: the organisation said no, so nobody holds it", function () {
+        expect(one(81)).to.equal(undefined);
+        expect(kural().map((t) => t.proposalId)).to.not.contain(81);
+      });
+
+      it("leaves an Active one exactly as it was", function () {
+        expect(one(82).state, "the decision still speaks").to.equal("queued");
+      });
+
+      it("does not touch a proposal the agent did not file", function () {
+        expect(one(83).state, "the Director filed it; Kural's own word stands")
+          .to.equal("building");
+      });
+
+      it("lets the line complete, which was the whole point", function () {
+        // Before 66 the passed one vanished and the rejected one lingered as a
+        // ring, so the drawn share was 0 of 2 held. Now it is 1 of 2, and an
+        // architect who finishes everything reaches a complete line.
+        const held = kural().filter((t) => t.proposalId === 80 || t.proposalId === 81);
+        expect(held.map((t) => t.proposalId), "80 held, 81 gone").to.deep.equal([80]);
+        expect(held.filter((t) => t.state === "built").length / held.length).to.equal(1);
+      });
+    });
 
     it("hands every agent on the street its own task list", function () {
       const d = S.dashboard(MESSAGES, PROPOSALS, AAOS, Date.now());

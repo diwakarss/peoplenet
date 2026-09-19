@@ -264,19 +264,20 @@
     Object.keys(latest).forEach(function (id) {
       var adoption = A.adoptionOf(latest, id);
       var proposal = byId[Number(id)] || {};
-      tasks.push(taskRow(Number(id), proposal, orgOf, dotStateOf(adoption.state.key),
-        A.blockedOn(adoption), pickedUp[id] || timeOf(adoption.message.ts), adoption.text));
       held[Number(id)] = true;
+      var row = taskRow(Number(id), proposal, orgOf, dotStateOf(adoption.state.key),
+        A.blockedOn(adoption), pickedUp[id] || timeOf(adoption.message.ts), adoption.text, address);
+      if (row) tasks.push(row);
     });
 
     // An architect holds what it filed until the organisation closes it. These
     // never carry a decision of its own -- the filing IS the pickup.
     if (address && isArchitect(address)) {
       (proposals || []).forEach(function (p) {
-        if (p.status !== 0 || held[p.id]) return;
-        if (!R.sameAddress(p.proposer, address)) return;
-        tasks.push(taskRow(p.id, p, orgOf, "queued", null,
-          p.createdAt ? p.createdAt * 1000 : null, ""));
+        if (held[p.id] || !R.sameAddress(p.proposer, address)) return;
+        var row = taskRow(p.id, p, orgOf, "queued", null,
+          p.createdAt ? p.createdAt * 1000 : null, "", address);
+        if (row) tasks.push(row);
       });
     }
 
@@ -291,8 +292,29 @@
     });
   }
 
-  function taskRow(id, proposal, orgOf, state, blocked, at, said) {
+  // Returns null for a task that is not held any more.
+  //
+  // `filer` is the agent this list is for. The chain is the last word on a
+  // proposal the agent filed (proposal 66): an architect's passed proposal used
+  // to vanish from its kolam the moment it passed, so finished work disappeared
+  // instead of filling its dot and the line could never complete; and a
+  // rejected one lingered as a queued ring, overstating the queue. Both made
+  // the drawing disagree with the chain it is drawn from.
+  function taskRow(id, proposal, orgOf, state, blocked, at, said, filer) {
     var title = titleOf(proposal) || ("Proposal " + id);
+    var filed = filer && proposal.proposer && R.sameAddress(proposal.proposer, filer);
+
+    if (filed) {
+      // Rejected: the organisation said no, so it is nobody's task any more.
+      if (proposal.status === 2) return null;
+      // Executed is executed AND passed -- the facet writes Rejected otherwise --
+      // so the work is done however quiet the agent was about it.
+      if (proposal.status === 1) {
+        state = "built";
+        blocked = null;
+      }
+    }
+
     // An open "Blocked on the Director" proposal is a block, whoever holds it:
     // the column above the kolam already reads it that way, and the kolam
     // showing the same proposal as merely queued would make the page argue with
