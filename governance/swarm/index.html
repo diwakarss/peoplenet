@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The swarm</title>
+  <link rel="stylesheet" href="swarm.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>&#x25CC;</text></svg>">
+</head>
+<body>
+  <header>
+    <h1>The swarm</h1>
+    <p class="lede">
+      What is stuck, what is being built, what is done, and what each agent is
+      doing right now. Read-only: every line opens its proposal on the
+      <a href="/">chain page</a>, and nothing here writes.
+    </p>
+    <p class="meta"><span id="read-at">reading…</span> · <span id="chain">chain</span></p>
+  </header>
+
+  <main>
+    <section class="columns" id="columns">
+      <div class="column blocked">
+        <h2>Blocked <span class="count" id="count-blocked">—</span></h2>
+        <p class="column-note">Who it waits on, and for what. The Director's own first.</p>
+        <ol class="rows" id="rows-blocked"></ol>
+      </div>
+      <div class="column building">
+        <h2>Building <span class="count" id="count-building">—</span></h2>
+        <p class="column-note">Picked up, not finished.</p>
+        <ol class="rows" id="rows-building"></ol>
+      </div>
+      <div class="column done">
+        <h2>Done <span class="count" id="count-done">—</span></h2>
+        <p class="column-note">Built, in the widget, or closed.</p>
+        <ol class="rows" id="rows-done"></ol>
+      </div>
+    </section>
+
+    <section class="street">
+      <h2>The street</h2>
+      <p class="column-note">
+        One threshold per agent. The kolam goes in the square; the Director sees
+        the samples before it is drawn here.
+      </p>
+      <ul class="agents" id="agents"></ul>
+    </section>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.5/ethers.umd.min.js"></script>
+  <script src="../protocol.js"></script>
+  <script src="../adoption.js"></script>
+  <script src="../read.js"></script>
+  <script src="../swarm.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

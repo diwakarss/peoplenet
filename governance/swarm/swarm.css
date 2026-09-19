@@ -1,0 +1,158 @@
+/* The swarm dashboard. One column of type, three columns of work, one street
+   of thresholds. Same ink and paper as the chain page, no framework. */
+
+:root {
+  --paper: #fbfaf7;
+  --ink: #1d1c1a;
+  --ink-soft: #55524c;
+  --ink-faint: #8b877f;
+  --rule: #ddd9d1;
+  --blocked: #a8322a;
+  --building: #9a6a12;
+  --done: #2f6b40;
+  --serif: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 28px 20px 64px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 14px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+header, main { max-width: 1100px; margin: 0 auto; }
+
+h1 {
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 400;
+  margin: 0 0 6px;
+}
+
+.lede { margin: 0 0 8px; max-width: 62ch; color: var(--ink-soft); }
+.lede a { color: inherit; }
+
+.meta {
+  margin: 0 0 26px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 14px;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+  margin-bottom: 42px;
+}
+
+.column { min-width: 0; }
+
+.column h2 {
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 400;
+  margin: 0 0 3px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--rule);
+}
+
+.column.blocked h2 { border-bottom-color: var(--blocked); }
+.column.building h2 { border-bottom-color: var(--building); }
+.column.done h2 { border-bottom-color: var(--done); }
+
+.count { float: right; font-size: 12px; color: var(--ink-faint); }
+
+.column-note {
+  margin: 0 0 12px;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
+.rows { list-style: none; margin: 0; padding: 0; }
+
+.row {
+  padding: 9px 0 10px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.row.is-empty { color: var(--ink-faint); font-style: italic; border-bottom: 0; }
+
+/* The Director's own blocks lead the column: the first thing he reads is what
+   only he can clear. */
+.row.is-directors {
+  border-left: 3px solid var(--blocked);
+  padding-left: 10px;
+  margin-left: -13px;
+}
+
+.row-link { text-decoration: none; color: inherit; display: block; }
+.row-link:hover .row-title { text-decoration: underline; }
+
+.row-id {
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-right: 7px;
+}
+
+.row-title { font-family: var(--serif); font-size: 14.5px; }
+
+.row-line { margin: 3px 0 0; font-size: 12.5px; color: var(--ink-soft); }
+.row-who { font-weight: 600; }
+
+.row-foot {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.row-source::before { content: " · "; }
+
+.street h2 {
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 400;
+  margin: 0 0 3px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--rule);
+}
+
+.agents {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 18px;
+}
+
+.agent { display: flex; gap: 12px; align-items: flex-start; }
+
+/* An empty threshold, not a stand-in drawing: the kolam is item two and the
+   Director sees the samples first. */
+.kolam {
+  flex: 0 0 auto;
+  width: 60px;
+  height: 60px;
+  border: 1px dashed var(--rule);
+  background: transparent;
+}
+
+.agent-body { min-width: 0; }
+.agent-name { margin: 0; font-family: var(--serif); font-size: 14.5px; }
+.agent-org { margin: 1px 0 0; font-size: 11px; color: var(--ink-faint); }
+.agent-now { margin: 5px 0 0; font-size: 13px; }
+.agent-age { margin: 1px 0 0; font-size: 11px; color: var(--ink-faint); }
+
+/* Silent over an hour: still on the street, but not reporting. */
+.agent.is-silent { opacity: 0.45; }
+.agent.is-silent .agent-now { font-style: italic; }
+
+@media (max-width: 760px) {
+  .columns { grid-template-columns: 1fr; gap: 30px; }
+}

@@ -271,6 +271,8 @@ function serveTranslations(res) {
 }
 
 function serveStatic(res, pathname) {
+  // /swarm is a page, not a directory listing (proposal 59).
+  if (pathname === "/swarm" || pathname === "/swarm/") pathname = "/swarm/index.html";
   const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
   const target = path.resolve(ROOT, relative);
 

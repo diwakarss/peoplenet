@@ -1007,6 +1007,129 @@ describe("the write scripts refuse before they send", function () {
     });
   });
 
+  describe("what the swarm dashboard shows", function () {
+    const S = require("../../governance/swarm.js");
+    const AAOS = [
+      { id: 0, topic: "trilogy widget" }, { id: 1, topic: "widget-builder" },
+      { id: 2, topic: "JD" }, { id: 3, topic: "JD-build" }
+    ];
+    const titled = (id, aaoId, status, title) =>
+      ({ id, aaoId, status, createdAt: 1758000000, text: JSON.stringify({ title }) });
+
+    const PROPOSALS = [
+      titled(50, 2, 0, "Chain to the cloud"),
+      titled(55, 1, 1, "A syntax check for the markup"),
+      titled(58, 2, 1, "The watcher executes"),
+      titled(59, 2, 1, "A swarm dashboard"),
+      titled(60, 2, 0, "Blocked on the Director: the Hetzner API token"),
+      titled(61, 2, 0, "Blocked on the Director: the Mac and the four chat exports"),
+      titled(99, 2, 1, "Blocked on the Director: already cleared by his vote")
+    ];
+    const MESSAGES = [
+      { type: "decision", ts: "2026-09-19T01:00:00Z", refs: ["proposal 50"],
+        summary: "blocked: waiting on the Director for the Hetzner API token" },
+      { type: "decision", ts: "2026-09-19T02:00:00Z", refs: ["proposal 59"],
+        summary: "building: the swarm dashboard" },
+      { type: "decision", ts: "2026-09-19T03:00:00Z", refs: ["proposal 58"],
+        summary: "Built in commit 1ee02d5." },
+      { type: "decision", ts: "2026-09-19T04:00:00Z", refs: ["proposal 55"],
+        summary: "blocked: waiting on Wren for the facet cut" },
+      { from: "kalam", type: "status", ts: "2026-09-19T08:00:00Z", now: "building the dashboard",
+        subject: "s", summary: "p" },
+      { from: "kural", type: "status", ts: "2026-09-19T02:00:00Z", now: "reviewing 59",
+        subject: "s", summary: "p" }
+    ];
+    const NOW = Date.parse("2026-09-19T08:30:00Z");
+    const data = () => S.dashboard(MESSAGES, PROPOSALS, AAOS, NOW);
+
+    it("sorts the Director's own blocks to the top of the Blocked column", function () {
+      const blocked = data().blocked;
+      const directors = blocked.filter((r) => r.directors).map((r) => r.proposalId);
+      const others = blocked.filter((r) => !r.directors).map((r) => r.proposalId);
+      expect(directors).to.deep.equal([50, 60, 61]);
+      expect(others).to.deep.equal([55]);
+      expect(blocked.map((r) => r.proposalId), "his first, in id order")
+        .to.deep.equal([50, 60, 61, 55]);
+    });
+
+    it("says who each block waits on and for what", function () {
+      const byId = {};
+      data().blocked.forEach((r) => { byId[r.proposalId] = r; });
+      expect(byId[50].who).to.equal("the Director");
+      expect(byId[50].what).to.equal("the Hetzner API token");
+      expect(byId[55].who).to.equal("Wren");
+      expect(byId[55].what).to.equal("the facet cut");
+      expect(byId[61].what).to.equal("the Mac and the four chat exports");
+    });
+
+    it("reads an open 'Blocked on the Director' proposal as a block, and a closed one as cleared",
+      function () {
+        const ids = data().blocked.map((r) => r.proposalId);
+        expect(ids, "open").to.contain(60);
+        expect(ids, "executed, so the block has cleared").to.not.contain(99);
+      });
+
+    it("marks where a block came from, because that is how it ends", function () {
+      const byId = {};
+      data().blocked.forEach((r) => { byId[r.proposalId] = r; });
+      expect(byId[60].source, "his vote clears it").to.equal("proposal");
+      expect(byId[55].source, "a later decision clears it").to.equal("decision");
+    });
+
+    it("puts building in Building and built in Done, and neither in the other", function () {
+      const d = data();
+      expect(d.building.map((r) => r.proposalId)).to.deep.equal([59]);
+      expect(d.done.map((r) => r.proposalId)).to.deep.equal([58]);
+    });
+
+    it("gives every row the organisation it belongs to, and a title to click", function () {
+      const row = data().building[0];
+      expect(row.organisation).to.equal("JD");
+      expect(row.title).to.equal("A swarm dashboard");
+      expect(row.aaoId).to.equal(2);
+    });
+
+    it("shows the latest now per agent, with its age", function () {
+      const street = data().street;
+      const kalam = street.filter((a) => a.key === "kalam")[0];
+      expect(kalam.now).to.equal("building the dashboard");
+      expect(kalam.ageMs).to.equal(30 * 60 * 1000);
+      expect(kalam.silent).to.equal(false);
+    });
+
+    it("greys an agent silent over an hour, and one never heard from", function () {
+      const street = data().street;
+      const kural = street.filter((a) => a.key === "kural")[0];
+      expect(kural.silent, "six hours ago").to.equal(true);
+      const wren = street.filter((a) => a.key === "wren")[0];
+      expect(wren.now, "never posted one").to.equal("");
+      expect(wren.silent).to.equal(true);
+    });
+
+    it("keeps the Director off the street: he is who it is for", function () {
+      const keys = data().street.map((a) => a.key);
+      expect(keys).to.not.contain("director");
+      expect(keys).to.not.contain("casting");
+      expect(keys).to.contain("kalam");
+    });
+
+    it("names each agent's organisation from the rule sets, not from membership",
+      function () {
+        expect(S.organisationOf(R.KURAL), "the architect on JD").to.equal("JD");
+        expect(S.organisationOf(R.WREN), "the architect on the main organisation")
+          .to.equal("trilogy widget");
+        expect(S.organisationOf(R.BUILDER), "a voter, not an architect").to.equal("widget-builder");
+      });
+
+    it("shows the chain alone when the message log is missing", function () {
+      const d = S.dashboard([], PROPOSALS, AAOS, NOW);
+      expect(d.blocked.map((r) => r.proposalId), "his filed blocks still read")
+        .to.deep.equal([60, 61]);
+      expect(d.building).to.deep.equal([]);
+      expect(d.street.length, "every agent still gets a line").to.be.greaterThan(0);
+    });
+  });
+
   describe("wren-decide's state reader, which writes no transaction at all", function () {
     it("reads the state out of the words, and refuses words that say nothing", async function () {
       expect(A.stateOf({ summary: "queued behind S12." }).key).to.equal("queued");
