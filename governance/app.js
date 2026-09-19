@@ -53,6 +53,8 @@
   var widgetVotesError = null;
   var kuralVotes = {};
   var kuralVotesError = null;
+  var kalamVotes = {};
+  var kalamVotesError = null;
 
   // The question channel (27.2) and the agent traffic (27.5).
   var questions = [];
@@ -1107,6 +1109,7 @@
     [
       { label: "Wren", address: R.WREN, records: wrenVotes, error: wrenVotesError },
       { label: "Kural", address: R.KURAL, records: kuralVotes, error: kuralVotesError },
+      { label: "Kalam", address: R.KALAM, records: kalamVotes, error: kalamVotesError },
       { label: "Builder", address: R.BUILDER, records: builderVotes, error: builderVotesError },
       { label: "Widget", address: R.WIDGET, records: widgetVotes, error: widgetVotesError }
     ].forEach(function (voter) {
@@ -1253,6 +1256,7 @@
         var voteNodes = p.votes.map(function (v, i) {
           var log = R.sameAddress(v.voter, R.WREN) ? wrenVotes
             : R.sameAddress(v.voter, R.KURAL) ? kuralVotes
+            : R.sameAddress(v.voter, R.KALAM) ? kalamVotes
             : R.sameAddress(v.voter, R.BUILDER) ? builderVotes
             : R.sameAddress(v.voter, R.WIDGET) ? widgetVotes : {};
           var reason = log[p.id] ? " — " + String(log[p.id].reason || "").slice(0, 90) : "";
@@ -1374,7 +1378,8 @@
         aaoId: p.aaoId,
         proposalId: p.id
       });
-      [["Wren", wrenVotes], ["Kural", kuralVotes], ["Builder", builderVotes], ["Widget", widgetVotes]]
+      [["Wren", wrenVotes], ["Kural", kuralVotes], ["Kalam", kalamVotes],
+       ["Builder", builderVotes], ["Widget", widgetVotes]]
         .forEach(function (log) {
           var reason = log[1][p.id];
           if (!reason) return;
@@ -1959,6 +1964,17 @@
     } catch (e4) {
       kuralVotes = {};
       kuralVotesError = e4 && e4.message ? e4.message : String(e4);
+    }
+
+    // Its own block, like every other voter's: one log failing must not blank
+    // another's reasons or report its error under the wrong name.
+    try {
+      var kalamed = await R.fetchKalamVotes(window.fetch.bind(window), "");
+      kalamVotes = R.indexWrenVotes(kalamed);
+      kalamVotesError = null;
+    } catch (e5) {
+      kalamVotes = {};
+      kalamVotesError = e5 && e5.message ? e5.message : String(e5);
     }
   }
 
