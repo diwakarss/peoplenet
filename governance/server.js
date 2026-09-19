@@ -271,8 +271,12 @@ function serveTranslations(res) {
 }
 
 function serveStatic(res, pathname) {
-  // /swarm is a page, not a directory listing (proposal 59).
-  if (pathname === "/swarm" || pathname === "/swarm/") pathname = "/swarm/index.html";
+  // A directory is the page inside it, not a listing: /swarm and
+  // /swarm/samples/ are both somewhere to look, and there is no listing here to
+  // fall back on. Resolved before the path is made relative, so the guard below
+  // still sees the whole path.
+  if (/\/$/.test(pathname)) pathname += "index.html";
+  else if (!path.extname(pathname)) pathname += "/index.html";
   const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
   const target = path.resolve(ROOT, relative);
 
