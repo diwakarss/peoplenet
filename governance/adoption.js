@@ -31,6 +31,22 @@
   // the loose ones. "closed: solved by the build" must not read as "built".
   var STATES = [
     {
+      // Proposal 59, and Kural's answer to the Director on it: blocked is a
+      // state of its own, not a footnote. An agent that cannot proceed posts
+      // it as a decision on the proposal, and the dashboard's first column
+      // reads it. A later "building" or "built" supersedes it on its own,
+      // because the card and the check already judge the latest decision only.
+      //
+      // First in this list and anchored at the start: "blocked: waiting on the
+      // Director for the Hetzner token" must never be read as "waiting", and
+      // nothing that merely mentions a block is read as blocked.
+      key: "blocked",
+      label: "Blocked",
+      chip: "blocked",
+      match: /^\s*blocked\s*:/i,
+      hint: 'starts "blocked: waiting on <who> for <what>"'
+    },
+    {
       // "closed:" is the marker; what follows is how it was closed. 27.12(3)
       // says "solved by", but "superseded by" closes a proposal just as truly,
       // and a state reader that only knows one phrasing leaves the card blank
@@ -204,6 +220,24 @@
 
   // "waiting: kept open on the Director's request..." -> the reason, without the
   // word "waiting".
+  function isBlocked(adoption) {
+    return Boolean(adoption && adoption.state.key === "blocked");
+  }
+
+  // Who the block waits on, and for what. Both halves are needed: a column
+  // that says only "blocked" tells the Director nothing he can act on.
+  // Returns null when the message is not blocked, and fills what it can when
+  // the phrase is only half there -- a partial answer beats a blank line.
+  function blockedOn(adoption) {
+    if (!isBlocked(adoption)) return null;
+    var text = textOf(adoption.text).replace(/^\s*blocked\s*:\s*/i, "").trim();
+    var m = /^waiting\s+on\s+(.+?)\s+for\s+(.+)$/i.exec(text);
+    if (m) return { who: m[1].trim(), what: m[2].trim().replace(/[.\s]+$/, ""), text: text };
+    var who = /^waiting\s+on\s+(.+)$/i.exec(text);
+    if (who) return { who: who[1].trim().replace(/[.\s]+$/, ""), what: "", text: text };
+    return { who: "", what: text, text: text };
+  }
+
   function waitingReason(adoption) {
     if (!isWaiting(adoption)) return null;
     var m = /^\s*waiting\s*:\s*(.+)$/i.exec(adoption.text);
@@ -220,6 +254,8 @@
     historyFor: historyFor,
     adoptionOf: adoptionOf,
     isWaiting: isWaiting,
+    isBlocked: isBlocked,
+    blockedOn: blockedOn,
     isClosedByBuild: isClosedByBuild,
     solvedBy: solvedBy,
     waitingReason: waitingReason

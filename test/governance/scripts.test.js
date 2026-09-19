@@ -963,6 +963,50 @@ describe("the write scripts refuse before they send", function () {
     });
   });
 
+  describe("blocked, a state of its own", function () {
+    const decide = (summary) => A.adoptionOf(
+      A.indexDecisions([{ type: "decision", refs: ["proposal 9"], summary: summary }]), 9);
+
+    it("reads a block and parses who it waits on and for what", function () {
+      const a = decide("blocked: waiting on the Director for the Hetzner API token");
+      expect(a.state.key).to.equal("blocked");
+      expect(A.isBlocked(a)).to.equal(true);
+      expect(A.blockedOn(a).who).to.equal("the Director");
+      expect(A.blockedOn(a).what).to.equal("the Hetzner API token");
+    });
+
+    it("is not 'waiting': one is a choice to defer, the other is somebody else's move",
+      function () {
+        expect(decide("blocked: waiting on Wren for the facet cut").state.key).to.equal("blocked");
+        expect(decide("waiting: not until the Postman work lands").state.key).to.equal("waiting");
+        expect(A.blockedOn(decide("waiting: not yet"))).to.equal(null);
+      });
+
+    it("fills what it can when the phrase is only half there", function () {
+      expect(A.blockedOn(decide("blocked: waiting on Wren")).who).to.equal("Wren");
+      expect(A.blockedOn(decide("blocked: waiting on Wren")).what).to.equal("");
+      expect(A.blockedOn(decide("blocked: the node is down")).what).to.equal("the node is down");
+    });
+
+    it("is superseded by a later building or built, with no extra rule", function () {
+      const log = [
+        { type: "decision", ts: "2026-01-01T00:00:00Z", refs: ["proposal 9"],
+          summary: "blocked: waiting on the Director for the token" },
+        { type: "decision", ts: "2026-01-02T00:00:00Z", refs: ["proposal 9"],
+          summary: "building the thing now that the token is in." }
+      ];
+      const latest = A.indexDecisions(log);
+      expect(A.stateOf(latest[9]).key).to.equal("building");
+      expect(A.isBlocked(A.adoptionOf(latest, 9))).to.equal(false);
+      // And the block is still in the history, which is what append-only means.
+      expect(A.historyFor(log, 9).map((m) => A.stateOf(m).key)).to.deep.equal(["blocked", "building"]);
+    });
+
+    it("does not read a passing mention of a block as the state", function () {
+      expect(decide("Built in commit abc; the blocked path is gone.").state.key).to.equal("built");
+    });
+  });
+
   describe("wren-decide's state reader, which writes no transaction at all", function () {
     it("reads the state out of the words, and refuses words that say nothing", async function () {
       expect(A.stateOf({ summary: "queued behind S12." }).key).to.equal("queued");

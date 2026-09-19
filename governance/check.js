@@ -745,6 +745,7 @@ async function main() {
       ["Built in commit 506df15, in the widget after the next restart.", "in-widget"],
       ["Built in commit 4ebb5a5.", "built"],
       ["waiting: not until the Postman work lands.", "waiting"],
+      ["blocked: waiting on the Director for the Hetzner API token.", "blocked"],
       ["back in the queue: brought back by the Director.", "back"],
       ["closed: solved by the shared mtime_cache helper.", "closed"],
       ["something that says nothing", "unknown"]
@@ -757,6 +758,19 @@ async function main() {
     });
     // "closed: solved by the build" must not read as "built".
     assert.strictEqual(A.stateOf({ summary: "closed: solved by the build in commit x" }).key, "closed");
+    // "blocked: waiting on ..." must not read as "waiting": one is a choice to
+    // defer, the other is a thing somebody else has to do.
+    assert.strictEqual(A.stateOf({ summary: "blocked: waiting on Wren for the facet cut" }).key, "blocked");
+  });
+
+  check("a blocked proposal names who it waits on and for what", () => {
+    Object.keys(adoptions).forEach((id) => {
+      const adoption = A.adoptionOf(adoptions, id);
+      if (!A.isBlocked(adoption)) return;
+      const on = A.blockedOn(adoption);
+      assert.ok(on && (on.who || on.what),
+        `proposal ${id} is blocked and says neither who it waits on nor for what`);
+    });
   });
 
   check("the latest decision wins, so a waiting proposal can come back", () => {
