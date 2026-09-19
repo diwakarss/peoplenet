@@ -269,6 +269,19 @@
     }
 
     if (base.key !== "sub") return base;
+
+    // The interim rule stands in for ONE voter that cannot vote: account 4, the
+    // widget, on the widget-builder. It was written against that organisation
+    // and keyed on "sub", and JD-build is a sub-organisation too -- so from the
+    // day JD-build was created the page handed it the widget-builder's rule:
+    // Builder and Wren as its voters, Wren executing, a one-hour window, and
+    // Kalam told it was "not one of its voters". Worse, it could never end,
+    // because the widget is not a member there and so can never cast the vote
+    // that lifts it.
+    //
+    // An organisation whose rule set does not name the widget as a voter has
+    // nothing to stand in for. It keeps its own rule.
+    if (!(base.voters || []).some(function (a) { return sameAddress(a, WIDGET); })) return base;
     if (widgetHasVoted(proposals)) return base;
 
     return {
@@ -729,6 +742,7 @@
   // anybody deploying anything.
   var WIDGET_VOTES_PATH = "/widget-votes.json";
   var KURAL_VOTES_PATH = "/kural-votes.json";
+  var KALAM_VOTES_PATH = "/kalam-votes.json";
 
   // Parse the .jsonl text into records, skipping blank and malformed lines.
   function parseWrenVotesJsonl(text) {
@@ -799,6 +813,10 @@
 
   async function fetchKuralVotes(fetchImpl, baseUrl) {
     return fetchVoteLog(fetchImpl, baseUrl, KURAL_VOTES_PATH);
+  }
+
+  async function fetchKalamVotes(fetchImpl, baseUrl) {
+    return fetchVoteLog(fetchImpl, baseUrl, KALAM_VOTES_PATH);
   }
 
   // --- what a vote points at (proposal 29) -------------------------------
@@ -1094,6 +1112,8 @@
     WIDGET_VOTES_PATH: WIDGET_VOTES_PATH,
     KURAL_VOTES_PATH: KURAL_VOTES_PATH,
     fetchKuralVotes: fetchKuralVotes,
+    KALAM_VOTES_PATH: KALAM_VOTES_PATH,
+    fetchKalamVotes: fetchKalamVotes,
     architectLabel: architectLabel,
     parseWrenVotesJsonl: parseWrenVotesJsonl,
     indexWrenVotes: indexWrenVotes,

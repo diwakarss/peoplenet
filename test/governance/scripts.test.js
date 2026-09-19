@@ -405,7 +405,7 @@ describe("the write scripts refuse before they send", function () {
   // One vote script, told which account it is (proposal 30). builder-vote.js was
   // wren-vote.js with two names changed, so the guard against voting on an
   // unfiled id had to be written twice and --dry-run had to be remembered twice.
-  describe("one vote script for all three agents (proposal 30)", function () {
+  describe("one vote script for every agent that votes (proposal 30)", function () {
     const V = require("../../governance/vote.js");
     const VOTERS = [
       { file: "wren-vote.js", account: 1, label: "Wren",
@@ -413,7 +413,11 @@ describe("the write scripts refuse before they send", function () {
       { file: "builder-vote.js", account: 3, label: "Builder",
         log: "builder-votes.jsonl", defaultAaoId: 1 },
       { file: "widget-vote.js", account: 4, label: "Widget",
-        log: "widget-votes.jsonl", defaultAaoId: 1 }
+        log: "widget-votes.jsonl", defaultAaoId: 1 },
+      { file: "kural-vote.js", account: 5, label: "Kural",
+        log: "kural-votes.jsonl", defaultAaoId: 2 },
+      { file: "kalam-vote.js", account: 6, label: "Kalam",
+        log: "kalam-votes.jsonl", defaultAaoId: 3 }
     ];
 
     function sourceOf(file) {
@@ -471,9 +475,10 @@ describe("the write scripts refuse before they send", function () {
         expect(path.basename(file)).to.equal(voter.log);
         expect(path.basename(path.dirname(file))).to.equal("governance");
       }
-      // Three voters, three logs: a shared script must not pool them.
+      // One log each: a shared script must not pool them. Counted off the
+      // list, so adding a voter does not need this number edited too.
       const logs = VOTERS.map((v) => v.log);
-      expect(new Set(logs).size).to.equal(3);
+      expect(new Set(logs).size).to.equal(VOTERS.length);
     });
 
     it("prints each script's own name and its own standing in its usage", function () {
@@ -600,6 +605,23 @@ describe("the write scripts refuse before they send", function () {
         const effective = R.effectiveRules(subAao, await R.readProposals(aao, subId));
         expect(effective.voters.length, "the sub-AAO has 4 members but 2 voters").to.equal(2);
       });
+
+    // The interim rule was keyed on "sub", and JD-build is a sub-organisation
+    // too, so it was handed the widget-builder's rule from the day it existed
+    // -- and could never escape, because the widget is not a member there and
+    // so can never cast the vote that lifts it.
+    it("keeps the interim rule on the organisation it was written for", function () {
+      const sub = R.effectiveRules({ topic: "widget-builder", members: [] }, []);
+      expect(sub.interim, "the widget has still never voted there").to.equal(true);
+      expect(sub.voters.map(R.labelFor)).to.deep.equal(["Builder", "Wren"]);
+
+      const build = R.effectiveRules({ topic: "JD-build", members: [] }, []);
+      expect(build.interim, "no widget here, so nothing to stand in for").to.not.equal(true);
+      expect(build.voters.map(R.labelFor)).to.deep.equal(["Kalam"]);
+      expect(R.labelFor(build.casting)).to.equal("Kural");
+      expect(R.labelFor(build.executeAs)).to.equal("Kural");
+      expect(build.windowHours).to.equal(24);
+    });
 
     // Proposal 52: an organisation that builds for another says so in its rule
     // set, and the page reads the tree off that one fact.
