@@ -1341,6 +1341,84 @@ describe("the write scripts refuse before they send", function () {
     });
   });
 
+  describe("the kolam a queue draws", function () {
+    const K = require("../../governance/swarm/kolam.js");
+    const KALAM = "0x976EA74026E726554dB657fA54763abd0C3a0aa9";
+    const task = (id, state, at) =>
+      ({ proposalId: id, aaoId: 2, title: "Task " + id, state,
+         who: state === "blocked" ? "the Director" : "", what: "", at });
+    const queue = (n, state) =>
+      Array.from({ length: n }, (_, i) => task(i + 1, state || "queued", i + 1));
+
+    it("grows the grid to hold the queue, on odd sizes only", function () {
+      expect(K.gridFor(0)).to.equal(7);
+      expect(K.gridFor(36), "36 dots fit a 7 grid exactly").to.equal(7);
+      expect(K.gridFor(37), "one more needs the next odd size").to.equal(9);
+      expect(K.gridFor(64)).to.equal(9);
+      expect(K.gridFor(65)).to.equal(11);
+      [0, 1, 37, 99].forEach((n) => expect(K.gridFor(n) % 2, n + " tasks").to.equal(1));
+    });
+
+    it("never shrinks below the size the kolam already had", function () {
+      expect(K.gridFor(1, 11), "a bigger minimum wins").to.equal(11);
+      expect(K.gridFor(1, 3), "and a smaller one does not").to.equal(7);
+    });
+
+    it("fills the dots from the centre outward, oldest at the centre", function () {
+      const k = K.withTasks(KALAM, queue(5));
+      const centre = k.size / 2;
+      const held = k.pulli.filter((p) => p.task)
+        .map((p) => ({ id: p.task.proposalId, d: Math.hypot(p.x - centre, p.y - centre) }))
+        .sort((a, b) => a.id - b.id);
+      expect(held.length).to.equal(5);
+      for (let i = 1; i < held.length; i++) {
+        expect(held[i].d).to.be.at.least(held[i - 1].d - 0.001);
+      }
+    });
+
+    it("leaves every other dot as open ground", function () {
+      const k = K.withTasks(KALAM, queue(5));
+      expect(k.pulli.filter((p) => p.task).length).to.equal(5);
+      expect(k.pulli.filter((p) => p.state === "open").length).to.equal(k.dots.length - 5);
+    });
+
+    it("draws the line as far as the queue is done", function () {
+      const half = [task(1, "built", 1), task(2, "built", 2), task(3, "queued", 3), task(4, "blocked", 4)];
+      const k = K.withTasks(KALAM, half);
+      expect(k.done).to.equal(2);
+      expect(k.total).to.equal(4);
+      expect(k.progress).to.equal(0.5);
+      expect(K.withTasks(KALAM, queue(4, "built")).progress, "a finished queue").to.equal(1);
+      expect(K.withTasks(KALAM, []).progress, "nothing owed is nothing unfinished").to.equal(1);
+    });
+
+    it("keeps the whole closed loop and hides the rest, rather than drawing a shorter one",
+      function () {
+        const k = K.withTasks(KALAM, queue(4, "queued"));
+        expect(K.loopsOf(k.arcs).length, "still one loop").to.equal(1);
+        expect(k.path.slice(-1), "still closed").to.equal("Z");
+        const svg = K.toSVG(KALAM, { tasks: queue(4, "queued") });
+        expect(svg).to.contain("stroke-dashoffset");
+        expect(svg, "the whole path is still in the file").to.contain(k.path);
+      });
+
+    it("still refuses to draw anything that breaks the kolam's own rules", function () {
+      const k = K.withTasks(KALAM, queue(40));
+      expect(k.cells, "the queue outgrew the default grid").to.equal(9);
+      expect(K.loopsOf(k.arcs).length).to.equal(1);
+      expect(k.dots.length).to.equal(64);
+    });
+
+    it("gives every task dot a title, a state and a way in from the keyboard", function () {
+      const svg = K.toSVG(KALAM, { tasks: [task(7, "blocked", 1), task(8, "built", 2)] });
+      expect((svg.match(/tabindex="0"/g) || []).length, "one per task").to.equal(2);
+      expect(svg).to.contain('data-proposal="7"');
+      expect(svg).to.contain('data-state="blocked"');
+      expect(svg, "the block says who, with no script running").to.contain("waiting on the Director");
+      expect(svg, "an empty dot says so too").to.contain("Open ground");
+    });
+  });
+
   describe("wren-decide's state reader, which writes no transaction at all", function () {
     it("reads the state out of the words, and refuses words that say nothing", async function () {
       expect(A.stateOf({ summary: "queued behind S12." }).key).to.equal("queued");

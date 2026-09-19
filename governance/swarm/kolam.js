@@ -45,6 +45,21 @@
 //
 // The seed is the address: the same agent draws the same kolam every time, and
 // no two addresses draw the same one.
+//
+// The dots are the tasks (proposal 64)
+//
+//   In a kolam the dots come first and the line is drawn around them. Here each
+//   dot is one task the agent holds. Tasks fill the dots from the centre
+//   outward, oldest at the centre, the way a kolam is drawn; a dot with no task
+//   is faint, open ground. A dot is a ring while its task is queued, pulses
+//   while it is being built, fills when it is done, and glows amber when it is
+//   blocked.
+//
+//   The line reaches a dot only when its task is done, so a finished kolam is a
+//   finished queue. The line is NOT a different path: the whole closed loop is
+//   still built and still proved, and the unfinished part is hidden with
+//   stroke-dashoffset. Drawing a shorter path would have thrown away the one
+//   thing this file exists to guarantee.
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
     module.exports = factory(require("../protocol.js"));
@@ -409,6 +424,65 @@
     return { path: d.join(" "), lit: { x: round(ended.cx), y: round(ended.cy) } };
   }
 
+  // --- the tasks on the dots ----------------------------------------------
+
+  // The smallest grid that holds the queue, never smaller than the default.
+  // Odd only: see "The symmetry" above -- an even grid has no single loop.
+  function gridFor(taskCount, minCells) {
+    var n = Math.max(minCells || DEFAULTS.cells, DEFAULTS.cells);
+    while ((n - 1) * (n - 1) < taskCount) n += 2;
+    return n;
+  }
+
+  // The dots from the centre outward. Distance first, then angle, then the
+  // order they were made: the same queue always lands on the same dots.
+  function dotOrder(k) {
+    var centre = k.size / 2;
+    return k.dots
+      .map(function (dot, index) {
+        return {
+          index: index,
+          dot: dot,
+          distance: Math.hypot(dot.x - centre, dot.y - centre),
+          angle: Math.atan2(dot.y - centre, dot.x - centre)
+        };
+      })
+      .sort(function (a, b) {
+        return (a.distance - b.distance) || (a.angle - b.angle) || (a.index - b.index);
+      });
+  }
+
+  // A kolam with a queue on it. `tasks` is what swarm.js tasksFor() returns,
+  // oldest first; the first task takes the most central dot.
+  function withTasks(seed, tasks, options) {
+    var list = tasks || [];
+    var o = Object.assign({}, options || {});
+    o.cells = gridFor(list.length, o.cells);
+    var k = kolam(seed, o);
+
+    var order = dotOrder(k);
+    var placed = k.dots.map(function (dot) {
+      return { x: dot.x, y: dot.y, task: null, state: "open" };
+    });
+    order.forEach(function (slot, rank) {
+      if (rank >= list.length) return;
+      placed[slot.index].task = list[rank];
+      placed[slot.index].state = list[rank].state;
+    });
+
+    var done = list.filter(function (t) { return t.state === "built"; }).length;
+    return Object.assign({}, k, {
+      tasks: list,
+      pulli: placed,
+      done: done,
+      total: list.length,
+      // An empty queue is a finished one: nothing is owed, so the threshold is
+      // complete. A half-drawn kolam on an agent with no work would read as a
+      // failure rather than as rest.
+      progress: list.length ? done / list.length : 1
+    });
+  }
+
   // --- one standalone SVG -------------------------------------------------
 
   function isDotOf(k, x, y) {
@@ -437,15 +511,22 @@
   var INK = "#1d1c1a";
   var DOT = "#8b877f";
   var LIT = "#a8322a";
+  var FAINT = "#d8d4cc";
 
-  // state: "idle" -- the line closed and complete, the agent at rest
-  //        "working" -- the line part drawn, and still being drawn
-  //        "blocked" -- the line open, stopped at a dot, and that dot lit
+  // Emits the whole figure, tasks and all. The same markup serves a standalone
+  // file and the dashboard, so the samples the Director accepted and the page
+  // he uses cannot drift apart.
+  //
+  // state: given explicitly it overrides the queue -- "idle", "working",
+  //        "blocked". Given no state, the queue decides: the line is revealed
+  //        as far as the queue is done.
   function toSVG(seed, options) {
     var o = options || {};
-    var k = kolam(seed, o);
-    var state = o.state || "idle";
+    var hasTasks = Array.isArray(o.tasks);
+    var k = hasTasks ? withTasks(seed, o.tasks, o) : kolam(seed, o);
+    var state = o.state || null;
     var stroke = o.stroke || 2;
+    var id = o.id || "k" + P.sha256Hex(String(seed)).slice(0, 8);
     var lit = null;
     var d = k.path;
     var dash = "";
@@ -455,25 +536,99 @@
       d = open.path;
       lit = open.lit;
     } else if (state === "working") {
-      var drawn = round(k.length * (o.progress === undefined ? 0.45 : o.progress));
-      dash = ' stroke-dasharray="' + drawn + ' ' + round(k.length) + '"';
+      dash = reveal(k.length, o.progress === undefined ? 0.45 : o.progress);
+    } else if (hasTasks) {
+      // The whole loop is still there; the unfinished part is simply not shown.
+      dash = reveal(k.length, k.progress);
     }
 
     var parts = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + k.size + ' ' + k.size +
-        '" width="' + k.size + '" height="' + k.size + '" role="img">',
-      '  <title>' + state + ' kolam for ' + escapeXml(String(seed)) + '</title>',
-      '  <rect width="' + k.size + '" height="' + k.size + '" fill="none"/>'
+        '" width="' + (o.width || k.size) + '" height="' + (o.height || k.size) +
+        '" class="kolam" data-agent="' + escapeXml(o.agent || "") +
+        '" data-label="' + escapeXml(o.label || "") +
+        '" data-now="' + escapeXml(o.now || "") +
+        '" data-done="' + (hasTasks ? k.done : "") +
+        '" data-total="' + (hasTasks ? k.total : "") + '" role="img">',
+      '  <title>' + escapeXml(o.label || String(seed)) + (hasTasks
+        ? ": " + k.done + " of " + k.total + " done" : "") + '</title>',
+      '  <style>' + styleFor(id, stroke) + '</style>',
+      '  <g id="' + id + '">'
     ];
-    k.dots.forEach(function (dot) {
-      var isLit = lit && Math.abs(dot.x - lit.x) < 0.01 && Math.abs(dot.y - lit.y) < 0.01;
-      parts.push('  <circle cx="' + round(dot.x) + '" cy="' + round(dot.y) + '" r="' +
-        (isLit ? stroke * 1.9 : stroke * 0.85) + '" fill="' + (isLit ? LIT : DOT) + '"/>');
-    });
-    parts.push('  <path d="' + d + '" fill="none" stroke="' + (state === "blocked" ? LIT : INK) +
-      '" stroke-width="' + stroke + '" stroke-linecap="round"' + dash + '/>');
+
+    if (hasTasks) {
+      k.pulli.forEach(function (dot) { parts.push(taskDot(dot, stroke, k)); });
+    } else {
+      k.dots.forEach(function (dot) {
+        var isLit = lit && Math.abs(dot.x - lit.x) < 0.01 && Math.abs(dot.y - lit.y) < 0.01;
+        parts.push('    <circle class="pulli ' + (isLit ? "is-blocked" : "is-open") +
+          '" cx="' + round(dot.x) + '" cy="' + round(dot.y) + '" r="' +
+          (isLit ? stroke * 1.9 : stroke * 0.85) + '"/>');
+      });
+    }
+
+    parts.push('    <path class="line' + (state === "blocked" ? " is-broken" : "") +
+      '" d="' + d + '" ' + dash + '/>');
+    parts.push('  </g>');
     parts.push('</svg>');
     return parts.join(NEWLINE) + NEWLINE;
+  }
+
+  // The unfinished part of the line is hidden, not removed.
+  function reveal(length, progress) {
+    var shown = Math.max(0, Math.min(1, progress));
+    return 'stroke-dasharray="' + round(length) + '" stroke-dashoffset="' +
+      round(length * (1 - shown)) + '"';
+  }
+
+  function taskDot(dot, stroke, k) {
+    var task = dot.task;
+    var radius = task ? stroke * 1.7 : stroke * 0.8;
+    if (!task) {
+      return '    <circle class="pulli is-open" cx="' + round(dot.x) + '" cy="' + round(dot.y) +
+        '" r="' + radius + '"><title>Open ground: no task on this dot.</title></circle>';
+    }
+    // Focusable and named, so the kolam reads without a mouse.
+    return '    <circle class="pulli is-' + task.state + '" cx="' + round(dot.x) + '" cy="' +
+      round(dot.y) + '" r="' + radius + '" tabindex="0" role="link"' +
+      ' data-proposal="' + task.proposalId + '"' +
+      ' data-aao="' + (task.aaoId === null ? "" : task.aaoId) + '"' +
+      ' data-state="' + escapeXml(task.state) + '"' +
+      ' data-title="' + escapeXml(task.title) + '"' +
+      ' data-at="' + (task.at === null || task.at === undefined ? "" : task.at) + '"' +
+      ' data-who="' + escapeXml(task.who || "") + '"' +
+      ' data-what="' + escapeXml(task.what || "") + '">' +
+      '<title>' + escapeXml(titleLine(task)) + '</title></circle>';
+  }
+
+  // What a screen reader and a native tooltip get, with no script running.
+  function titleLine(task) {
+    var line = "Proposal " + task.proposalId + ": " + task.title + " \u2014 " + task.state;
+    if (task.state === "blocked" && (task.who || task.what)) {
+      line += ", waiting on " + (task.who || "someone") + (task.what ? " for " + task.what : "");
+    }
+    return line;
+  }
+
+  function styleFor(id, stroke) {
+    return [
+      "#" + id + " .line{fill:none;stroke:" + INK + ";stroke-width:" + stroke +
+        ";stroke-linecap:round}",
+      "#" + id + " .line.is-broken{stroke:" + LIT + "}",
+      "#" + id + " .pulli{stroke-width:" + (stroke * 0.7) + "}",
+      "#" + id + " .is-open{fill:" + FAINT + ";stroke:none}",
+      "#" + id + " .is-queued{fill:none;stroke:" + DOT + "}",
+      "#" + id + " .is-built{fill:" + INK + ";stroke:none}",
+      "#" + id + " .is-blocked{fill:" + LIT + ";stroke:none}",
+      "#" + id + " .is-building{fill:" + DOT + ";stroke:" + DOT +
+        ";animation:kolam-pulse 1.6s ease-in-out infinite}",
+      "#" + id + " .pulli[tabindex]{cursor:pointer}",
+      "#" + id + " .pulli[tabindex]:hover,#" + id + " .pulli[tabindex]:focus{stroke:" + LIT +
+        ";stroke-width:" + (stroke * 1.4) + ";outline:none}",
+      "@keyframes kolam-pulse{0%,100%{opacity:.35}50%{opacity:1}}",
+      "@media (prefers-reduced-motion:reduce){#" + id +
+        " .is-building{animation:none;opacity:.7}}"
+    ].join("");
   }
 
   function escapeXml(text) {
@@ -486,6 +641,9 @@
     DEFAULTS: DEFAULTS,
     kolam: kolam,
     toSVG: toSVG,
+    withTasks: withTasks,
+    gridFor: gridFor,
+    dotOrder: dotOrder,
     lengthOf: lengthOf,
     openPath: openPath,
     loopsOf: loopsOf,
