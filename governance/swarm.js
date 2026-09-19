@@ -158,7 +158,7 @@
   // The latest `now` each agent posted, with how old it is. An agent that has
   // never posted one still gets a line: silence is information, and leaving it
   // off the street would read as "no such agent".
-  function street(messages, nowMs) {
+  function street(messages, nowMs, proposals, aaos) {
     var at = nowMs === undefined || nowMs === null ? Date.now() : nowMs;
     var latest = {};
     (messages || []).forEach(function (m) {
@@ -177,6 +177,10 @@
       .map(function (role) {
         var said = latest[role.key] || null;
         var age = said && said.when !== null ? at - said.when : null;
+        // The queue the agent's kolam draws (proposal 64). It travels with the
+        // rest of the line so the page reads one object per agent, and so the
+        // dashboard can tell whether a kolam needs redrawing at all.
+        var tasks = tasksFor(role.key, messages, proposals, aaos);
         return {
           key: role.key,
           label: role.label,
@@ -186,9 +190,129 @@
           at: said ? said.ts : null,
           ageMs: age,
           // Greyed: silent over an hour, or never heard from at all.
-          silent: age === null || age > SILENT_MS
+          silent: age === null || age > SILENT_MS,
+          tasks: tasks,
+          done: tasks.filter(function (t) { return t.state === "built"; }).length
         };
       });
+  }
+
+  // --- an agent's tasks ---------------------------------------------------
+  //
+  // Proposal 64, and Kural's answer to the Director on it: the dots are the
+  // tasks. A task is a proposal the agent has picked up -- a decision message
+  // from that agent on the proposal starts it -- and its state is read off that
+  // agent's latest decision on it. An architect also holds the proposals it
+  // filed that are still open.
+  //
+  // adoption.js knows nine states and a dot has four, so they fold:
+  //
+  //   blocked                    blocked    somebody else has to move
+  //   building                   building   in hand
+  //   built, in-widget, closed   built      finished, however it finished
+  //   everything else            queued     held, not moving
+  //
+  // "waiting" folds to queued on purpose: a task deferred is still held. Only
+  // the built bucket counts as done, because done is what the line is drawn to.
+  var DOT_STATES = { blocked: "blocked", building: "building", built: "built", "in-widget": "built", closed: "built" };
+
+  function dotStateOf(key) {
+    return DOT_STATES[key] || "queued";
+  }
+
+  function addressOf(agent) {
+    if (/^0x/i.test(textOf(agent))) return textOf(agent);
+    var role = R.ROLES.filter(function (x) { return x.key === textOf(agent).toLowerCase(); })[0];
+    return role ? role.address : "";
+  }
+
+  function isArchitect(address) {
+    return Object.keys(R.AAO_RULES).some(function (topic) {
+      var rules = R.AAO_RULES[topic];
+      return rules.architect && R.sameAddress(rules.architect, address);
+    });
+  }
+
+  // Every task this agent holds, oldest first -- the order a kolam is drawn in,
+  // from the centre outward.
+  function tasksFor(agent, messages, proposals, aaos) {
+    var key = textOf(agent).toLowerCase();
+    var address = addressOf(agent);
+    var byId = {};
+    (proposals || []).forEach(function (p) { byId[p.id] = p; });
+    var orgOf = {};
+    (aaos || []).forEach(function (a) { orgOf[a.id] = a.topic; });
+
+    var own = (messages || []).filter(function (m) {
+      return m && m.type === "decision" && textOf(m.from).toLowerCase() === key;
+    });
+    var latest = A.indexDecisions(own);
+
+    // When the agent first said anything about it: that is when it picked it up.
+    var pickedUp = {};
+    own.forEach(function (m) {
+      var id = A.proposalOf(m);
+      if (id === null) return;
+      var when = timeOf(m.ts);
+      if (when === null) return;
+      if (pickedUp[id] === undefined || when < pickedUp[id]) pickedUp[id] = when;
+    });
+
+    var tasks = [];
+    var held = {};
+
+    Object.keys(latest).forEach(function (id) {
+      var adoption = A.adoptionOf(latest, id);
+      var proposal = byId[Number(id)] || {};
+      tasks.push(taskRow(Number(id), proposal, orgOf, dotStateOf(adoption.state.key),
+        A.blockedOn(adoption), pickedUp[id] || timeOf(adoption.message.ts), adoption.text));
+      held[Number(id)] = true;
+    });
+
+    // An architect holds what it filed until the organisation closes it. These
+    // never carry a decision of its own -- the filing IS the pickup.
+    if (address && isArchitect(address)) {
+      (proposals || []).forEach(function (p) {
+        if (p.status !== 0 || held[p.id]) return;
+        if (!R.sameAddress(p.proposer, address)) return;
+        tasks.push(taskRow(p.id, p, orgOf, "queued", null,
+          p.createdAt ? p.createdAt * 1000 : null, ""));
+      });
+    }
+
+    // Oldest first. A task with no clock sinks to the end rather than jumping
+    // to the centre: the centre is for what has been waiting longest, and an
+    // unknown age is not a long one.
+    return tasks.sort(function (a, b) {
+      if (a.at === null && b.at === null) return a.proposalId - b.proposalId;
+      if (a.at === null) return 1;
+      if (b.at === null) return -1;
+      return a.at - b.at || a.proposalId - b.proposalId;
+    });
+  }
+
+  function taskRow(id, proposal, orgOf, state, blocked, at, said) {
+    var title = titleOf(proposal) || ("Proposal " + id);
+    // An open "Blocked on the Director" proposal is a block, whoever holds it:
+    // the column above the kolam already reads it that way, and the kolam
+    // showing the same proposal as merely queued would make the page argue with
+    // itself. The title carries who and what.
+    var human = proposal.status === 0 && HUMAN_BLOCK_TITLE.test(title);
+    if (human && state !== "building") {
+      state = "blocked";
+      blocked = { who: "the Director", what: title.replace(HUMAN_BLOCK_TITLE, "").replace(/^\s*:\s*/, "").trim() };
+    }
+    return {
+      proposalId: id,
+      aaoId: proposal.aaoId === undefined ? null : proposal.aaoId,
+      organisation: orgOf[proposal.aaoId] || "",
+      title: title,
+      state: state,
+      who: blocked ? blocked.who : "",
+      what: blocked ? blocked.what : "",
+      at: at === undefined ? null : at,
+      said: said || ""
+    };
   }
 
   function dashboard(messages, proposals, aaos, nowMs) {
@@ -197,7 +321,7 @@
       blocked: cols.blocked,
       building: cols.building,
       done: cols.done,
-      street: street(messages, nowMs)
+      street: street(messages, nowMs, proposals, aaos)
     };
   }
 
@@ -207,6 +331,8 @@
     titleOf: titleOf,
     columns: columns,
     street: street,
+    tasksFor: tasksFor,
+    dotStateOf: dotStateOf,
     organisationOf: organisationOf,
     dashboard: dashboard
   };

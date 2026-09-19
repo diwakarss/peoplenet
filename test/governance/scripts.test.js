@@ -1239,6 +1239,108 @@ describe("the write scripts refuse before they send", function () {
     });
   });
 
+  // --- proposal 64: the dots are the tasks --------------------------------
+
+  describe("the tasks an agent holds", function () {
+    const S = require("../../governance/swarm.js");
+    const AAOS = [{ id: 2, topic: "JD" }, { id: 3, topic: "JD-build" }];
+    const titled = (id, status, title, proposer, createdAt) =>
+      ({ id, aaoId: 2, status, proposer, createdAt, text: JSON.stringify({ title }) });
+
+    const PROPOSALS = [
+      titled(70, 1, "Done and dusted", R.KALAM, 1758000000),
+      titled(71, 0, "Still in hand", R.KALAM, 1758000100),
+      titled(72, 0, "Kural filed this and it is open", R.KURAL, 1758000200),
+      titled(73, 0, "Blocked on the Director: the Hetzner API token", R.KURAL, 1758000300),
+      titled(74, 1, "Kural filed this and it closed", R.KURAL, 1758000400)
+    ];
+    const decision = (from, ts, id, summary) =>
+      ({ from, type: "decision", ts, refs: ["proposal " + id], summary, subject: "s" });
+    const MESSAGES = [
+      decision("kalam", "2026-09-19T01:00:00Z", 70, "building: picked it up."),
+      decision("kalam", "2026-09-19T02:00:00Z", 70, "Built in commit abc1234."),
+      decision("kalam", "2026-09-19T03:00:00Z", 71, "building: in hand now."),
+      decision("kural", "2026-09-19T04:00:00Z", 72, "blocked: waiting on Wren for the facet cut"),
+      decision("wren", "2026-09-19T05:00:00Z", 70, "Built in commit abc1234.")
+    ];
+
+    it("counts a proposal the agent has decided on, and nobody else's", function () {
+      const mine = S.tasksFor("kalam", MESSAGES, PROPOSALS, AAOS).map((t) => t.proposalId);
+      expect(mine).to.deep.equal([70, 71]);
+      expect(S.tasksFor("wren", MESSAGES, PROPOSALS, AAOS).map((t) => t.proposalId))
+        .to.deep.equal([70]);
+    });
+
+    it("takes the state from that agent's latest decision, not from anyone else's",
+      function () {
+        const mine = S.tasksFor("kalam", MESSAGES, PROPOSALS, AAOS);
+        expect(mine.filter((t) => t.proposalId === 70)[0].state, "building then built")
+          .to.equal("built");
+        expect(mine.filter((t) => t.proposalId === 71)[0].state).to.equal("building");
+      });
+
+    it("folds adoption's nine states onto the dot's four", function () {
+      expect(S.dotStateOf("blocked")).to.equal("blocked");
+      expect(S.dotStateOf("building")).to.equal("building");
+      expect(S.dotStateOf("built")).to.equal("built");
+      expect(S.dotStateOf("in-widget"), "in the widget is done").to.equal("built");
+      expect(S.dotStateOf("closed"), "closed is done, however it closed").to.equal("built");
+      expect(S.dotStateOf("waiting"), "deferred is still held").to.equal("queued");
+      expect(S.dotStateOf("queued")).to.equal("queued");
+      expect(S.dotStateOf("unknown")).to.equal("queued");
+    });
+
+    it("gives an architect the proposals it filed that are still open", function () {
+      const kural = S.tasksFor("kural", MESSAGES, PROPOSALS, AAOS).map((t) => t.proposalId);
+      expect(kural, "72 decided on, 73 filed and open").to.contain(73);
+      expect(kural, "74 is closed, so it is not held any more").to.not.contain(74);
+      expect(kural, "and it does not pick up what Kalam filed").to.not.contain(71);
+    });
+
+    it("does not give a builder its filed proposals: only an architect holds those",
+      function () {
+        // Kalam filed 71 and it is open, but Kalam is no organisation's
+        // architect, so 71 is a task only because Kalam decided on it.
+        const without = S.tasksFor("kalam", [], PROPOSALS, AAOS);
+        expect(without).to.deep.equal([]);
+      });
+
+    it("reads an open block on the Director as blocked, so the kolam and the column agree",
+      function () {
+        const task = S.tasksFor("kural", MESSAGES, PROPOSALS, AAOS)
+          .filter((t) => t.proposalId === 73)[0];
+        expect(task.state).to.equal("blocked");
+        expect(task.who).to.equal("the Director");
+        expect(task.what).to.equal("the Hetzner API token");
+      });
+
+    it("orders them oldest first, which is the order the kolam draws", function () {
+      const kural = S.tasksFor("kural", MESSAGES, PROPOSALS, AAOS);
+      const times = kural.map((t) => t.at);
+      for (let i = 1; i < times.length; i++) {
+        expect(times[i - 1] <= times[i], "task " + i + " is not older than the one before")
+          .to.equal(true);
+      }
+    });
+
+    it("dates a task from when the agent first spoke about it, not from the latest word",
+      function () {
+        const task = S.tasksFor("kalam", MESSAGES, PROPOSALS, AAOS)
+          .filter((t) => t.proposalId === 70)[0];
+        expect(task.at).to.equal(Date.parse("2026-09-19T01:00:00Z"));
+      });
+
+    it("hands every agent on the street its own task list", function () {
+      const d = S.dashboard(MESSAGES, PROPOSALS, AAOS, Date.now());
+      const kalam = d.street.filter((a) => a.key === "kalam")[0];
+      expect(kalam.tasks.map((t) => t.proposalId)).to.deep.equal([70, 71]);
+      expect(kalam.done, "one of the two is built").to.equal(1);
+      d.street.forEach((agent) => {
+        expect(Array.isArray(agent.tasks), agent.key + " has no task list").to.equal(true);
+      });
+    });
+  });
+
   describe("wren-decide's state reader, which writes no transaction at all", function () {
     it("reads the state out of the words, and refuses words that say nothing", async function () {
       expect(A.stateOf({ summary: "queued behind S12." }).key).to.equal("queued");
