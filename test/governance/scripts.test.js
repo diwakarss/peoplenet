@@ -1496,6 +1496,161 @@ describe("the write scripts refuse before they send", function () {
     });
   });
 
+  // --- proposal 68: the architect's watch ---------------------------------
+  //
+  // The loop is in scripts/watch-jd.js. Everything it decides is here, so it is
+  // tested without starting a watch and without a chain.
+  describe("what an architect's watch covers, and where it left off", function () {
+    const W = require("../../governance/architect-watch.js");
+    const os = require("os");
+
+    const AAOS = [
+      { id: 0, topic: "trilogy widget" }, { id: 1, topic: "widget-builder" },
+      { id: 2, topic: "JD" }, { id: 3, topic: "JD-build" }
+    ];
+
+    describe("the organisations", function () {
+      it("covers the architect's own organisation and every room under it", function () {
+        expect(W.topicsFor(R.KURAL)).to.deep.equal(["JD", "JD-build"]);
+        expect(W.topicsFor(R.WREN)).to.deep.equal(["trilogy widget", "widget-builder"]);
+      });
+
+      it("covers nothing for an agent that is nobody's architect", function () {
+        expect(W.topicsFor(R.KALAM), "Kalam builds; it does not watch").to.deep.equal([]);
+        expect(W.topicsFor(R.BUILDER)).to.deep.equal([]);
+      });
+
+      it("reads the rooms off the rule sets, so a new one needs no code here", function () {
+        // JD-build is covered because its rule set names JD as its parent, not
+        // because this file or watch-jd.js lists it.
+        expect(R.AAO_RULES["JD-build"].parent).to.equal("JD");
+        expect(W.topicsFor(R.KURAL)).to.contain("JD-build");
+      });
+
+      it("turns topics into the ids the chain uses", function () {
+        const found = W.resolve(W.topicsFor(R.KURAL), AAOS);
+        expect(found.organisations).to.deep.equal([
+          { id: 2, topic: "JD" }, { id: 3, topic: "JD-build" }
+        ]);
+        expect(found.ids).to.deep.equal([2, 3]);
+      });
+
+      it("names a topic that is not on this chain instead of quietly dropping it",
+        function () {
+          const found = W.resolve(["JD", "not-created-yet"], AAOS);
+          expect(found.missing).to.deep.equal(["not-created-yet"]);
+          expect(found.ids, "and covers what it can").to.deep.equal([2]);
+        });
+    });
+
+    describe("the cursor", function () {
+      let file;
+
+      beforeEach(function () {
+        file = path.join(os.tmpdir(), "peoplenet-watch-test-" + Date.now() + "-" +
+          Math.random().toString(36).slice(2) + ".json");
+      });
+
+      afterEach(function () {
+        [file, file + ".tmp"].forEach((f) => { if (fs.existsSync(f)) fs.unlinkSync(f); });
+      });
+
+      it("lives outside the repository", function () {
+        const at = W.cursorPath("kural");
+        expect(at.startsWith(os.tmpdir()), at + " is not under the temp directory").to.equal(true);
+        expect(at).to.contain("kural");
+        const repo = path.join(__dirname, "..", "..");
+        expect(path.relative(repo, at).startsWith(".."),
+          "a position is not a record; it must not dirty the working tree").to.equal(true);
+      });
+
+      it("names the cursor for the watch, so two watches do not share one", function () {
+        expect(W.cursorPath("kural")).to.not.equal(W.cursorPath("wren"));
+      });
+
+      it("comes back exactly as it went in", function () {
+        W.writeCursor(file, { block: 274, offsets: { "messages.jsonl": 9001, "answers.jsonl": 42 } });
+        const { cursor, why } = W.readCursor(file);
+        expect(why).to.equal(null);
+        expect(cursor.block).to.equal(274);
+        expect(cursor.offsets).to.deep.equal({ "messages.jsonl": 9001, "answers.jsonl": 42 });
+        expect(cursor.at, "and says when it was written").to.be.a("string");
+      });
+
+      it("leaves no half-written cursor behind", function () {
+        W.writeCursor(file, { block: 1, offsets: {} });
+        expect(fs.existsSync(file + ".tmp"), "the temporary file is renamed, not left")
+          .to.equal(false);
+      });
+
+      it("says why it cannot be used, rather than guessing", function () {
+        expect(W.readCursor(file).cursor, "missing").to.equal(null);
+        expect(W.readCursor(file).why).to.contain("no cursor");
+
+        fs.writeFileSync(file, "not json at all", "utf8");
+        expect(W.readCursor(file).cursor).to.equal(null);
+        expect(W.readCursor(file).why).to.contain("not JSON");
+
+        fs.writeFileSync(file, JSON.stringify({ offsets: {} }), "utf8");
+        expect(W.readCursor(file).cursor).to.equal(null);
+        expect(W.readCursor(file).why).to.contain("no block");
+      });
+
+      it("resumes a log where it stopped, so lines written while it was down are read",
+        function () {
+          W.writeCursor(file, { block: 5, offsets: { "messages.jsonl": 100 } });
+          const { cursor } = W.readCursor(file);
+          // The log grew by 40 bytes while the watch was not running.
+          expect(W.offsetFor(cursor, "messages.jsonl", 140).from,
+            "read from where it stopped, not from the new end").to.equal(100);
+        });
+
+      it("starts a log it has never seen at its end, not at its beginning", function () {
+        W.writeCursor(file, { block: 5, offsets: {} });
+        const { cursor } = W.readCursor(file);
+        const where = W.offsetFor(cursor, "kalam-votes.jsonl", 900);
+        expect(where.from, "a log added today is not a day of history to replay").to.equal(900);
+        expect(where.fresh).to.equal(true);
+      });
+
+      it("reads a log whole again if it is shorter than the cursor, and says so", function () {
+        W.writeCursor(file, { block: 5, offsets: { "messages.jsonl": 500 } });
+        const { cursor } = W.readCursor(file);
+        const where = W.offsetFor(cursor, "messages.jsonl", 120);
+        expect(where.from).to.equal(0);
+        expect(where.shrank).to.equal(true);
+      });
+    });
+
+    describe("which records belong to the watch", function () {
+      const ids = [2, 3];
+
+      it("keeps a record from one of its organisations", function () {
+        expect(W.recordIsMine({ aaoId: 2 }, ids)).to.equal(true);
+        expect(W.recordIsMine({ aaoId: 3 }, ids)).to.equal(true);
+        expect(W.recordIsMine({ aaoId: "3" }, ids), "a string id is still an id").to.equal(true);
+      });
+
+      it("drops one from another architect's organisation", function () {
+        expect(W.recordIsMine({ aaoId: 0 }, ids)).to.equal(false);
+        expect(W.recordIsMine({ aaoId: 1 }, ids)).to.equal(false);
+      });
+
+      it("keeps a record that names no organisation", function () {
+        // The message stream carries plenty that belongs to no single room --
+        // the Director's own questions among them -- and dropping those would
+        // hide exactly what the watch is for.
+        expect(W.recordIsMine({ from: "director", subject: "?" }, ids)).to.equal(true);
+        expect(W.recordIsMine({ aaoId: null }, ids)).to.equal(true);
+        expect(W.recordIsMine({ aaoId: "" }, ids)).to.equal(true);
+      });
+
+      it("drops nothing at all", function () {
+        expect(W.recordIsMine(null, ids)).to.equal(false);
+      });
+    });
+  });
+
   describe("wren-decide's state reader, which writes no transaction at all", function () {
     it("reads the state out of the words, and refuses words that say nothing", async function () {
       expect(A.stateOf({ summary: "queued behind S12." }).key).to.equal("queued");
