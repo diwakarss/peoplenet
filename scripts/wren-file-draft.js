@@ -204,7 +204,11 @@ async function main() {
     state: "filed",
     proposalId: proposalId,
     aaoId: aaoId,
-    filedBy: "wren",
+    // Who actually signed, not who the script is named after. Wren is not a
+    // member of JD, so every draft filed there was signed by another account
+    // and the record still said "wren". --account picks the signer; this reads
+    // the label back off it.
+    filedBy: R.labelFor(signer.address).toLowerCase(),
     at: new Date().toISOString(),
     txHash: receipt.hash,
     blockNumber: receipt.blockNumber

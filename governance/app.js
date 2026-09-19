@@ -1167,8 +1167,13 @@
       }));
     }
 
+    // Execute is not offered on a proposal nobody has voted on (proposal 57):
+    // executing one rejects it, and a rejected proposal cannot be reopened.
+    // Since proposal 58 the watcher closes a decided proposal here on its own,
+    // so the button that is left is the one for the tie the casting vote broke.
+    var offered = R.executeOffered(rules, p);
     if (rules.autoExecute !== "automatic") {
-      wrap.appendChild(button("execute", "Execute", "execute", !open, function () {
+      wrap.appendChild(button("execute", "Execute", "execute", !offered.offered, function () {
         executeProposal(p.id);
       }));
     }
@@ -1180,6 +1185,8 @@
       var auto = R.autoExecuteState(rules, p);
       var problem = R.voterProblem(rules, R.DIRECTOR);
       hint.textContent = (problem ? problem + " " : "") + auto.reason;
+    } else if (!offered.offered) {
+      hint.textContent = offered.reason;
     } else if (casting.allowed) {
       hint.textContent = casting.reason;
     } else if (directorVoted) {

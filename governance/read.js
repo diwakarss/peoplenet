@@ -886,6 +886,27 @@
   // happen and why, so the caller can act and say the same sentence.
   //
   // `nowSeconds` defaults to the clock; the checks pass a fixed one.
+  // Whether Execute is a move at all on this proposal (proposal 57).
+  //
+  // executeProposal passes on forVotes > againstVotes, so on a proposal nobody
+  // has voted on it rejects -- and the button that did it said only "Execute".
+  // A closing move that reads as neutral is the one a person presses by
+  // mistake, and a rejected proposal cannot be reopened. Offering it needs at
+  // least one vote to act on; saying no is done by voting against.
+  function executeOffered(rules, proposal) {
+    var p = proposal || {};
+    if (p.status !== 0) {
+      return { offered: false, reason: "Already " + (STATUS[p.status] || "closed") + "." };
+    }
+    if (num(p.forVotes) + num(p.againstVotes) === 0) {
+      return {
+        offered: false,
+        reason: "Nobody has voted. Executing now would reject it, so vote against if that is what you mean."
+      };
+    }
+    return { offered: true, reason: "" };
+  }
+
   function autoExecuteState(rules, proposal, nowSeconds) {
     var r = rules || DEFAULT_RULES;
 
@@ -1042,6 +1063,7 @@
     DEFAULT_RULES: DEFAULT_RULES,
     rulesFor: rulesFor,
     parentOf: parentOf,
+    executeOffered: executeOffered,
     effectiveRules: effectiveRules,
     widgetHasVoted: widgetHasVoted,
     allVoters: allVoters,

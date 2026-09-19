@@ -37,10 +37,15 @@ async function main() {
     const problem = R.voteTargetProblem(id, p);
     if (problem) { console.log(id, "skip:", problem.split(".")[0]); continue; }
 
-    if (Number(p.status) !== 0) {
-      console.log(id, "skip: already", R.STATUS[Number(p.status)]);
-      continue;
-    }
+    // The same rule the page's Execute button reads (proposal 57), so the
+    // script and the page refuse the same proposals for the same reasons.
+    const offered = R.executeOffered(null, {
+      status: Number(p.status),
+      forVotes: Number(p.forVotes),
+      againstVotes: Number(p.againstVotes)
+    });
+    if (!offered.offered) { console.log(id, "skip:", offered.reason); continue; }
+
     if (Number(p.aaoId) !== R.AAO_ID) { console.log(id, "skip: not on AAO", R.AAO_ID); continue; }
     if (Number(p.forVotes) === Number(p.againstVotes)) {
       console.log(id, "skip: level tally, the casting vote decides it");

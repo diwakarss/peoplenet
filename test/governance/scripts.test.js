@@ -611,6 +611,37 @@ describe("the write scripts refuse before they send", function () {
       // An organisation nobody has written a rule for builds for nobody.
       expect(R.parentOf({ topic: "no rule written" })).to.equal(null);
     });
+
+    // Proposal 57. executeProposal passes on forVotes > againstVotes, so on a
+    // proposal nobody has voted on it rejects -- and the button that did it
+    // said only "Execute". A rejected proposal cannot be reopened.
+    describe("Execute on a proposal nobody has voted on", function () {
+      const at = (f, a, status) => ({ forVotes: f, againstVotes: a, status: status === undefined ? 0 : status });
+
+      it("is not offered at 0-0, and says why in plain English", function () {
+        const answer = R.executeOffered(R.rulesFor({ topic: "trilogy widget" }), at(0, 0));
+        expect(answer.offered).to.equal(false);
+        expect(answer.reason).to.contain("Nobody has voted");
+        expect(answer.reason, "and it names the move that does mean no").to.contain("vote against");
+      });
+
+      it("is offered once there is a vote to act on, for or against", function () {
+        expect(R.executeOffered(null, at(1, 0)).offered).to.equal(true);
+        expect(R.executeOffered(null, at(0, 1)).offered).to.equal(true);
+        expect(R.executeOffered(null, at(1, 1)).offered, "a tie is the casting vote's, not unoffered").to.equal(true);
+      });
+
+      it("is not offered on a proposal that is already closed", function () {
+        expect(R.executeOffered(null, at(2, 0, 1)).offered).to.equal(false);
+        expect(R.executeOffered(null, at(2, 0, 1)).reason).to.contain("Already");
+      });
+
+      it("is the rule execute-decided.js reads, so the script and the page agree",
+        function () {
+          const source = fs.readFileSync(path.join(__dirname, "..", "..", "scripts", "execute-decided.js"), "utf8");
+          expect(source, "the script must not carry its own copy of the rule").to.contain("R.executeOffered");
+        });
+    });
   });
 
   describe("what a dry run prints", function () {
