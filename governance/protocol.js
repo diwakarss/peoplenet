@@ -56,6 +56,21 @@
 
   var REQUIRED = ["from", "type", "subject", "summary"];
 
+  // What an agent is doing right now, in three words or fewer (proposal 59).
+  // A status message may carry it; the swarm dashboard shows the latest one
+  // per agent with its age. Three words is the whole point -- a sentence here
+  // is a summary, and the message already has one of those.
+  //
+  // It is deliberately NOT part of the message id. PROTOCOL.md's rule is that
+  // any message type more than one implementation writes is numbered by the
+  // six fields alone, and status is one of those. A retry must keep its id.
+  var NOW_MAX_WORDS = 3;
+
+  function nowWords(value) {
+    return String(value === undefined || value === null ? "" : value)
+      .trim().split(/\s+/).filter(function (w) { return w.length > 0; });
+  }
+
   function isNonEmptyString(v) {
     return typeof v === "string" && v.trim().length > 0;
   }
@@ -93,6 +108,23 @@
 
     if (message.ts !== undefined && !isNonEmptyString(message.ts)) {
       errors.push("ts must be an ISO 8601 string when present");
+    }
+
+    // Checked wherever it appears, not only on a status message: a rule that
+    // only bites on one type is a rule that is silently off everywhere else.
+    if (message.now !== undefined && message.now !== null) {
+      if (typeof message.now !== "string" || !message.now.trim()) {
+        errors.push("now must be a non-empty string when present");
+      } else {
+        var words = nowWords(message.now);
+        if (words.length > NOW_MAX_WORDS) {
+          errors.push(
+            "now must be " + NOW_MAX_WORDS + " words or fewer, and \"" + message.now.trim() +
+            "\" is " + words.length + ". Say what you are doing in three words; " +
+            "the summary is where the sentence goes."
+          );
+        }
+      }
     }
 
     return { ok: errors.length === 0, errors: errors };
@@ -365,6 +397,8 @@
     messageId: messageId,
     canonicalForId: canonicalForId,
     ID_FIELDS: ID_FIELDS,
+    NOW_MAX_WORDS: NOW_MAX_WORDS,
+    nowWords: nowWords,
     sha256Hex: sha256Hex,
     newId: newId,
     label: label,

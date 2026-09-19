@@ -918,6 +918,51 @@ describe("the write scripts refuse before they send", function () {
     });
   });
 
+  // --- proposal 59 -------------------------------------------------------
+
+  describe("what an agent is doing now, in three words", function () {
+    const P = require("../../governance/protocol.js");
+    const base = { from: "kalam", type: "status", subject: "S", summary: "A sentence for a person." };
+    const withNow = (now) => Object.assign({}, base, { now: now });
+
+    it("takes three words or fewer", function () {
+      expect(P.validate(withNow("building the dashboard")).ok).to.equal(true);
+      expect(P.validate(withNow("resting")).ok).to.equal(true);
+      expect(P.validate(withNow("two words")).ok).to.equal(true);
+    });
+
+    it("refuses a fourth word, and says how many it counted", function () {
+      const result = P.validate(withNow("building the swarm dashboard"));
+      expect(result.ok).to.equal(false);
+      expect(result.errors.join(" ")).to.contain("3 words or fewer");
+      expect(result.errors.join(" "), "the count is what makes it actionable").to.contain("is 4");
+    });
+
+    it("refuses a now that is not a string, or is only whitespace", function () {
+      expect(P.validate(withNow(7)).ok).to.equal(false);
+      expect(P.validate(withNow("   ")).ok).to.equal(false);
+    });
+
+    it("leaves every message written before it valid", function () {
+      expect(P.validate(base).ok, "absent is fine").to.equal(true);
+      expect(P.validate(Object.assign({}, base, { now: null })).ok, "null is absent").to.equal(true);
+    });
+
+    it("stays out of the message id, so a retry keeps its number", function () {
+      expect(P.messageId(base)).to.equal(P.messageId(withNow("building the dashboard")));
+      expect(P.ID_FIELDS).to.not.contain("now");
+    });
+
+    it("is checked wherever it appears, not only on a status message", function () {
+      const decision = Object.assign({}, base, { type: "decision", now: "one two three four" });
+      expect(P.validate(decision).ok).to.equal(false);
+    });
+
+    it("survives normalise, which must not drop a field the writer set", function () {
+      expect(P.normalise(withNow("reading the chain")).now).to.equal("reading the chain");
+    });
+  });
+
   describe("wren-decide's state reader, which writes no transaction at all", function () {
     it("reads the state out of the words, and refuses words that say nothing", async function () {
       expect(A.stateOf({ summary: "queued behind S12." }).key).to.equal("queued");

@@ -36,6 +36,7 @@ a person is who reads this.
 | `summary` | **yes** | Plain English, for a person. Two to four sentences. |
 | `details` | no | The technical part. Free form, kept whole, rendered behind one fold. |
 | `refs` | no, array | Tickets, commits, incidents, spec entries. URLs render as links. |
+| `now` | no | What the agent is doing right now, **three words or fewer**. See [What an agent is doing now](#what-an-agent-is-doing-now). |
 
 `from` and `to` are not restricted to the four known names — a new agent should
 not need a code change to speak — but the known ones get proper labels.
@@ -135,6 +136,38 @@ new, is that no two messages answer to the same name.
 `P.newId(prefix)` remains for the few things that are **not** messages and have
 no content to fingerprint — a draft awaiting Wren, a filing record. A message's
 id comes from the content, never from there.
+
+## What an agent is doing now
+
+Proposal 59. A status message may carry `now`: three words or fewer, saying
+what the agent is doing at that moment.
+
+```json
+{ "from": "kalam", "type": "status", "subject": "...", "summary": "...", "now": "building the dashboard" }
+```
+
+Every agent posts one when it starts an item and one when it stops. The swarm
+dashboard at `/swarm` shows the latest `now` per agent with its age, and greys
+an agent that has been silent for over an hour.
+
+Three words is the whole rule. A sentence here is a summary, and the message
+already has one of those; `validate()` refuses a longer `now` and says how many
+words it counted. The field is optional, so every message written before this
+stays valid.
+
+It is **not** part of the message id. PROTOCOL.md's rule is that a type more
+than one implementation writes is numbered by the six fields alone, and `status`
+is one of those: a retry must keep its id whatever the agent was doing when it
+retried.
+
+`protocol.js` checks `now` wherever it appears, not only on a status message. A
+rule that bites on one type only is a rule that is silently off everywhere else.
+
+> `protocol.py` does not mirror this yet. The widget's repository had
+> seventeen uncommitted files when this landed, so its tests could not be run
+> against a change, and `protocol.py` is Wren's. The field is optional, so the
+> two implementations still agree on everything they are required to agree on:
+> the seven type names, the four required fields, and how a message is numbered.
 
 ## The seven types
 
