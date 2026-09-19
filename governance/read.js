@@ -888,8 +888,43 @@
   // `nowSeconds` defaults to the clock; the checks pass a fixed one.
   function autoExecuteState(rules, proposal, nowSeconds) {
     var r = rules || DEFAULT_RULES;
+
+    // Two regimes close a proposal with nobody pressing a button, and they are
+    // not the same rule. "automatic" waits for every voter, or for the window.
+    // "on-director-vote" (proposal 58) waits for one vote, the Director's: on
+    // the organisations where the Director votes, that vote settles it. The
+    // page did this in the browser, so a proposal decided while the page was
+    // shut stayed Active until somebody opened it; the watcher does it now.
+    if (r.autoExecute === "on-director-vote") {
+      if (proposal.status !== 0) {
+        return { should: false, reason: "Already " + (STATUS[proposal.status] || "closed") + "." };
+      }
+      if (!hasVoted(proposal, DIRECTOR)) {
+        return { should: false, reason: "The Director has not voted, and their vote is what settles it." };
+      }
+      if (proposal.forVotes === proposal.againstVotes) {
+        // A level tally belongs to the casting vote and to nobody else. The
+        // watcher must never close it: executing a level tally rejects, which
+        // is a decision the casting vote exists to make deliberately.
+        return {
+          should: false,
+          tied: true,
+          reason: "Level at " + proposal.forVotes + "-" + proposal.againstVotes +
+            " with the Director's vote in. " + (r.casting
+              ? labelFor(r.casting) + " breaks it."
+              : "This rule has no tie-breaker, so it waits.")
+        };
+      }
+      return {
+        should: true,
+        by: r.executeAs,
+        reason: "The Director voted and the tally is " + proposal.forVotes + "-" +
+          proposal.againstVotes + "."
+      };
+    }
+
     if (r.autoExecute !== "automatic") {
-      return { should: false, reason: "This organisation executes on the Director's vote, not on a timer." };
+      return { should: false, reason: "Nothing executes on its own here; a member executes it." };
     }
     if (proposal.status !== 0) {
       return { should: false, reason: "Already " + (STATUS[proposal.status] || "closed") + "." };

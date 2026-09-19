@@ -233,13 +233,18 @@ describe("the watcher closes what the rules say is decided", function () {
       expect(last.aaoId).to.equal(subId);
     });
 
-    it("leaves the main organisation alone: it executes on the Director's vote, not a timer",
+    // Before proposal 58 this asserted that the main organisation executed
+    // nothing at all from the watcher. It executes on the Director's vote now,
+    // and what still holds is the half that matters here: it has no timer, so
+    // a vote that is not the Director's never carries, however long it waits.
+    it("gives the main organisation no timer: another voter's vote never carries",
       async function () {
         const id = await submit(mainId, director, doc("The Director's own organisation"));
-        await aao.connect(director).vote(id, true);
+        await aao.connect(wren).vote(id, true);
 
         const { aaos, all } = await state();
-        const { executed } = await W.executeDecided(aaos, all, options(Math.floor(Date.now() / 1000)));
+        const aYearOn = Math.floor(Date.now() / 1000) + 365 * 24 * HOUR;
+        const { executed } = await W.executeDecided(aaos, all, options(aYearOn));
         expect(executed.map((e) => e.id)).to.not.contain(id);
         expect(Number((await aao.getProposal(id)).status)).to.equal(0);
       });
@@ -417,5 +422,82 @@ describe("the watcher closes what the rules say is decided", function () {
         expect(result.executed).to.deep.equal([]);
         expect(Number((await aao.getProposal(id)).status)).to.equal(0);
       });
+  });
+
+  // --- the organisations where the Director's vote settles it -------------
+  //
+  // Proposal 58. The page executed these in the browser, so a proposal the
+  // Director decided while the page was shut stayed Active until somebody
+  // opened it. The watcher closes them now, on the same rule the page printed.
+  describe("where the rule is on-director-vote", function () {
+    async function sweep() {
+      const { aaos, all } = await state();
+      return W.executeDecided(aaos, all, options());
+    }
+
+    it("is the rule the main organisation runs", async function () {
+      const { aaos, all } = await state();
+      const main = aaos.filter((a) => a.id === mainId)[0];
+      const rules = R.effectiveRules(main, all.filter((p) => p.aaoId === mainId));
+      expect(rules.autoExecute).to.equal("on-director-vote");
+      expect(R.sameAddress(rules.executeAs, R.DIRECTOR)).to.equal(true);
+    });
+
+    it("executes a decisive tally the moment the Director votes for", async function () {
+      const id = await submit(mainId, director, doc("The Director votes for"));
+      await aao.connect(director).vote(id, true);
+
+      const { executed } = await sweep();
+      const hit = executed.filter((e) => e.id === id)[0];
+      expect(hit, "the watcher should have closed it").to.not.equal(undefined);
+      expect(hit.passed).to.equal(true);
+      expect(Number((await aao.getProposal(id)).status), "Executed").to.equal(1);
+      expect(hit.reason).to.contain("The Director voted");
+
+      const said = messages().filter((m) => m.proposal === id)[0];
+      expect(said, "and it says so where the Director reads it").to.not.equal(undefined);
+      expect(said.type).to.equal("decision");
+    });
+
+    it("executes a decisive tally the Director votes against, as rejected", async function () {
+      const id = await submit(mainId, director, doc("The Director votes against"));
+      await aao.connect(director).vote(id, false);
+
+      const { executed } = await sweep();
+      const hit = executed.filter((e) => e.id === id)[0];
+      expect(hit, "a no is a decision too").to.not.equal(undefined);
+      expect(hit.passed).to.equal(false);
+      expect(Number((await aao.getProposal(id)).status), "Rejected").to.equal(2);
+    });
+
+    it("leaves a level tally to the casting vote and says so", async function () {
+      const id = await submit(mainId, director, doc("Level, and the casting vote decides"));
+      await aao.connect(director).vote(id, true);
+      await aao.connect(wren).vote(id, false);
+
+      const { executed, waiting } = await sweep();
+      expect(executed.map((e) => e.id)).to.not.contain(id);
+      expect(Number((await aao.getProposal(id)).status), "still open").to.equal(0);
+
+      const held = waiting.filter((w) => w.id === id)[0];
+      expect(held, "silence would look like nothing to decide").to.not.equal(undefined);
+      expect(held.reason).to.contain("Casting vote");
+    });
+
+    it("does not execute without the Director's vote, decisive or not", async function () {
+      const id = await submit(mainId, director, doc("Wren voted; the Director has not"));
+      await aao.connect(wren).vote(id, true);
+
+      const before = await readOne(mainId, id);
+      expect(before.forVotes, "decisive on the numbers alone").to.equal(1);
+      expect(before.againstVotes).to.equal(0);
+
+      const { executed } = await sweep();
+      expect(executed.map((e) => e.id)).to.not.contain(id);
+      expect(Number((await aao.getProposal(id)).status), "still open").to.equal(0);
+
+      const rules = R.rulesFor({ topic: "trilogy widget" });
+      expect(R.autoExecuteState(rules, before).reason).to.contain("The Director has not voted");
+    });
   });
 });

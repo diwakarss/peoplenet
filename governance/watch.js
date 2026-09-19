@@ -346,7 +346,10 @@ async function executeDecided(aaos, allProposals, options) {
   for (const aao of aaos || []) {
     const mine = (allProposals || []).filter((p) => p.aaoId === aao.id);
     const rules = R.effectiveRules(aao, mine);
-    if (rules.autoExecute !== "automatic") continue;
+    // Both self-executing regimes, and only those: "automatic" waits for every
+    // voter or the window, "on-director-vote" waits for the Director's vote
+    // (proposal 58). autoExecuteState is what tells them apart.
+    if (rules.autoExecute !== "automatic" && rules.autoExecute !== "on-director-vote") continue;
 
     for (const proposal of mine) {
       const state = R.autoExecuteState(rules, proposal, opts.nowSeconds);
