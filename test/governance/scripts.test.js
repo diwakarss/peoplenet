@@ -1744,6 +1744,115 @@ describe("the write scripts refuse before they send", function () {
     });
   });
 
+  // --- proposal 90: who answers a question --------------------------------
+  //
+  // The Director's question on proposal 87 got two answers two seconds apart,
+  // from Wren and from Kural, because every question was addressed to "wren"
+  // whatever organisation it was asked on, and both architects watch the file.
+  describe("a question goes to the architect of the organisation it was asked on",
+    function () {
+      const asked = (to, aaoId) => ({ id: "q-1", from: "director", to, aaoId, text: "?" });
+      const JD = () => R.rulesFor({ topic: "JD" });
+      const MAIN = () => R.rulesFor({ topic: "trilogy widget" });
+      const NAMELESS = () => R.rulesFor({ topic: "nobody has written a rule for this" });
+
+      it("addresses it to that organisation's architect", function () {
+        expect(R.questionRouting(JD()).to).to.equal("kural");
+        expect(R.questionRouting(MAIN()).to).to.equal("wren");
+        expect(R.questionRouting(R.rulesFor({ topic: "JD-build" })).to).to.equal("kural");
+      });
+
+      it("ignores the 'to' on questions written before this, which all say wren",
+        function () {
+          // This is the whole bug: the page said "Ask Kural" on JD for days
+          // while the message it sent said "to wren".
+          const old = asked("wren", 2);
+          expect(R.questionRouting(JD(), old).to, "the rule set decides, not the message")
+            .to.equal("kural");
+          expect(R.questionRouting(JD(), old).fromRules).to.equal(true);
+        });
+
+      it("keeps the message's own 'to' where no architect is named", function () {
+        expect(R.questionRouting(NAMELESS(), asked("wren", 9)).to).to.equal("wren");
+        expect(R.questionRouting(NAMELESS(), asked("builder", 9)).to).to.equal("builder");
+        expect(R.questionRouting(NAMELESS(), null).to, "and wren when there is nothing")
+          .to.equal("wren");
+        expect(R.questionRouting(NAMELESS(), asked("wren", 9)).fromRules).to.equal(false);
+      });
+
+      it("lets the right architect answer", function () {
+        expect(R.answerProblem(JD(), asked("wren", 2), "kural", { topic: "JD" })).to.equal(null);
+        expect(R.answerProblem(MAIN(), asked("wren", 0), "wren", { topic: "trilogy widget" }))
+          .to.equal(null);
+      });
+
+      it("refuses anyone else, and says who answers it", function () {
+        expect(R.answerProblem(JD(), asked("wren", 2), "wren", { topic: "JD" })).to.equal(
+          "This question is on JD; Kural answers it. " +
+          "Pass --second-opinion to add a view instead.");
+      });
+
+      it("refuses a builder too, not only the other architect", function () {
+        expect(R.answerProblem(JD(), asked("wren", 2), "kalam", { topic: "JD" }))
+          .to.contain("Kural answers it");
+      });
+
+      it("always allows a second opinion, from anyone", function () {
+        const options = { topic: "JD", secondOpinion: true };
+        expect(R.answerProblem(JD(), asked("wren", 2), "wren", options)).to.equal(null);
+        expect(R.answerProblem(JD(), asked("wren", 2), "kalam", options)).to.equal(null);
+      });
+
+      it("leaves an organisation with no architect answering as it always did",
+        function () {
+          expect(R.answerProblem(NAMELESS(), asked("wren", 9), "wren", { topic: "x" }))
+            .to.equal(null);
+          expect(R.answerProblem(NAMELESS(), asked("wren", 9), "kural", { topic: "x" }))
+            .to.contain("Wren answers it");
+        });
+
+      it("tells a second opinion from an answer", function () {
+        expect(R.isSecondOpinion({ second_opinion: true })).to.equal(true);
+        expect(R.isSecondOpinion({})).to.equal(false);
+        expect(R.isSecondOpinion(null)).to.equal(false);
+      });
+
+      it("keeps a second opinion out of the count that closes a question", function () {
+        // What the page and --list both do: a question carrying only a second
+        // opinion has been thought about and not answered.
+        const log = [
+          { question: "q-1", from: "kural", summary: "The answer." },
+          { question: "q-2", from: "wren", summary: "A view.", second_opinion: true }
+        ];
+        const settled = (id) => log.filter((a) => a.question === id && !R.isSecondOpinion(a));
+        expect(settled("q-1").length, "answered").to.equal(1);
+        expect(settled("q-2").length, "still open").to.equal(0);
+      });
+
+      describe("on a chain, through the organisations the script reads", function () {
+        it("routes by the organisation the question names, not by its 'to'",
+          async function () {
+            const chain = await R.readAAOs(aao);
+            const main = chain.filter((a) => a.id === mainId)[0];
+            const sub = chain.filter((a) => a.id === subId)[0];
+            // Both were asked "to wren"; the rule sets send them different ways
+            // only where the rule sets differ.
+            expect(R.questionRouting(R.rulesFor({ topic: main.topic }), asked("wren", mainId)).to)
+              .to.equal("wren");
+            expect(R.answerProblem(R.rulesFor({ topic: sub.topic }), asked("wren", subId),
+              "wren", { topic: sub.topic }), "Wren is the widget-builder's architect")
+              .to.equal(null);
+          });
+
+        it("falls back to the message when the chain knows no such organisation",
+          async function () {
+            const unknown = R.rulesFor({ topic: "" });
+            expect(unknown.architect, "no rule set, no architect").to.equal(null);
+            expect(R.questionRouting(unknown, asked("wren", 99)).to).to.equal("wren");
+          });
+      });
+    });
+
   describe("wren-decide's state reader, which writes no transaction at all", function () {
     it("reads the state out of the words, and refuses words that say nothing", async function () {
       expect(A.stateOf({ summary: "queued behind S12." }).key).to.equal("queued");

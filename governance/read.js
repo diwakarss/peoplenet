@@ -196,6 +196,55 @@
     return rulesFor(aao).parent || null;
   }
 
+  // Who answers a question asked on this organisation (proposal 90).
+  //
+  // The Director's question on proposal 87 got two answers two seconds apart,
+  // from Wren and from Kural, because every question was addressed to "wren"
+  // whatever organisation it was asked on, and both architects watch the same
+  // file. The page had said "Ask Kural" on JD for days; the message it sent
+  // still said "to wren".
+  //
+  // The rule set decides, not the message. Every question written before this
+  // says "wren", so trusting the message would leave exactly the open ones
+  // routed wrong -- the `to` on the message is the fallback for an
+  // organisation whose rule set names no architect, and nothing more.
+  function questionRouting(rules, question) {
+    var r = rules || DEFAULT_RULES;
+    if (r.architect) {
+      var label = labelFor(r.architect);
+      return { to: label.toLowerCase(), label: label, fromRules: true };
+    }
+    var fallback = (question && question.to) || "wren";
+    return { to: String(fallback).toLowerCase(), label: label_(fallback), fromRules: false };
+  }
+
+  // A party key as a person would write it: the protocol's label when it knows
+  // one, the key itself otherwise.
+  function label_(key) {
+    var known = { director: "Director", wren: "Wren", kural: "Kural", kalam: "Kalam",
+      builder: "Builder", widget: "Widget" };
+    return known[String(key).toLowerCase()] || String(key);
+  }
+
+  // Whether this agent may answer this question, in one plain line, or null.
+  //
+  // A second opinion is always allowed: an architect with a view should be able
+  // to record it. It is stored and shown as a second opinion, never as the
+  // answer, so it settles nothing and leaves the question open.
+  function answerProblem(rules, question, from, options) {
+    var o = options || {};
+    if (o.secondOpinion) return null;
+    var routing = questionRouting(rules, question);
+    if (String(from || "").toLowerCase() === routing.to) return null;
+    return "This question is on " + (o.topic || "this organisation") + "; " +
+      routing.label + " answers it. Pass --second-opinion to add a view instead.";
+  }
+
+  // An answer that settles a question, as opposed to a view recorded beside it.
+  function isSecondOpinion(answer) {
+    return Boolean(answer && answer.second_opinion);
+  }
+
   // Whether this account may file this draft, in one plain line, or null.
   //
   // Proposal 89. The Director's one draft on JD became proposals 87 and 88 a
@@ -1122,6 +1171,9 @@
     rulesFor: rulesFor,
     parentOf: parentOf,
     draftFilingProblem: draftFilingProblem,
+    questionRouting: questionRouting,
+    answerProblem: answerProblem,
+    isSecondOpinion: isSecondOpinion,
     executeOffered: executeOffered,
     effectiveRules: effectiveRules,
     widgetHasVoted: widgetHasVoted,
