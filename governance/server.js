@@ -83,10 +83,11 @@ const MAX_BODY = 64 * 1024; // a question is a sentence, not a payload
 const INBOX_DIR = path.join(LOG_DIR, "inbox");
 const INBOX_SEGMENT = "inbox";
 
-// 5 MB of picture. The draft route's body ceiling is the base64 of that plus
-// the text around it; every other route keeps the 64 KB above, because a
-// question really is a sentence.
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+// 5 MB of picture, the same number read.js gives the page, so the two cannot
+// drift apart. The draft route's body ceiling is the base64 of that plus the
+// text around it; every other route keeps the 64 KB above, because a question
+// really is a sentence.
+const MAX_IMAGE_BYTES = R.IMAGE_LIMIT_BYTES;
 const MAX_DRAFT_BODY = 8 * 1024 * 1024;
 
 // What a body over that ceiling is told. It is refused while it is still
@@ -114,10 +115,6 @@ function sniffImage(buffer) {
   return null;
 }
 
-function megabytes(bytes) {
-  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-}
-
 // Decode and vet what the page sent. Returns { buffer, kind } or { error }.
 function readImageField(field) {
   const raw = typeof field === "string"
@@ -133,11 +130,15 @@ function readImageField(field) {
   const buffer = Buffer.from(base64, "base64");
   if (!buffer.length) return { error: "the image is empty" };
   if (buffer.length > MAX_IMAGE_BYTES) {
-    return { error: `that image is ${megabytes(buffer.length)}; the limit is ${megabytes(MAX_IMAGE_BYTES)}` };
+    return {
+      error: `That image is ${R.describeBytes(buffer.length)}. The limit is ` +
+        `${R.describeBytes(MAX_IMAGE_BYTES)}, so it was not attached.`
+    };
   }
 
+  // The bytes decide, not the client's `type`.
   const kind = sniffImage(buffer);
-  if (!kind) return { error: "that file is not a PNG or a JPEG image" };
+  if (!kind) return { error: "That is not a PNG or a JPEG, so it was not attached." };
   return { buffer: buffer, kind: kind };
 }
 
