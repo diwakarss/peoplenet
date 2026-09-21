@@ -143,6 +143,31 @@ function readBody(req, done) {
 // altogether. Either way it is one protocol message (27.5) that also carries the
 // 27.2 question fields, so the file is readable both as a thread and as the
 // agent traffic it is.
+// The organisations by id, so a question reaches the right architect
+// (proposal 90). Cached briefly: a topic almost never changes, and a chain
+// round trip in front of the Director's typing would be felt.
+let topicCache = { at: 0, byId: {} };
+const TOPIC_TTL = 60 * 1000;
+
+async function topicOf(aaoId) {
+  const now = Date.now();
+  if (now - topicCache.at > TOPIC_TTL) {
+    try {
+      const ethers = require("ethers");
+      const contract = R.getContract(ethers, R.getProvider(ethers));
+      const byId = {};
+      (await R.readAAOs(contract)).forEach((aao) => { byId[aao.id] = aao.topic; });
+      topicCache = { at: now, byId };
+    } catch (e) {
+      // The chain is unreachable. Keep whatever was cached and let the caller
+      // fall back to the old default: a question that cannot be asked at all is
+      // worse than one addressed the way every question was addressed before.
+      console.warn("question routing: could not read the organisations -- " + (e.message || e));
+    }
+  }
+  return topicCache.byId[aaoId];
+}
+
 function postQuestion(req, res) {
   readBody(req, (err, body) => {
     if (err) return send(res, err.status || 400, err.message);
@@ -162,11 +187,16 @@ function postQuestion(req, res) {
     const subject = type === "request-new-proposal"
       ? `A new proposal is wanted for #${proposal}`
       : firstLine(text);
+    const aaoId = body.aaoId === undefined ? R.AAO_ID : Number(body.aaoId);
 
+    // Addressed to the architect of the organisation it was asked on. An
+    // explicit `to` in the body still wins: that is a caller deliberately
+    // naming someone, not the default this proposal replaced.
+    topicOf(aaoId).then((topic) => {
     const message = P.normalise({
       // 27.5, the protocol envelope
       from: "director",
-      to: body.to || "wren",
+      to: body.to || R.questionRouting(R.rulesFor({ topic: topic || "" })).to,
       type: type,
       subject: subject,
       summary: text,
@@ -175,7 +205,11 @@ function postQuestion(req, res) {
       ts: now,
       // 27.2, the question channel's own fields
       proposal: proposal,
-      aaoId: body.aaoId === undefined ? R.AAO_ID : Number(body.aaoId),
+      aaoId: aaoId,
+      // The organisation's own name, so wren-answer.js can route this question
+      // without reading the chain (proposal 90). Absent on every question
+      // written before it, which is why that script still has a fallback.
+      topic: topic || undefined,
       text: text,
       at: now
       // The same words asked on two different proposals are two different
@@ -189,9 +223,10 @@ function postQuestion(req, res) {
 
     appendLog("questions.jsonl", message, (writeErr) => {
       if (writeErr) return send(res, 500, "Could not append to questions.jsonl: " + writeErr.code);
-      console.log(`question ${message.id} on proposal ${proposal}: ${firstLine(text, 70)}`);
+      console.log(`question ${message.id} on proposal ${proposal}, to ${message.to}: ${firstLine(text, 70)}`);
       sendJson(res, 201, { ok: true, question: message });
     });
+    }).catch((e) => send(res, 500, "Could not address the question: " + (e.message || e)));
   });
 }
 
