@@ -1651,6 +1651,99 @@ describe("the write scripts refuse before they send", function () {
     });
   });
 
+  // --- proposal 89: who files a draft, and how often ----------------------
+  //
+  // The Director's one draft on JD became proposals 87 and 88 a second apart,
+  // because two watchers filed it. One of those was signed from the Director's
+  // own account by an agent that is not even a member of JD.
+  describe("a draft is filed once, by the organisation's architect", function () {
+    const filedAs = (id) => ({ state: "filed", proposalId: id, draft: "draft-x" });
+    const JD = () => R.rulesFor({ topic: "JD" });
+    const MAIN = () => R.rulesFor({ topic: "trilogy widget" });
+    const NAMELESS = () => R.rulesFor({ topic: "nobody has written a rule for this" });
+
+    it("lets the architect file it", function () {
+      expect(R.draftFilingProblem(JD(), R.KURAL, [], { topic: "JD" })).to.equal(null);
+      expect(R.draftFilingProblem(MAIN(), R.WREN, [], { topic: "trilogy widget" })).to.equal(null);
+    });
+
+    it("refuses anyone else, and says who files it", function () {
+      const problem = R.draftFilingProblem(JD(), R.WREN, [], { topic: "JD" });
+      expect(problem).to.equal("This draft is on JD; its architect is Kural. Kural files it.");
+    });
+
+    it("refuses the Director's own account, which is how 87 was filed", function () {
+      // Wren is a viewer on JD and not a member, so its watcher signed from
+      // account 0. The refusal must not care whose account it is.
+      const problem = R.draftFilingProblem(JD(), R.DIRECTOR, [], { topic: "JD" });
+      expect(problem).to.contain("its architect is Kural");
+    });
+
+    it("refuses a draft that is already filed, and names what it became", function () {
+      const problem = R.draftFilingProblem(JD(), R.KURAL, [filedAs(87)], { topic: "JD" });
+      expect(problem).to.equal(
+        "This draft is already filed: it became proposal 87. Nothing to file.");
+    });
+
+    it("asks 'already filed' first, because it is true whoever is asking", function () {
+      const problem = R.draftFilingProblem(JD(), R.WREN, [filedAs(88)], { topic: "JD" });
+      expect(problem, "the wrong filer is not the useful thing to say here")
+        .to.contain("already filed");
+    });
+
+    it("ignores a draft record that is not a filing", function () {
+      const waiting = [{ state: "awaiting-wren", draft: "draft-x" }];
+      expect(R.draftFilingProblem(JD(), R.KURAL, waiting, { topic: "JD" })).to.equal(null);
+    });
+
+    it("leaves an organisation with no architect exactly as it was", function () {
+      expect(NAMELESS().architect, "nothing to enforce").to.equal(null);
+      expect(R.draftFilingProblem(NAMELESS(), R.WREN, [], { topic: "somewhere" })).to.equal(null);
+      expect(R.draftFilingProblem(NAMELESS(), R.DIRECTOR, [], { topic: "somewhere" })).to.equal(null);
+    });
+
+    it("still refuses a second filing there, because that rule needs no architect",
+      function () {
+        expect(R.draftFilingProblem(NAMELESS(), R.WREN, [filedAs(5)], { topic: "somewhere" }))
+          .to.contain("already filed");
+      });
+
+    describe("on a chain, through the script's own checks", function () {
+      // The organisation, the signer and the log, exactly as the script reads
+      // them, on the throwaway network this file already stands up.
+      async function filingProblemFor(aaoId, signer, filed) {
+        const chainAao = (await R.readAAOs(aao)).filter((a) => a.id === aaoId)[0];
+        return R.draftFilingProblem(
+          R.rulesFor({ topic: chainAao.topic }), signer.address, filed, { topic: chainAao.topic });
+      }
+
+      it("reads the organisation off the chain, not off the draft record", async function () {
+        // mainId is "trilogy widget" here, whose architect is Wren.
+        expect(await filingProblemFor(mainId, wren, [])).to.equal(null);
+        expect(await filingProblemFor(mainId, builder, []))
+          .to.contain("its architect is Wren");
+      });
+
+      it("refuses an account that is not a member before it can send", async function () {
+        const chainAao = (await R.readAAOs(aao)).filter((a) => a.id === subId)[0];
+        expect(await aao.isMember(subId, outsider.address), "not on this organisation")
+          .to.equal(false);
+        // The architect check comes first and already refuses this account, so
+        // it never reaches submitProposal. Both guards hold, in that order.
+        const problem = R.draftFilingProblem(
+          R.rulesFor({ topic: chainAao.topic }), outsider.address, [], { topic: chainAao.topic });
+        expect(problem).to.contain("files it");
+      });
+
+      it("refuses a draft already filed on this chain", async function () {
+        const id = await submit(mainId, wren, JSON.stringify(
+          { title: "Filed once already", summary: "s", why: "w" }));
+        expect(await filingProblemFor(mainId, wren, [{ state: "filed", proposalId: id }]))
+          .to.contain("it became proposal " + id);
+      });
+    });
+  });
+
   describe("wren-decide's state reader, which writes no transaction at all", function () {
     it("reads the state out of the words, and refuses words that say nothing", async function () {
       expect(A.stateOf({ summary: "queued behind S12." }).key).to.equal("queued");

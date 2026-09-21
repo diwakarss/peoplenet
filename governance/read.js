@@ -196,6 +196,45 @@
     return rulesFor(aao).parent || null;
   }
 
+  // Whether this account may file this draft, in one plain line, or null.
+  //
+  // Proposal 89. The Director's one draft on JD became proposals 87 and 88 a
+  // second apart, because two watchers filed it. One of those filings was
+  // signed from the Director's own account by an agent that is not even a
+  // member of JD -- a habit that has to end before that key means anything.
+  //
+  // The rule was already in the rule sets; nothing read it. It lives here so
+  // the page, the script and the tests refuse the same thing for the same
+  // reason, and so the rehearsal can print the refusal it would hit.
+  //
+  // `filed` is the filed records for THIS draft, not every record in the log.
+  function draftFilingProblem(rules, signer, filed, options) {
+    var r = rules || DEFAULT_RULES;
+    var o = options || {};
+
+    // Already filed, which is true whoever is asking, so it is asked first.
+    var done = (filed || []).filter(function (record) {
+      return record && record.state === "filed" &&
+        record.proposalId !== undefined && record.proposalId !== null;
+    })[0];
+    if (done) {
+      return "This draft is already filed: it became proposal " + done.proposalId +
+        ". Nothing to file.";
+    }
+
+    // An organisation whose rule set names no architect keeps today's
+    // behaviour: naming one is a decision for the organisation, not a default
+    // this function invents.
+    if (!r.architect) return null;
+
+    if (!sameAddress(r.architect, signer)) {
+      var who = labelFor(r.architect);
+      return "This draft is on " + (o.topic || "this organisation") +
+        "; its architect is " + who + ". " + who + " files it.";
+    }
+    return null;
+  }
+
   // The architect's name for an organisation, for every prompt the page
   // prints. "Ask Wren" on JD was wrong: Kural is the architect there.
   function architectLabel(aao) {
@@ -1082,6 +1121,7 @@
     DEFAULT_RULES: DEFAULT_RULES,
     rulesFor: rulesFor,
     parentOf: parentOf,
+    draftFilingProblem: draftFilingProblem,
     executeOffered: executeOffered,
     effectiveRules: effectiveRules,
     widgetHasVoted: widgetHasVoted,
