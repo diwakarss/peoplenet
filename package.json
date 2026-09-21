@@ -13,7 +13,9 @@
     "clean": "npx hardhat clean",
     "governance": "node governance/server.js",
     "governance:check": "node governance/check.js",
-    "governance:members": "npx hardhat run scripts/setup-governance-members.js --network localhost"
+    "governance:members": "npx hardhat run scripts/setup-governance-members.js --network localhost",
+    "up": "node scripts/up.js",
+    "snapshot": "node scripts/snapshot.js"
   },
   "keywords": [
     "blockchain",
