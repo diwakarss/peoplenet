@@ -22,6 +22,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const url = require("url");
+const crypto = require("crypto");
 const R = require("./read.js");
 const P = require("./protocol.js");
 
@@ -64,6 +65,139 @@ const LOGS = {
 const TRANSLATIONS_ROUTE = "/translations.json";
 
 const MAX_BODY = 64 * 1024; // a question is a sentence, not a payload
+
+// --- BEGIN proposal 54: an image beside the draft ------------------------
+//
+// The Director pastes a screenshot into the filing fold and it arrives here as
+// base64 inside the ordinary JSON body -- no multipart, no new dependency.
+//
+// PRIVACY. A screenshot of a ticket can carry a customer's name, an email
+// address or a credential. So the file stays on this machine and nowhere else:
+// it is written under the log directory, it is NEVER served back (see the deny
+// in serveStatic), it is never committed (governance/inbox/ is in .gitignore),
+// it never goes on the chain, and it is never embedded in drafts.jsonl -- the
+// record holds a pointer and a hash, not the picture. It exists for the one
+// architect who completes the draft, and wren-file-draft.js deletes it the
+// moment the proposal is filed. Whoever writes that proposal's text must not
+// transcribe names, emails or secrets out of the image.
+const INBOX_DIR = path.join(LOG_DIR, "inbox");
+const INBOX_SEGMENT = "inbox";
+
+// 5 MB of picture. The draft route's body ceiling is the base64 of that plus
+// the text around it; every other route keeps the 64 KB above, because a
+// question really is a sentence.
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_DRAFT_BODY = 8 * 1024 * 1024;
+
+// What a body over that ceiling is told. It is refused while it is still
+// arriving, so this is all that can be said about it -- an image only a little
+// over 5 MB still fits the body and gets the exact size back instead.
+const TOO_LARGE_LINE = "That is too large to send. An image must be a PNG or a JPEG under 5 MB.";
+
+// An image older than this has outlived the filing it was pasted for.
+const IMAGE_TTL_MS = 24 * 60 * 60 * 1000;
+const SWEEP_EVERY_MS = 60 * 60 * 1000;
+
+// What the bytes actually are. The browser's `type` is the client's claim and
+// is never believed: a .exe renamed to .png announces itself as an image just
+// as loudly.
+const IMAGE_KINDS = [
+  { type: "image/png", ext: "png", magic: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
+  { type: "image/jpeg", ext: "jpg", magic: [0xff, 0xd8, 0xff] }
+];
+
+function sniffImage(buffer) {
+  for (const kind of IMAGE_KINDS) {
+    if (buffer.length < kind.magic.length) continue;
+    if (kind.magic.every((byte, i) => buffer[i] === byte)) return kind;
+  }
+  return null;
+}
+
+function megabytes(bytes) {
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+// Decode and vet what the page sent. Returns { buffer, kind } or { error }.
+function readImageField(field) {
+  const raw = typeof field === "string"
+    ? field
+    : (field && typeof field.base64 === "string" ? field.base64 : null);
+  if (raw === null) return { error: "the image must be sent as base64 text" };
+
+  // A data: URL is what the browser hands out, so accept it and keep only the
+  // payload.
+  const base64 = raw.replace(/^data:[^,]*,/, "").replace(/\s+/g, "");
+  if (!base64) return { error: "the image is empty" };
+
+  const buffer = Buffer.from(base64, "base64");
+  if (!buffer.length) return { error: "the image is empty" };
+  if (buffer.length > MAX_IMAGE_BYTES) {
+    return { error: `that image is ${megabytes(buffer.length)}; the limit is ${megabytes(MAX_IMAGE_BYTES)}` };
+  }
+
+  const kind = sniffImage(buffer);
+  if (!kind) return { error: "that file is not a PNG or a JPEG image" };
+  return { buffer: buffer, kind: kind };
+}
+
+// Write it under the log directory, named after the id the SERVER made. The
+// client's own file name is dropped on the floor and never stored: it is
+// attacker-controlled text, and nothing here needs it.
+function storeImage(draftId, image, done) {
+  const relative = INBOX_SEGMENT + "/" + draftId + "." + image.kind.ext;
+  fs.mkdir(INBOX_DIR, { recursive: true }, (mkErr) => {
+    if (mkErr) return done(mkErr);
+    fs.writeFile(path.join(LOG_DIR, relative), image.buffer, (writeErr) => {
+      if (writeErr) return done(writeErr);
+      done(null, {
+        path: relative,
+        sha256: crypto.createHash("sha256").update(image.buffer).digest("hex"),
+        bytes: image.buffer.length,
+        type: image.kind.type
+      });
+    });
+  });
+}
+
+// Housekeeping (proposal 54): at start and then hourly, anything in the inbox
+// older than a day goes. An image is a note to the architect who files the
+// draft, not an archive, and the longer one sits on disk the more it is simply
+// a screenshot of a ticket nobody is looking at any more.
+function sweepInbox(done) {
+  const finish = done || function () {};
+  fs.readdir(INBOX_DIR, (err, names) => {
+    if (err) {
+      // No inbox yet is the normal state, not a fault.
+      if (err.code !== "ENOENT") console.warn("inbox sweep: " + (err.code || err.message));
+      console.log("inbox: 0 image(s) older than 24 hours removed");
+      return finish(null, 0);
+    }
+    const cutoff = Date.now() - IMAGE_TTL_MS;
+    let pending = names.length;
+    let removed = 0;
+    if (!pending) {
+      console.log("inbox: 0 image(s) older than 24 hours removed");
+      return finish(null, 0);
+    }
+    const step = () => {
+      if (--pending > 0) return;
+      console.log(`inbox: ${removed} image(s) older than 24 hours removed`);
+      finish(null, removed);
+    };
+    names.forEach((name) => {
+      const file = path.join(INBOX_DIR, name);
+      fs.stat(file, (statErr, stat) => {
+        if (statErr || !stat.isFile() || stat.mtimeMs >= cutoff) return step();
+        fs.unlink(file, (unlinkErr) => {
+          if (!unlinkErr) removed++;
+          step();
+        });
+      });
+    });
+  });
+}
+// --- END proposal 54 -----------------------------------------------------
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -123,18 +257,30 @@ function appendLog(file, record, done) {
   fs.appendFile(logPath(file), P.toJsonl(record), "utf8", done);
 }
 
-function readBody(req, done) {
+// `max` is the ceiling for this one route; it defaults to MAX_BODY, which is
+// what every route but /drafts uses. (proposal 54)
+function readBody(req, done, max, tooLarge) {
+  const ceiling = max || MAX_BODY;
   let size = 0;
-  const chunks = [];
+  let chunks = [];
   let finished = false;
-  const fail = (message, status) => {
+  const fail = (message, status, overLimit) => {
     if (finished) return;
     finished = true;
-    done(Object.assign(new Error(message), { status: status || 400 }));
+    // Let go of what was buffered before answering. The point of counting as
+    // the bytes arrive is that an oversized POST never becomes an oversized
+    // allocation; holding the chunks while the refusal is written would give
+    // that back. The socket is cut once the refusal has been flushed, so the
+    // sender stops rather than spending another eight megabytes on a body
+    // nothing will read.
+    chunks = [];
+    req.on("data", () => {});
+    done(Object.assign(new Error(message), { status: status || 400, overLimit: !!overLimit }));
   };
   req.on("data", (chunk) => {
+    if (finished) return;
     size += chunk.length;
-    if (size > MAX_BODY) return fail("Body too large", 413);
+    if (size > ceiling) return fail(tooLarge || "Body too large", 413, true);
     chunks.push(chunk);
   });
   req.on("error", () => fail("Could not read the request body"));
@@ -149,6 +295,16 @@ function readBody(req, done) {
       done(Object.assign(new Error("Body is not valid JSON"), { status: 400 }));
     }
   });
+}
+
+// A body that was refused for its size is answered and then cut off (proposal
+// 54): the refusal goes out first, and the socket closes once it has, so the
+// sender stops pushing megabytes at a route that has already said no.
+function refuseBody(req, res, err) {
+  if (err.overLimit) {
+    res.on("finish", () => { try { req.destroy(); } catch (e) { /* already gone */ } });
+  }
+  send(res, err.status || 400, err.message);
 }
 
 // --- POST /questions ---------------------------------------------------
@@ -184,7 +340,7 @@ async function topicOf(aaoId) {
 
 function postQuestion(req, res) {
   readBody(req, (err, body) => {
-    if (err) return send(res, err.status || 400, err.message);
+    if (err) return refuseBody(req, res, err);
 
     const text = typeof body.text === "string" ? body.text.trim() : "";
     if (!text) return sendJson(res, 400, { ok: false, errors: ["text is required"] });
@@ -250,7 +406,7 @@ function postQuestion(req, res) {
 // summary is refused with the reasons, not silently dropped.
 function postMessage(req, res) {
   readBody(req, (err, body) => {
-    if (err) return send(res, err.status || 400, err.message);
+    if (err) return refuseBody(req, res, err);
 
     // Any agent's message, in the shape everyone writes, so it is numbered by
     // the six fields alone -- the same message posted twice is one message.
@@ -273,7 +429,7 @@ function postMessage(req, res) {
 // the summary's first sentence.
 function postDraft(req, res) {
   readBody(req, (err, body) => {
-    if (err) return send(res, err.status || 400, err.message);
+    if (err) return refuseBody(req, res, err);
 
     const text = typeof body.text === "string" ? body.text.trim() : "";
     if (!text) return sendJson(res, 400, { ok: false, errors: ["text is required"] });
@@ -290,12 +446,36 @@ function postDraft(req, res) {
       return sendJson(res, 400, { ok: false, errors: ["aaoId must be an organisation id"] });
     }
 
-    appendLog("drafts.jsonl", draft, (writeErr) => {
-      if (writeErr) return send(res, 500, "Could not append to drafts.jsonl: " + writeErr.code);
-      console.log(`draft ${draft.id} on AAO ${draft.aaoId}: ${firstLine(text, 70)}`);
-      sendJson(res, 201, { ok: true, draft: draft });
+    const done = () => {
+      appendLog("drafts.jsonl", draft, (writeErr) => {
+        if (writeErr) return send(res, 500, "Could not append to drafts.jsonl: " + writeErr.code);
+        console.log(
+          `draft ${draft.id} on AAO ${draft.aaoId}: ${firstLine(text, 70)}` +
+          (draft.image ? `  [+${draft.image.type} ${draft.image.bytes} bytes]` : "")
+        );
+        sendJson(res, 201, { ok: true, draft: draft });
+      });
+    };
+
+    // --- BEGIN proposal 54: one pasted image, beside the words -----------
+    // No image is the ordinary case and goes through unchanged.
+    if (body.image === undefined || body.image === null || body.image === "") return done();
+
+    const image = readImageField(body.image);
+    if (image.error) return sendJson(res, 400, { ok: false, errors: [image.error] });
+
+    // Written first, so a draft is never recorded pointing at a file that is
+    // not there. The record gets the pointer and the hash; the bytes stay on
+    // disk and never enter drafts.jsonl.
+    storeImage(draft.id, image, (storeErr, pointer) => {
+      if (storeErr) {
+        return send(res, 500, "Could not store the image: " + (storeErr.code || storeErr.message));
+      }
+      draft.image = pointer;
+      done();
     });
-  });
+    // --- END proposal 54 -------------------------------------------------
+  }, MAX_DRAFT_BODY, TOO_LARGE_LINE);
 }
 
 function firstLine(text, max) {
@@ -321,6 +501,20 @@ function serveTranslations(res) {
 }
 
 function serveStatic(res, pathname) {
+  // --- BEGIN proposal 54: the inbox is not on the web ------------------
+  // A pasted screenshot can hold a customer's name or a credential. No route
+  // hands one back, so the deny is here, before any path juggling: it is asked
+  // of the requested path as it arrives (already percent-decoded by the
+  // caller) and again of the resolved file, so neither /inbox/x.png nor
+  // /%69nbox/x.png nor /swarm/../inbox/x.png reaches the disk.
+  const inboxRoot = path.resolve(INBOX_DIR);
+  const asked = path.resolve(ROOT, pathname.replace(/^\/+/, ""));
+  if (/^\/+inbox(\/|$)/i.test(pathname) ||
+      asked === inboxRoot || asked.startsWith(inboxRoot + path.sep)) {
+    return send(res, 403, "Forbidden");
+  }
+  // --- END proposal 54 --------------------------------------------------
+
   // A directory is the page inside it, not a listing: /swarm and
   // /swarm/samples/ are both somewhere to look, and there is no listing here to
   // fall back on. Resolved before the path is made relative, so the guard below
@@ -377,6 +571,15 @@ server.listen(PORT, HOST, () => {
   console.log(`  GET  ${base}${TRANSLATIONS_ROUTE}`.padEnd(48) + "translations.json  read-only");
   console.log("");
   if (LOG_DIR !== ROOT) console.log(`logs            ${LOG_DIR}  (GOVERNANCE_LOG_DIR)`);
+
+  // --- BEGIN proposal 54: sweep the inbox ------------------------------
+  // Once now, then hourly. unref'd so this timer is never the reason the
+  // process is still alive.
+  sweepInbox();
+  const sweeper = setInterval(sweepInbox, SWEEP_EVERY_MS);
+  if (typeof sweeper.unref === "function") sweeper.unref();
+  // --- END proposal 54 --------------------------------------------------
+
   console.log("Ctrl-C to stop.");
 });
 
