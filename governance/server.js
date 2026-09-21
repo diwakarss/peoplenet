@@ -411,6 +411,9 @@ if (!process.env.GOVERNANCE_NO_WATCH) {
 
     watch.start(readProposals, {
       ethers: ethers,
+      // The server is the only thing that writes snapshots (proposal 92): the
+      // record lives in this node's memory until the move to the cloud.
+      snapshot: true,
       readAaos: () => R.readAAOs(contract),
       // Signs through the node's own unlocked accounts, as the page does.
       // No key is held here either.
