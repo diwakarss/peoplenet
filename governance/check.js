@@ -1414,6 +1414,408 @@ async function main() {
   });
 
 
+  // --- BEGIN proposal 54: an image pasted onto a draft -------------------
+  //
+  // Every check below runs against a server this section starts itself, on a
+  // free port, writing to a fresh directory under the system temp. Nothing
+  // here touches the live logs, the live server or the chain. That is the rule
+  // this file opens with, and an inbox of pasted screenshots is live state
+  // exactly as the logs are -- more so, since what is in one is usually a
+  // ticket.
+  //
+  // The chain side of wren-file-draft.js is never run. The real --send path
+  // sends a transaction, so what is tested is the deletion itself, with the
+  // unlink stubbed and the filing never happening.
+
+  const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);
+
+  function fakePng(payloadBytes) {
+    return Buffer.concat([PNG_MAGIC, Buffer.alloc(payloadBytes || 32, 0x7a)]);
+  }
+
+  function freePort() {
+    const net = require("net");
+    return new Promise((resolve, reject) => {
+      const probe = net.createServer();
+      probe.on("error", reject);
+      probe.listen(0, "127.0.0.1", () => {
+        const port = probe.address().port;
+        probe.close(() => resolve(port));
+      });
+    });
+  }
+
+  // Start governance/server.js -- this repo's own, from this directory -- and
+  // hand back something that can talk to it and something that stops it. It is
+  // always stopped, including when a check throws: a test that leaks a server
+  // holds a port and a directory for the rest of the session.
+  async function withTestServer(logDir, body) {
+    const { spawn } = require("child_process");
+    const port = await freePort();
+    const child = spawn(process.execPath, [path.join(__dirname, "server.js")], {
+      env: Object.assign({}, process.env, {
+        GOVERNANCE_PORT: String(port),
+        GOVERNANCE_LOG_DIR: logDir,
+        GOVERNANCE_NO_WATCH: "1"
+      }),
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+
+    const lines = [];
+    const collect = (chunk) => String(chunk).split(/\r?\n/).forEach((l) => { if (l) lines.push(l); });
+    child.stdout.on("data", collect);
+    child.stderr.on("data", collect);
+
+    const base = `http://127.0.0.1:${port}`;
+    const waitFor = async (predicate, what, ms) => {
+      const deadline = Date.now() + (ms || 15000);
+      while (Date.now() < deadline) {
+        if (predicate()) return true;
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      throw new Error(`the test server never ${what}:\n${lines.join("\n")}`);
+    };
+
+    try {
+      await waitFor(() => lines.some((l) => l.indexOf("Ctrl-C to stop.") === 0), "started");
+      return await body({
+        base: base,
+        lines: lines,
+        waitFor: waitFor,
+        post: async (route, payload) => {
+          const response = await fetch(base + route, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: typeof payload === "string" ? payload : JSON.stringify(payload)
+          });
+          const text = await response.text();
+          let parsed = null;
+          try { parsed = JSON.parse(text); } catch (e) { parsed = null; }
+          return { status: response.status, text: text, body: parsed };
+        },
+        get: async (route) => {
+          const response = await fetch(base + route);
+          return { status: response.status, text: await response.text() };
+        }
+      });
+    } finally {
+      child.kill();
+      await new Promise((resolve) => {
+        if (child.exitCode !== null || child.signalCode !== null) return resolve();
+        child.on("exit", resolve);
+        setTimeout(resolve, 3000);
+      });
+    }
+  }
+
+  const inboxDir = fs.mkdtempSync(path.join(os.tmpdir(), "governance-inbox-check-"));
+
+  await withTestServer(inboxDir, async (server) => {
+    const draftsFile = path.join(inboxDir, "drafts.jsonl");
+    const readDrafts = () => P.parseJsonl(fs.readFileSync(draftsFile, "utf8")).records;
+
+    await checkAsync("a draft with an image records the pointer and writes the file", async () => {
+      const bytes = fakePng(64);
+      const answer = await server.post("/drafts", {
+        text: "a draft with a screenshot",
+        aaoId: 0,
+        image: { type: "image/png", base64: bytes.toString("base64") }
+      });
+      assert.strictEqual(answer.status, 201, `expected 201, got ${answer.status}: ${answer.text}`);
+
+      const draft = answer.body.draft;
+      const image = R.draftImage(draft);
+      assert.ok(image, "the draft carries no image pointer");
+      assert.strictEqual(image.bytes, bytes.length);
+      assert.strictEqual(image.type, "image/png");
+      assert.strictEqual(
+        image.sha256,
+        require("crypto").createHash("sha256").update(bytes).digest("hex"),
+        "the recorded hash is not the hash of the bytes that were sent"
+      );
+
+      // Under LOG_DIR, named after the id the server made, and the bytes on
+      // disk are the bytes that were sent.
+      assert.strictEqual(image.path, "inbox/" + draft.id + ".png");
+      const onDisk = path.join(inboxDir, image.path);
+      assert.ok(fs.existsSync(onDisk), `nothing was written to ${onDisk}`);
+      assert.ok(fs.readFileSync(onDisk).equals(bytes), "the stored file is not what was sent");
+
+      // The pointer is in the log; the picture is not.
+      const line = fs.readFileSync(draftsFile, "utf8").split(/\r?\n/).filter(Boolean).pop();
+      assert.ok(line.indexOf(image.sha256) !== -1, "the log line has no hash");
+      assert.ok(
+        line.indexOf(bytes.toString("base64").slice(8, 24)) === -1,
+        "the image itself was written into drafts.jsonl"
+      );
+    });
+
+    await checkAsync("the file name the client sent is never used", async () => {
+      const answer = await server.post("/drafts", {
+        text: "a draft whose image claims a name",
+        aaoId: 0,
+        image: {
+          type: "image/png",
+          name: "../../../escaped.png",
+          base64: fakePng(16).toString("base64")
+        }
+      });
+      assert.strictEqual(answer.status, 201, answer.text);
+      const draft = answer.body.draft;
+      assert.strictEqual(R.draftImage(draft).path, "inbox/" + draft.id + ".png");
+      assert.ok(
+        JSON.stringify(draft).indexOf("escaped") === -1,
+        "the client's file name was kept"
+      );
+      assert.ok(
+        !fs.existsSync(path.join(inboxDir, "..", "..", "..", "escaped.png")),
+        "a file was written outside the inbox"
+      );
+    });
+
+    await checkAsync("a draft without an image is unchanged", async () => {
+      const answer = await server.post("/drafts", { text: "a plain draft", aaoId: 0 });
+      assert.strictEqual(answer.status, 201, answer.text);
+      const draft = answer.body.draft;
+      assert.strictEqual(R.draftImage(draft), null);
+      assert.strictEqual(draft.image, undefined, "a draft with no image still got an image field");
+      assert.deepStrictEqual(
+        Object.keys(draft).sort(),
+        ["aaoId", "at", "from", "id", "state", "text"],
+        "the shape of a plain draft changed"
+      );
+      assert.strictEqual(draft.state, "awaiting-wren");
+      assert.strictEqual(draft.from, "director");
+    });
+
+    await checkAsync("a file that is not an image is refused, with the reason", async () => {
+      // It says image/png. It is a Windows executable. The magic bytes decide.
+      const lie = Buffer.concat([Buffer.from("MZ"), Buffer.alloc(64, 1)]);
+      const answer = await server.post("/drafts", {
+        text: "not really a picture",
+        aaoId: 0,
+        image: { type: "image/png", base64: lie.toString("base64") }
+      });
+      assert.strictEqual(answer.status, 400, `expected 400, got ${answer.status}`);
+      assert.strictEqual(answer.body.ok, false);
+      assert.match(answer.body.errors[0], /PNG or a JPEG/, "the refusal gives no reason");
+      assert.strictEqual(
+        readDrafts().filter((d) => d.text === "not really a picture").length, 0,
+        "a refused draft was written to the log anyway"
+      );
+    });
+
+    await checkAsync("a JPEG is taken, by its bytes and not its label", async () => {
+      const jpeg = Buffer.concat([JPEG_MAGIC, Buffer.alloc(24, 5)]);
+      const answer = await server.post("/drafts", {
+        text: "a jpeg draft",
+        aaoId: 0,
+        // Announced as a PNG, and a data: URL rather than bare base64.
+        image: { type: "image/png", base64: "data:image/png;base64," + jpeg.toString("base64") }
+      });
+      assert.strictEqual(answer.status, 201, answer.text);
+      const image = R.draftImage(answer.body.draft);
+      assert.strictEqual(image.type, "image/jpeg");
+      assert.ok(/\.jpg$/.test(image.path), `stored as ${image.path}`);
+    });
+
+    await checkAsync("an image over the limit is refused, with its size", async () => {
+      const tooBig = fakePng(R.IMAGE_LIMIT_BYTES);   // magic bytes push it past
+      assert.ok(tooBig.length > R.IMAGE_LIMIT_BYTES);
+      const answer = await server.post("/drafts", {
+        text: "far too big",
+        aaoId: 0,
+        image: { type: "image/png", base64: tooBig.toString("base64") }
+      });
+      assert.strictEqual(answer.status, 400, `expected 400, got ${answer.status}`);
+      assert.match(answer.body.errors[0], /5\.0 MB/, "the refusal does not say what the limit is");
+      assert.strictEqual(
+        fs.readdirSync(path.join(inboxDir, "inbox")).filter((n) => /\.png$/.test(n)).length, 2,
+        "a refused image was written to the inbox"
+      );
+    });
+
+    await checkAsync("a body over the ceiling is refused before it is buffered whole", async () => {
+      // Nine megabytes, sent a hundred kilobytes at a time, at a route that
+      // stops at eight. The refusal has to come back while the body is still
+      // going out -- that is the whole point of counting as the bytes arrive,
+      // and it is what stops this route being a way to make the server hold an
+      // arbitrary amount of memory. A refusal that only arrived after the
+      // ninth megabyte had been read would have proved nothing.
+      //
+      // And it has to be READABLE. Cutting the connection the moment the
+      // ceiling trips would also refuse the body, but it would hand the sender
+      // a network error instead of the sentence saying what was wrong.
+      const total = 90;
+      const chunk = new TextEncoder().encode("A".repeat(100 * 1024));
+      let sent = 0;
+      const body = new ReadableStream({
+        async pull(controller) {
+          if (sent === 0) {
+            controller.enqueue(new TextEncoder().encode(
+              '{"text":"much too large","aaoId":0,"image":{"base64":"'));
+          }
+          if (sent >= total) {
+            controller.enqueue(new TextEncoder().encode('"}}'));
+            controller.close();
+            return;
+          }
+          controller.enqueue(chunk);
+          sent++;
+          await new Promise((r) => setTimeout(r, 8));
+        }
+      });
+
+      const response = await fetch(server.base + "/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body,
+        duplex: "half"
+      });
+      const sentWhenAnswered = sent;
+      const text = await response.text();
+
+      assert.strictEqual(response.status, 413, `expected 413, got ${response.status}: ${text}`);
+      assert.match(text, /too large/i, "the refusal does not say what was wrong");
+      assert.ok(
+        sentWhenAnswered < total,
+        `the refusal only arrived after all ${total} chunks had been sent`
+      );
+      assert.strictEqual(
+        readDrafts().filter((d) => d.text === "much too large").length, 0,
+        "an oversized body still produced a draft"
+      );
+
+      // The server is still there afterwards, on the same port.
+      const after = await server.post("/drafts", { text: "still answering", aaoId: 0 });
+      assert.strictEqual(after.status, 201, "the server stopped answering after a refusal");
+    });
+
+    await checkAsync("every other route keeps the 64 KB ceiling", async () => {
+      const answer = await server.post("/questions", { text: "x".repeat(70 * 1024) });
+      assert.strictEqual(answer.status, 413, `expected 413, got ${answer.status}`);
+    });
+
+    await checkAsync("the inbox is not reachable over HTTP", async () => {
+      const stored = readDrafts().map(R.draftImage).filter(Boolean)[0];
+      assert.ok(stored, "no image was stored, so this check would prove nothing");
+      const name = stored.path.split("/")[1];
+
+      const routes = [
+        "/" + stored.path,                    // the plain path
+        "/%69nbox/" + name,                   // percent-encoded, so a check on
+        "/inbox/" + encodeURIComponent(name), // the raw string alone would miss
+        "/swarm/../inbox/" + name,            // climbing back in
+        "/%2e%2e/inbox/" + name,
+        "/inbox/",
+        "/inbox"
+      ];
+      for (const route of routes) {
+        const answer = await server.get(route);
+        assert.notStrictEqual(answer.status, 200, `${route} was served`);
+        assert.ok(
+          answer.text.indexOf("PNG") === -1 && answer.text.indexOf("\u0089") === -1,
+          `${route} gave back image bytes`
+        );
+      }
+
+      // And the page itself is still served, so the deny is the inbox and not
+      // the whole static route.
+      const page = await server.get("/index.html");
+      assert.strictEqual(page.status, 200, "the page stopped being served");
+    });
+  });
+
+  // The sweep, on a directory prepared before the server starts.
+  const sweepDir = fs.mkdtempSync(path.join(os.tmpdir(), "governance-sweep-check-"));
+  fs.mkdirSync(path.join(sweepDir, "inbox"));
+  const oldFile = path.join(sweepDir, "inbox", "old.png");
+  const newFile = path.join(sweepDir, "inbox", "new.png");
+  fs.writeFileSync(oldFile, fakePng(8));
+  fs.writeFileSync(newFile, fakePng(8));
+  const longAgo = Date.now() / 1000 - 48 * 60 * 60;
+  fs.utimesSync(oldFile, longAgo, longAgo);
+
+  await withTestServer(sweepDir, async (server) => {
+    await checkAsync("the sweep removes images over a day old, and only those", async () => {
+      await server.waitFor(
+        () => server.lines.some((l) => /^inbox: \d+ image/.test(l)),
+        "swept the inbox"
+      );
+      const line = server.lines.filter((l) => /^inbox: /.test(l))[0];
+      assert.strictEqual(line, "inbox: 1 image(s) older than 24 hours removed", line);
+      assert.ok(!fs.existsSync(oldFile), "the day-old image was left behind");
+      assert.ok(fs.existsSync(newFile), "the sweep took an image that was not old");
+    });
+  });
+
+  // --- filing: what happens to the image, without filing anything --------
+
+  const filing = require("../scripts/wren-file-draft.js");
+
+  await checkAsync("a rehearsal deletes nothing", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "governance-rehearsal-check-"));
+    fs.mkdirSync(path.join(dir, "inbox"));
+    const file = path.join(dir, "inbox", "draft-rehearse.png");
+    fs.writeFileSync(file, fakePng(8));
+    const draft = {
+      id: "draft-rehearse",
+      image: { path: "inbox/draft-rehearse.png", sha256: "a".repeat(64), bytes: 16, type: "image/png" }
+    };
+
+    const said = filing.discardDraftImage(draft, { dir: dir, rehearsal: true });
+    assert.strictEqual(said.deleted, false, "a rehearsal reported a deletion");
+    assert.ok(fs.existsSync(file), "a rehearsal deleted the image");
+  });
+
+  await checkAsync("filing deletes the image and keeps only its hash", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "governance-filing-check-"));
+    fs.mkdirSync(path.join(dir, "inbox"));
+    const file = path.join(dir, "inbox", "draft-filed.png");
+    fs.writeFileSync(file, fakePng(8));
+    const draft = {
+      id: "draft-filed",
+      image: { path: "inbox/draft-filed.png", sha256: "b".repeat(64), bytes: 16, type: "image/png" }
+    };
+
+    // The unlink is stubbed, so this proves which file the real run would
+    // take without a chain, a transaction or a filing anywhere near it.
+    const asked = [];
+    const stubbed = filing.discardDraftImage(draft, { dir: dir, unlink: (f) => asked.push(f) });
+    assert.deepStrictEqual(asked, [file], "the wrong file would have been deleted");
+    assert.strictEqual(stubbed.deleted, true);
+    assert.strictEqual(stubbed.image.sha256, "b".repeat(64));
+
+    // And for real, on this temp directory only.
+    const done = filing.discardDraftImage(draft, { dir: dir });
+    assert.strictEqual(done.deleted, true);
+    assert.ok(!fs.existsSync(file), "the image survived the filing");
+
+    // Asked again, with the file already gone -- the hourly sweep may have
+    // reached it first, and that is not a failure.
+    assert.strictEqual(filing.discardDraftImage(draft, { dir: dir }).deleted, true);
+
+    // A draft that never carried one is left entirely alone.
+    assert.strictEqual(filing.discardDraftImage({ id: "draft-plain" }, { dir: dir }), null);
+  });
+
+  check("the page and the server refuse the same things for the same reason", () => {
+    assert.strictEqual(R.draftImageProblem({ type: "image/png", size: 1024 }), null);
+    assert.strictEqual(R.draftImageProblem({ type: "image/jpeg", size: R.IMAGE_LIMIT_BYTES }), null);
+    assert.match(R.draftImageProblem({ type: "image/gif", size: 10 }), /PNG or a JPEG/);
+    assert.match(R.draftImageProblem({ type: "application/pdf", size: 10 }), /PNG or a JPEG/);
+    assert.match(R.draftImageProblem({ type: "image/png", size: 0 }), /empty/);
+    assert.match(
+      R.draftImageProblem({ type: "image/png", size: R.IMAGE_LIMIT_BYTES + 1 }),
+      /5\.0 MB/
+    );
+    // A record written before this proposal simply has no image.
+    assert.strictEqual(R.draftImage({ id: "draft-old", text: "words" }), null);
+    assert.strictEqual(R.draftImage({ image: { bytes: 4 } }), null, "an image with no path counts");
+  });
+  // --- END proposal 54 ----------------------------------------------------
+
   console.log("");
   for (const name of checks) console.log(`  ok  ${name}`);
   console.log("");

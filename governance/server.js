@@ -268,14 +268,17 @@ function readBody(req, done, max, tooLarge) {
   const fail = (message, status, overLimit) => {
     if (finished) return;
     finished = true;
-    // Let go of what was buffered before answering. The point of counting as
-    // the bytes arrive is that an oversized POST never becomes an oversized
-    // allocation; holding the chunks while the refusal is written would give
-    // that back. The socket is cut once the refusal has been flushed, so the
-    // sender stops rather than spending another eight megabytes on a body
-    // nothing will read.
+    // Let go of what was buffered before answering, and keep letting go of
+    // whatever else arrives. The point of counting as the bytes come in is
+    // that an oversized POST never becomes an oversized allocation: past this
+    // line the route holds nothing at all, however much more is sent. What
+    // does not happen here is cutting the socket -- a connection killed before
+    // the refusal has been read hands the sender a network error instead of
+    // the sentence explaining what was wrong, and this route's whole job is to
+    // say why in plain words. refuseBody closes the connection after the
+    // refusal instead.
     chunks = [];
-    req.on("data", () => {});
+    req.resume();
     done(Object.assign(new Error(message), { status: status || 400, overLimit: !!overLimit }));
   };
   req.on("data", (chunk) => {
@@ -298,13 +301,14 @@ function readBody(req, done, max, tooLarge) {
   });
 }
 
-// A body that was refused for its size is answered and then cut off (proposal
-// 54): the refusal goes out first, and the socket closes once it has, so the
-// sender stops pushing megabytes at a route that has already said no.
+// A body refused for its size is answered and the connection then ends
+// (proposal 54). The refusal is written straight away, while the rest of the
+// body is still on its way and being thrown away unread, and `Connection:
+// close` means this socket is finished once that refusal has been delivered.
+// The sender gets the sentence, and gets it early; the server is holding none
+// of what it sent.
 function refuseBody(req, res, err) {
-  if (err.overLimit) {
-    res.on("finish", () => { try { req.destroy(); } catch (e) { /* already gone */ } });
-  }
+  if (err.overLimit && !res.headersSent) res.setHeader("Connection", "close");
   send(res, err.status || 400, err.message);
 }
 
