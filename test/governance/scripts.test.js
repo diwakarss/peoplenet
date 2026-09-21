@@ -1853,6 +1853,209 @@ describe("the write scripts refuse before they send", function () {
       });
     });
 
+  // --- proposal 92: the chain survives a sign-out -------------------------
+  //
+  // On 2026-09-19 a Windows sign-out destroyed the chain. The replay tool
+  // rebuilt it, but the only export that existed was one taken by luck during a
+  // rehearsal, and every vote cast after it was lost.
+  //
+  // Nothing here touches the live node, the live server, the live logs or the
+  // real snapshot directory. Every path below is a throwaway directory, and no
+  // process is spawned.
+  describe("the snapshot that makes the record survive", function () {
+    const SNAP = require("../../governance/snapshots.js");
+    const os = require("os");
+    let dir;
+
+    const body = (events, proposals, block) => JSON.stringify({
+      blockNumber: block === undefined ? 100 : block,
+      events: Array.from({ length: events }, (_, i) => ({ name: "VoteCast", block: i })),
+      state: {
+        aaoCount: 4,
+        aaos: [],
+        proposals: Array.from({ length: proposals }, (_, i) => ({ id: i }))
+      }
+    });
+
+    function put(name, text) {
+      const file = path.join(dir, name);
+      fs.writeFileSync(file, text, "utf8");
+      return file;
+    }
+
+    beforeEach(function () {
+      dir = path.join(os.tmpdir(), "peoplenet-snap-test-" + Date.now() + "-" +
+        Math.random().toString(36).slice(2));
+      fs.mkdirSync(dir, { recursive: true });
+    });
+
+    afterEach(function () {
+      if (dir && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("lives outside the repository, and outside the temp directory by default",
+      function () {
+        // The temp directory is a place the operating system empties, and while
+        // the chain is in one process's memory the snapshot is the only copy.
+        const where = SNAP.directory();
+        const repo = path.join(__dirname, "..", "..");
+        expect(path.relative(repo, where).startsWith(".."),
+          where + " is inside the repository").to.equal(true);
+        expect(where.startsWith(os.tmpdir()),
+          where + " is under the temp directory").to.equal(false);
+        expect(where).to.contain("peoplenet-snapshots");
+      });
+
+    it("takes its directory from the environment when told", function () {
+      const was = process.env.PEOPLENET_SNAPSHOT_DIR;
+      try {
+        process.env.PEOPLENET_SNAPSHOT_DIR = dir;
+        delete require.cache[require.resolve("../../governance/snapshots.js")];
+        expect(require("../../governance/snapshots.js").directory()).to.equal(path.resolve(dir));
+      } finally {
+        if (was === undefined) delete process.env.PEOPLENET_SNAPSHOT_DIR;
+        else process.env.PEOPLENET_SNAPSHOT_DIR = was;
+        delete require.cache[require.resolve("../../governance/snapshots.js")];
+      }
+    });
+
+    it("names them so the newest sorts last, with no clock to trust twice",
+      function () {
+        const early = SNAP.nameFor(new Date("2026-09-21T05:00:00Z"));
+        const later = SNAP.nameFor(new Date("2026-09-21T05:10:00Z"));
+        expect([later, early].sort()).to.deep.equal([early, later]);
+        expect(SNAP.isSnapshotName(path.basename(early))).to.equal(true);
+        expect(SNAP.isSnapshotName("notes.txt")).to.equal(false);
+      });
+
+    it("refuses to replace a good snapshot with an export holding fewer events",
+      function () {
+        const problem = SNAP.replacementProblem({ events: 100, proposals: 60 },
+          { events: 193, proposals: 60 });
+        expect(problem).to.contain("100 events");
+        expect(problem).to.contain("193");
+        expect(problem, "and says why, not just no").to.contain("The record only grows");
+      });
+
+    it("refuses on fewer proposals too, even when the events grew", function () {
+      const problem = SNAP.replacementProblem({ events: 300, proposals: 4 },
+        { events: 193, proposals: 60 });
+      expect(problem).to.contain("4 proposals");
+      expect(problem).to.contain("60");
+    });
+
+    it("allows a bigger one, and allows the very first", function () {
+      expect(SNAP.replacementProblem({ events: 200, proposals: 61 },
+        { events: 193, proposals: 60 })).to.equal(null);
+      expect(SNAP.replacementProblem({ events: 1, proposals: 0 }, null)).to.equal(null);
+    });
+
+    it("refuses an export it could not read at all", function () {
+      expect(SNAP.replacementProblem(null, null)).to.contain("could not be read");
+    });
+
+    it("measures against the newest one it can READ, not merely the newest",
+      function () {
+        put(SNAP.nameFor(new Date("2026-09-21T05:00:00Z")), body(193, 60));
+        put(SNAP.nameFor(new Date("2026-09-21T05:10:00Z")), "{ truncated mid-write");
+        const good = SNAP.newestGood(dir);
+        expect(path.basename(good.file)).to.contain("05-00-00");
+        expect(good.summary.events, "a corrupt newest must not become the yardstick")
+          .to.equal(193);
+      });
+
+    it("writes through a temporary file and a rename, leaving no part behind",
+      function () {
+        const file = path.join(dir, SNAP.nameFor(new Date()));
+        SNAP.writeAtomic(file, body(5, 2));
+        expect(fs.existsSync(file)).to.equal(true);
+        expect(fs.existsSync(file + ".part"), "the part file is renamed, not left")
+          .to.equal(false);
+        expect(SNAP.summarise(file).events).to.equal(5);
+      });
+
+    it("keeps the last N and drops the oldest first", function () {
+      for (let i = 0; i < 8; i++) {
+        put(SNAP.nameFor(new Date(Date.UTC(2026, 8, 21, 5, i))), body(10 + i, 3));
+      }
+      expect(SNAP.list(dir).length).to.equal(8);
+      const removed = SNAP.prune(dir, 3);
+      expect(removed.length).to.equal(5);
+      const left = SNAP.list(dir).map((f) => path.basename(f));
+      expect(left.length).to.equal(3);
+      expect(left[left.length - 1], "the newest survives").to.contain("05-07");
+      expect(left[0], "and the oldest kept is the fourth from the end").to.contain("05-05");
+    });
+
+    it("prunes nothing when there is nothing spare", function () {
+      put(SNAP.nameFor(new Date()), body(1, 1));
+      expect(SNAP.prune(dir, 200)).to.deep.equal([]);
+      expect(SNAP.list(dir).length).to.equal(1);
+    });
+
+    it("reads an empty or missing directory as no snapshots, not an error",
+      function () {
+        expect(SNAP.list(path.join(dir, "not-there"))).to.deep.equal([]);
+        expect(SNAP.newest(dir)).to.equal(null);
+        expect(SNAP.newestGood(dir)).to.equal(null);
+      });
+
+    it("summarises a file it cannot parse as nothing, not as zero", function () {
+      const file = put(SNAP.nameFor(new Date()), "not json");
+      expect(SNAP.summarise(file), "nothing is not the same as a small snapshot")
+        .to.equal(null);
+    });
+  });
+
+  describe("bringing it all back up", function () {
+    const UP = require("../../scripts/up.js");
+
+    it("knows a process id it started from one that is gone", function () {
+      expect(UP.alive(process.pid), "this very process").to.equal(true);
+      expect(UP.alive(0)).to.equal(false);
+      expect(UP.alive(null)).to.equal(false);
+      // A pid that is almost certainly not a running process.
+      expect(UP.alive(999999)).to.equal(false);
+    });
+
+    it("records what it started by process id, never by name", function () {
+      const source = fs.readFileSync(
+        path.join(__dirname, "..", "..", "scripts", "up.js"), "utf8");
+      // A name match once killed an architect's watch three times in an
+      // afternoon. Nothing here may look a process up by its command line.
+      expect(source).to.not.contain("CommandLine");
+      expect(source).to.not.contain("taskkill");
+      expect(source).to.not.contain("pkill");
+      expect(source, "it starts things and records their pids").to.contain("recordPid");
+    });
+
+    it("does nothing when the chain is already up with a record on it", function () {
+      // The shape of the check, read off the script: an answering node AND a
+      // diamond holding something. A node that answers with an empty diamond is
+      // a rebuilt chain waiting for a replay, not a running system.
+      const source = fs.readFileSync(
+        path.join(__dirname, "..", "..", "scripts", "up.js"), "utf8");
+      expect(source).to.contain("already up");
+      expect(source).to.contain("chainHoldsRecord");
+    });
+
+    it("refuses to replay onto a diamond that is not the one it expects",
+      function () {
+        const source = fs.readFileSync(
+          path.join(__dirname, "..", "..", "scripts", "up.js"), "utf8");
+        expect(source).to.contain("Refusing to replay onto it");
+        expect(source, "and proves the vote guard by calling it").to.contain("voteGuardPresent");
+      });
+
+    it("prints the logon task rather than installing it", function () {
+      const source = fs.readFileSync(
+        path.join(__dirname, "..", "..", "scripts", "up.js"), "utf8");
+      expect(source).to.contain("it is not installed");
+      expect(source.indexOf('spawn(process.execPath, ["schtasks'), "never runs it")
+        .to.equal(-1);
+    });
+  });
+
   describe("wren-decide's state reader, which writes no transaction at all", function () {
     it("reads the state out of the words, and refuses words that say nothing", async function () {
       expect(A.stateOf({ summary: "queued behind S12." }).key).to.equal("queued");
