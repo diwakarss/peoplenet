@@ -22,11 +22,19 @@ process.env.HARDHAT_NETWORK = process.env.HARDHAT_NETWORK || "localhost";
 
 const fs = require("fs");
 const path = require("path");
-const { ethers } = require("hardhat");
 const R = require("../governance/read.js");
 const P = require("../governance/protocol.js");
 
-const GOV = path.join(__dirname, "..", "governance");
+// hardhat is required inside main(), not here: it is heavy, it reads the
+// network config, and this file is also require()d by governance/check.js for
+// the one function below that has nothing to do with a chain. (proposal 54)
+
+// The same GOVERNANCE_LOG_DIR the server honours, and the same default -- the
+// draft log and the inbox beside it are one directory, so a test can point
+// both somewhere safe and nothing here goes near the real record.
+const GOV = process.env.GOVERNANCE_LOG_DIR
+  ? path.resolve(process.env.GOVERNANCE_LOG_DIR)
+  : path.join(__dirname, "..", "governance");
 const DRAFTS = path.join(GOV, "drafts.jsonl");
 
 function readLog(file) {
@@ -119,8 +127,61 @@ function listDrafts(records) {
     const mark = filedRecord ? `filed as ${filedRecord.proposalId}` : "AWAITING WREN";
     console.log(`  ${mark.padEnd(16)} ${d.id}  AAO ${d.aaoId}  ${d.at}`);
     console.log(`                   ${firstLine(d.text, 92)}`);
+    // Proposal 54: say that there is a picture, and where, so it can be opened
+    // before the title and the why are written. The bytes and the hash are
+    // here because the file is not in git and this line is the only record
+    // that it was ever the right file.
+    const image = R.draftImage(d);
+    if (image) {
+      console.log(
+        `                   image: ${image.path}  ` +
+        `${R.describeBytes(image.bytes)}  ${String(image.sha256 || "").slice(0, 16)}…`
+      );
+    }
   }
 }
+
+// --- BEGIN proposal 54: the image is deleted as the proposal is filed -----
+//
+// The picture was a note to whoever had to write the title and the why. Once
+// that text exists on the chain, what is left on disk is a screenshot of a
+// ticket, which may carry a customer's name, an email address or a credential
+// -- so it goes, and the filed record says so with the hash, which is all that
+// should outlive it.
+//
+// Called only after the transaction has landed. It therefore never throws: a
+// filing that succeeded on chain must not be reported as a failure because a
+// file could not be unlinked. `rehearsal` is the whole reason for the flag --
+// --dry-run says what the real run would remove and removes nothing.
+//
+// `unlink` is injectable so the tests can prove the deletion happens without
+// going near a chain or a real filing.
+function discardDraftImage(draft, options) {
+  const o = options || {};
+  const image = R.draftImage(draft);
+  if (!image) return null;
+
+  const file = path.join(o.dir || GOV, image.path);
+  if (o.rehearsal) {
+    return { image: image, file: file, deleted: false, note: "rehearsal: left in place" };
+  }
+
+  const unlink = o.unlink || fs.unlinkSync;
+  try {
+    unlink(file);
+    return { image: image, file: file, deleted: true, note: "deleted" };
+  } catch (e) {
+    // Already gone is still gone -- the hourly sweep may have reached it first.
+    if (e && e.code === "ENOENT") {
+      return { image: image, file: file, deleted: true, note: "already gone" };
+    }
+    return {
+      image: image, file: file, deleted: false,
+      note: "could NOT be deleted: " + (e && (e.code || e.message))
+    };
+  }
+}
+// --- END proposal 54 -------------------------------------------------------
 
 async function main() {
   const args = parseArgs(process.argv);
@@ -180,6 +241,11 @@ async function main() {
   // Who may file this, and whether it is already filed (proposal 89). Both are
   // asked on the rehearsal path too: a dry run that says "valid, nothing filed"
   // about a draft the real run would refuse is a dry run that lies.
+  // Required here rather than at the top of the file: it is heavy, it reads
+  // the network config, and neither --list nor the checks above it have any
+  // business needing a chain to run. (proposal 54)
+  const { ethers } = require("hardhat");
+
   const signers = await ethers.getSigners();
   const signer = signers[args.account];
   if (!signer) throw new Error(`No Hardhat account ${args.account} on this network.`);
@@ -206,6 +272,11 @@ async function main() {
   if (args.dryRun) {
     console.log("");
     console.log(`would file on ${aao.topic} (AAO ${aaoId}) as ${R.labelFor(signer.address)}.`);
+    // Say what the real run would delete, and delete nothing (proposal 54).
+    const wouldDiscard = discardDraftImage(draft, { rehearsal: true });
+    if (wouldDiscard) {
+      console.log(`would delete ${wouldDiscard.file} after filing (${wouldDiscard.note}).`);
+    }
     console.log("--dry-run: valid, nothing filed.");
     return;
   }
@@ -236,14 +307,31 @@ async function main() {
     txHash: receipt.hash,
     blockNumber: receipt.blockNumber
   };
+
+  // The proposal exists now, so the picture has done its work (proposal 54).
+  // The record keeps the hash, which is the only part of it that should
+  // outlive the filing.
+  const discarded = discardDraftImage(draft);
+  if (discarded) {
+    filedRecord.image_deleted = discarded.deleted;
+    filedRecord.image_sha256 = discarded.image.sha256;
+  }
+
   fs.appendFileSync(DRAFTS, P.toJsonl(filedRecord), "utf8");
 
   console.log("");
   console.log(`filed as proposal ${proposalId} on AAO ${aaoId} (block ${receipt.blockNumber})`);
   console.log(`draft ${draft.id} marked filed in ${path.relative(process.cwd(), DRAFTS)}`);
+  if (discarded) console.log(`image ${discarded.file}: ${discarded.note}`);
 }
 
-main().catch((e) => {
-  console.error(e.message || e);
-  process.exit(1);
-});
+// Required by governance/check.js for discardDraftImage, which is why main()
+// only runs when this file is the one that was started. (proposal 54)
+if (require.main === module) {
+  main().catch((e) => {
+    console.error(e.message || e);
+    process.exit(1);
+  });
+}
+
+module.exports = { discardDraftImage: discardDraftImage, DRAFTS: DRAFTS, GOV: GOV };

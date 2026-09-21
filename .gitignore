@@ -78,3 +78,10 @@ docs/generated/
 *.tmp
 *.temp
 .temp/
+
+# Images pasted onto a draft (proposal 54). A screenshot is usually a ticket,
+# so it may carry a customer's name, an email address or a credential. It is
+# a note to the architect completing the draft, deleted as the proposal is
+# filed and swept after a day -- it is never part of the record and must never
+# reach a commit.
+governance/inbox/
