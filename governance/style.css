@@ -1220,3 +1220,14 @@ button.casting:not(:disabled), button.close-tie:not(:disabled) {
   color: var(--ink);
   font-weight: 600;
 }
+
+/* A second opinion sits beside the answer, never as it (proposal 90): set in
+   from the thread and marked, so it cannot be read as the reply that settled
+   the question. */
+.qa-reply.is-second-opinion {
+  border-left: 2px solid var(--rule);
+  padding-left: 10px;
+  opacity: 0.88;
+}
+
+.qa-reply.is-second-opinion .qa-who { font-style: italic; }

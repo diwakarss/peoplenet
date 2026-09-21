@@ -12,6 +12,7 @@
 //   --details "<technical>"   the part that goes below the fold on the card
 //   --ref <thing>             repeatable: a ticket, commit, incident or spec entry
 //   --from <who>              default "wren"
+//   --second-opinion          add a view beside the answer, not as the answer
 //   --list                    print the open questions and exit
 //
 // No chain, no gas: this writes a file. The files are the record until the
@@ -19,6 +20,7 @@
 const fs = require("fs");
 const path = require("path");
 const P = require("../governance/protocol.js");
+const R = require("../governance/read.js");
 
 const GOV = path.join(__dirname, "..", "governance");
 const QUESTIONS = path.join(GOV, "questions.jsonl");
@@ -39,13 +41,15 @@ function usage(message) {
 }
 
 function parseArgs(argv) {
-  const out = { positional: [], details: "", refs: [], from: "wren", list: false };
+  const out = { positional: [], details: "", refs: [], from: "wren", list: false,
+    secondOpinion: false };
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (arg === "--list") out.list = true;
     else if (arg === "--details") out.details = String(rest[++i] || "");
     else if (arg === "--from") out.from = String(rest[++i] || "wren");
+    else if (arg === "--second-opinion") out.secondOpinion = true;
     else if (arg === "--ref") out.refs.push(String(rest[++i] || ""));
     else if (arg === "--") continue;
     else if (arg.startsWith("--")) usage(`wren-answer: unknown option ${arg}`);
@@ -62,7 +66,9 @@ function firstLine(text, max) {
 }
 
 function listOpen(questions, answers) {
-  const answered = new Set(answers.map((a) => a.question));
+  // A second opinion is a view beside the answer, not the answer, so it leaves
+  // the question open (proposal 90).
+  const answered = new Set(answers.filter((a) => !R.isSecondOpinion(a)).map((a) => a.question));
   if (!questions.length) {
     console.log("No questions yet.");
     return;
@@ -76,7 +82,30 @@ function listOpen(questions, answers) {
   }
 }
 
-function main() {
+// The organisation a question was asked on.
+//
+// Every question written since proposal 90 carries its topic, so this stays
+// what the header promises: no chain, no gas. An older one does not, and its
+// `to` says "wren" whatever organisation it was asked on -- which is the bug --
+// so for those alone the chain is read, lazily. If it cannot be reached the
+// message's own `to` stands, and the script says which it used.
+async function topicOf(question) {
+  if (question.topic) return String(question.topic);
+  try {
+    process.env.HARDHAT_NETWORK = process.env.HARDHAT_NETWORK || "localhost";
+    const { ethers } = require("hardhat");
+    const facet = await ethers.getContractAt("AAOFacet", R.DIAMOND);
+    const asked = (await R.readAAOs(facet))
+      .filter((aao) => aao.id === Number(question.aaoId || 0))[0];
+    return asked ? asked.topic : "";
+  } catch (e) {
+    console.warn(`wren-answer: could not read the organisations (${e.message || e});` +
+      ` going by the question's own "to".`);
+    return "";
+  }
+}
+
+async function main() {
   const args = parseArgs(process.argv);
   const questions = readLog(QUESTIONS);
   const answers = readLog(ANSWERS);
@@ -97,6 +126,19 @@ function main() {
   const text = textParts.join(" ").trim();
   if (!text) usage("wren-answer: an answer in plain English is required.");
 
+  // Who answers this one (proposal 90). The Director's question on 87 got two
+  // answers two seconds apart because every question was addressed to "wren"
+  // whatever organisation it was asked on. The rule set decides, not the
+  // message: every question written before 90 says "wren".
+  const topic = await topicOf(question);
+  const problem = R.answerProblem(R.rulesFor({ topic: topic }), question, args.from,
+    { topic: topic || "this organisation", secondOpinion: args.secondOpinion });
+  if (problem) {
+    console.error("");
+    console.error("wren-answer: " + problem);
+    process.exit(1);
+  }
+
   const now = new Date().toISOString();
   const message = P.normalise({
     // 27.5, the protocol envelope
@@ -113,19 +155,25 @@ function main() {
     proposal: question.proposal === undefined ? null : question.proposal,
     aaoId: question.aaoId === undefined ? 0 : question.aaoId,
     text: text,
-    at: now
+    at: now,
+    // A view recorded beside the answer, never as it: it settles nothing and
+    // leaves the question open.
+    second_opinion: args.secondOpinion || undefined
     // The same words can answer two different questions -- "Yes, internal only"
     // fits more than one -- so which question this answers is part of its
-    // identity, not only of its body.
-  }, { idFields: ["question"] });
+    // identity, not only of its body. A second opinion carries the same words
+    // as an answer would, so who wrote it is part of its identity too.
+  }, { idFields: args.secondOpinion ? ["question", "from"] : ["question"] });
 
   P.assertValid(message, "wren-answer");
 
   fs.mkdirSync(GOV, { recursive: true });
   fs.appendFileSync(ANSWERS, P.toJsonl(message), "utf8");
 
-  const already = answers.filter((a) => a.question === question.id).length;
-  console.log(`answered ${question.id}${already ? ` (answer ${already + 1} on this question)` : ""}`);
+  const already = answers.filter((a) => a.question === question.id && !R.isSecondOpinion(a)).length;
+  console.log(args.secondOpinion
+    ? `second opinion recorded on ${question.id}; it does not answer it`
+    : `answered ${question.id}${already ? ` (answer ${already + 1} on this question)` : ""}`);
   console.log(`  asked:  ${firstLine(question.text || question.summary, 88)}`);
   console.log(`  answer: ${firstLine(text, 88)}`);
   if (args.details) console.log(`  details: ${args.details.length} characters, shown below the fold`);
@@ -134,9 +182,7 @@ function main() {
   console.log("The page picks it up within two seconds.");
 }
 
-try {
-  main();
-} catch (e) {
+main().catch((e) => {
   console.error(e.message || e);
   process.exit(1);
-}
+});

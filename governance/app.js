@@ -611,6 +611,13 @@
     return answers.filter(function (a) { return a.question === questionId; });
   }
 
+  // What settles a question. A second opinion (proposal 90) is a view recorded
+  // beside the answer and never counts as one, so a question with only second
+  // opinions on it is still open and still says so.
+  function repliesTo(questionId) {
+    return answersTo(questionId).filter(function (a) { return !R.isSecondOpinion(a); });
+  }
+
   // "4 seconds" / "1 min 12 s" / "2 h 5 min", from the moment the question was
   // posted. Written out rather than as a raw count so it reads as a wait.
   function elapsedSince(record) {
@@ -631,7 +638,7 @@
     var nodes = document.querySelectorAll(".qa-pending .pending-seconds");
     if (!nodes.length) return;
     var open = [];
-    questions.forEach(function (q) { if (!answersTo(q.id).length) open.push(q); });
+    questions.forEach(function (q) { if (!repliesTo(q.id).length) open.push(q); });
     for (var i = 0; i < nodes.length && i < open.length; i++) {
       nodes[i].textContent = elapsedSince(open[i]);
     }
@@ -647,12 +654,12 @@
   function renderThread(p) {
     var wrap = el("section", "thread");
     var mine = questionsFor(p.id);
-    var anyAnswered = mine.some(function (q) { return answersTo(q.id).length > 0; });
+    var anyAnswered = mine.some(function (q) { return repliesTo(q.id).length > 0; });
 
     var head = el("div", "thread-head");
     head.appendChild(el("h4", "thread-title", "Questions to " + architectFor(p.aaoId)));
     if (mine.length) {
-      var answered = mine.filter(function (q) { return answersTo(q.id).length > 0; }).length;
+      var answered = mine.filter(function (q) { return repliesTo(q.id).length > 0; }).length;
       head.appendChild(el("span", "thread-count", mine.length + " asked · " + answered + " answered"));
     }
     wrap.appendChild(head);
@@ -682,7 +689,10 @@
     item.appendChild(el("p", "qa-text", q.text || q.summary || ""));
 
     var replies = answersTo(q.id);
-    if (!replies.length) {
+    // Still open until a real answer lands. A question carrying only second
+    // opinions has been thought about and not answered, and the line has to
+    // keep saying so or the wait disappears behind someone else's view.
+    if (!repliesTo(q.id).length) {
       // The Director must never mistake silence for absence. The line says the
       // question landed and counts the seconds, so the wait is a number rather
       // than a doubt.
@@ -694,13 +704,16 @@
           : "Answer pending. " + architectFor(q.aaoId) + " has it — "));
       pending.appendChild(el("b", "pending-seconds", elapsedSince(q)));
       item.appendChild(pending);
-      return item;
+      if (!replies.length) return item;
     }
 
     replies.forEach(function (a) {
       var reply = el("div", "qa-reply");
+      var second = R.isSecondOpinion(a);
+      if (second) reply.className = "qa-reply is-second-opinion";
       var rHead = el("div", "qa-head");
-      rHead.appendChild(el("span", "qa-who qa-who-wren", P.label(a.from) + " answered"));
+      rHead.appendChild(el("span", "qa-who qa-who-wren",
+        P.label(a.from) + (second ? " added a second opinion" : " answered")));
       rHead.appendChild(el("span", "qa-time", timeOf(a)));
       reply.appendChild(rHead);
       reply.appendChild(el("p", "qa-text", a.text || a.summary || ""));
