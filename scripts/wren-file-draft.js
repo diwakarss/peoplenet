@@ -8,6 +8,10 @@
 //
 // Usage:
 //   node scripts/wren-file-draft.js --list
+//
+// A draft is filed once, by the architect of the organisation it was written on
+// (proposal 89). The rehearsal applies both checks, so it refuses what the real
+// run would refuse.
 //   node scripts/wren-file-draft.js draft-abc123 \
 //        --title "..." --why "..." [--technical "..."] [--risk "..."] [--effort "..."] \
 //        [--summary "<more sentences after the Director's>"] [--ref X]... [--dry-run]
@@ -173,20 +177,39 @@ async function main() {
     throw new Error("the Director's words are not the first sentence of the summary; refusing to file");
   }
 
-  if (args.dryRun) {
-    console.log("\n--dry-run: valid, nothing filed.");
-    return;
-  }
-
+  // Who may file this, and whether it is already filed (proposal 89). Both are
+  // asked on the rehearsal path too: a dry run that says "valid, nothing filed"
+  // about a draft the real run would refuse is a dry run that lies.
   const signers = await ethers.getSigners();
   const signer = signers[args.account];
   if (!signer) throw new Error(`No Hardhat account ${args.account} on this network.`);
 
   const aaoFacet = await ethers.getContractAt("AAOFacet", R.DIAMOND);
   const aaoId = draft.aaoId === undefined ? R.AAO_ID : Number(draft.aaoId);
+  const aao = await aaoFacet.getAAO(aaoId);
+  const rules = R.rulesFor({ topic: aao.topic });
+
+  // The log is re-read HERE, not at the top: another watcher may have filed
+  // this draft in the seconds since. That is exactly how 87 and 88 happened.
+  const filedNow = readLog(DRAFTS).filter((record) => record.draft === draft.id);
+  const problem = R.draftFilingProblem(rules, signer.address, filedNow, { topic: aao.topic });
+  if (problem) {
+    console.error("");
+    console.error("wren-file-draft: " + problem);
+    process.exit(1);
+  }
+
   if (!(await aaoFacet.isMember(aaoId, signer.address))) {
     throw new Error(`${signer.address} is not a member of AAO ${aaoId}.`);
   }
+
+  if (args.dryRun) {
+    console.log("");
+    console.log(`would file on ${aao.topic} (AAO ${aaoId}) as ${R.labelFor(signer.address)}.`);
+    console.log("--dry-run: valid, nothing filed.");
+    return;
+  }
+
 
   const tx = await aaoFacet.connect(signer).submitProposal(aaoId, serialise(doc));
   const receipt = await tx.wait();
