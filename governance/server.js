@@ -29,6 +29,20 @@ const ROOT = __dirname;
 const HOST = process.env.GOVERNANCE_HOST || "127.0.0.1";
 const PORT = Number(process.env.GOVERNANCE_PORT || 8787);
 
+// Where the append-only logs live. The default is this directory, unchanged;
+// GOVERNANCE_LOG_DIR points it somewhere else so a test has somewhere safe to
+// write.
+//
+// It exists because I did not have one. Testing proposal 90 I posted two
+// questions through the live server, which records every question as from the
+// Director, and answered one as Wren -- three lines in the real record under
+// two other parties' names, in files nothing can edit. This file's own tests
+// open with the rule that nothing is tested against live state; the logs are
+// live state exactly as the chain is.
+const LOG_DIR = process.env.GOVERNANCE_LOG_DIR
+  ? path.resolve(process.env.GOVERNANCE_LOG_DIR)
+  : ROOT;
+
 // One place that says which log lives where.
 const LOGS = {
   "/wren-votes.json": "wren-votes.jsonl",
@@ -79,7 +93,7 @@ function sendJson(res, status, value) {
 // --- logs --------------------------------------------------------------
 
 function logPath(file) {
-  return path.join(ROOT, file);
+  return path.join(LOG_DIR, file);
 }
 
 // Read one .jsonl log. A file that does not exist yet is an empty log, not an
@@ -362,6 +376,7 @@ server.listen(PORT, HOST, () => {
   console.log(`  POST ${base}/drafts`.padEnd(48) + "drafts.jsonl     <- one field, Wren completes it");
   console.log(`  GET  ${base}${TRANSLATIONS_ROUTE}`.padEnd(48) + "translations.json  read-only");
   console.log("");
+  if (LOG_DIR !== ROOT) console.log(`logs            ${LOG_DIR}  (GOVERNANCE_LOG_DIR)`);
   console.log("Ctrl-C to stop.");
 });
 
