@@ -409,6 +409,105 @@ describe("the watcher closes what the rules say is decided", function () {
         }
       });
 
+    // --- the snapshot retry (proposal 103) --------------------------------
+    //
+    // The incident "The chain is not being written to disk" went up twice in
+    // twelve hours on a single dropped connection, and the snapshot ten minutes
+    // later succeeded both times. An incident that heals itself teaches the
+    // Director to skip incidents, so one failure is now a log line and only the
+    // second, five seconds later, is said out loud.
+    //
+    // The taker is a stub and the delay is handed in, so neither test writes a
+    // snapshot anywhere or waits five seconds to find out.
+    function failingTaker(failures) {
+      const taker = {
+        calls: 0,
+        take: async function () {
+          taker.calls++;
+          if (taker.calls <= failures) return { ok: false, why: "the connection dropped" };
+          return { ok: true, file: "stub.json", events: 1 };
+        },
+        describe: function (result) {
+          return result && result.ok ? "snapshot taken" : `could not snapshot -- ${result.why}`;
+        }
+      };
+      return taker;
+    }
+
+    function watcherWithTaker(taker) {
+      return W.start(
+        async () => [],
+        Object.assign({}, options(undefined), {
+          firstDelayMs: 24 * HOUR * 1000,
+          intervalMs: 24 * HOUR * 1000,
+          snapshotMs: 24 * HOUR * 1000,
+          snapshot: true,
+          snapshotRetryMs: 5,
+          snapshotTaker: taker
+        })
+      );
+    }
+
+    function snapshotIncidents() {
+      return messages().filter((m) =>
+        m.from === "watch" && m.subject === "The chain is not being written to disk");
+    }
+
+    it("retries a failed snapshot once and says nothing when the retry succeeds",
+      async function () {
+        const before = snapshotIncidents().length;
+        const taker = failingTaker(1);
+        const loop = watcherWithTaker(taker);
+
+        let result;
+        try {
+          result = await loop.snapshot("on the timer");
+        } finally {
+          loop.stop();
+        }
+
+        expect(taker.calls, "it should have tried exactly twice").to.equal(2);
+        expect(result && result.ok, "and taken the snapshot on the retry").to.equal(true);
+        expect(snapshotIncidents().length, "a failure that healed itself raised an incident")
+          .to.equal(before);
+      });
+
+    it("raises the incident once when the retry fails too", async function () {
+      const before = snapshotIncidents().length;
+      const taker = failingTaker(Infinity);
+      const loop = watcherWithTaker(taker);
+
+      try {
+        await loop.snapshot("on the timer");
+      } finally {
+        loop.stop();
+      }
+
+      expect(taker.calls, "two attempts, not three").to.equal(2);
+
+      const raised = snapshotIncidents();
+      expect(raised.length, "a real failure must reach the Director").to.equal(before + 1);
+      expect(raised[raised.length - 1].summary).to.contain("the retry");
+      expect(raised[raised.length - 1].refs).to.contain("proposal 103");
+    });
+
+    it("says it once, however often the snapshot goes on failing", async function () {
+      const before = snapshotIncidents().length;
+      const taker = failingTaker(Infinity);
+      const loop = watcherWithTaker(taker);
+
+      try {
+        await loop.snapshot("on the timer");
+        await loop.snapshot("on the timer");
+      } finally {
+        loop.stop();
+      }
+
+      expect(taker.calls, "each pass retries once").to.equal(4);
+      expect(snapshotIncidents().length, "an incident every ten minutes buries the stream")
+        .to.equal(before + 1);
+    });
+
     it("does nothing at all without a signer, so a read-only watcher stays read-only",
       async function () {
         const id = await submit(subId, builder, doc("Nothing should close this"));

@@ -51,6 +51,11 @@ const DEFAULTS = {
   // one process's memory until the move to the cloud, so ten minutes is the
   // most that can be lost to a sign-out.
   snapshotMs: 10 * 60 * 1000,
+  // How long a failed snapshot waits before its one retry (proposal 103). Both
+  // incidents this rule exists for were a single dropped connection that the
+  // next attempt would have survived, so the retry is short and there is only
+  // one: a second failure five seconds later is a real fault, not a blip.
+  snapshotRetryMs: 5 * 1000,
   // OFF unless the caller asks. Only the governance server takes snapshots;
   // a test that stands up a watcher on the in-process network must not write
   // the real snapshot directory, and the first run of these tests did exactly
@@ -805,24 +810,60 @@ function start(readProposals, options) {
   // broken snapshot every ten minutes would bury the message stream it is
   // trying to warn through -- and never stops the watcher: a watcher that
   // stopped because it could not write a file would take the executions with it.
+  //
+  // One failure is not a fault (proposal 103). Twice in twelve hours the
+  // incident "The chain is not being written to disk" went up on a single
+  // dropped connection and the next attempt ten minutes later succeeded, so the
+  // Director read two incidents that had healed themselves before he saw them.
+  // A failed snapshot now waits five seconds and tries once; only the second
+  // failure is said out loud, and the first is a log line nobody is woken for.
   let snapshotWarned = false;
 
-  async function snapshot(why) {
-    if (!opts.snapshot) return null;
+  function sleep(ms) {
+    return new Promise((resolve) => { setTimeout(resolve, ms).unref?.(); });
+  }
+
+  // One attempt. Returns what the taker said, or the error it threw, so the
+  // caller decides between retrying and reporting -- an attempt that reported
+  // its own failure could not be retried quietly.
+  async function attemptSnapshot() {
     try {
       const taker = opts.snapshotTaker || require("../scripts/snapshot.js");
       const result = await taker.take(opts.snapshotOptions || {});
-      if (result.ok) {
-        snapshotWarned = false;
-        console.log(`watch: ${taker.describe(result)}${why ? ` (${why})` : ""}`);
-      } else {
-        warnOnce(`watch: ${taker.describe(result)}`, result.why);
-      }
-      return result;
+      return result && result.ok
+        ? { ok: true, result: result, line: `watch: ${taker.describe(result)}` }
+        : { ok: false, result: result, line: `watch: ${taker.describe(result)}`, why: result && result.why };
     } catch (e) {
-      warnOnce(`watch: could not snapshot the chain -- ${e.message || e}`, e.message || String(e));
-      return null;
+      return {
+        ok: false, result: null,
+        line: `watch: could not snapshot the chain -- ${e.message || e}`,
+        why: e.message || String(e)
+      };
     }
+  }
+
+  async function snapshot(why) {
+    if (!opts.snapshot) return null;
+
+    const first = await attemptSnapshot();
+    if (first.ok) {
+      snapshotWarned = false;
+      console.log(`${first.line}${why ? ` (${why})` : ""}`);
+      return first.result;
+    }
+
+    console.warn(`${first.line} -- trying once more in ${Math.round(opts.snapshotRetryMs / 1000)}s`);
+    await sleep(opts.snapshotRetryMs);
+
+    const second = await attemptSnapshot();
+    if (second.ok) {
+      snapshotWarned = false;
+      console.log(`${second.line}${why ? ` (${why}, on the retry)` : " (on the retry)"}`);
+      return second.result;
+    }
+
+    warnOnce(second.line, second.why);
+    return second.result;
   }
 
   function warnOnce(line, detail) {
@@ -836,12 +877,13 @@ function start(readProposals, options) {
         type: "incident",
         subject: "The chain is not being written to disk",
         summary:
-          "A snapshot failed, so the record is only in the node's memory and a " +
-          "sign-out would destroy it. The watcher is still running and still " +
-          "executing; only the snapshot is failing. Said once, not every ten " +
-          "minutes.",
+          "A snapshot failed and the retry " + Math.round(opts.snapshotRetryMs / 1000) +
+          " seconds later failed too, so the record is only in the node's memory " +
+          "and a sign-out would destroy it. The watcher is still running and " +
+          "still executing; only the snapshot is failing. Said once, not every " +
+          "ten minutes.",
         details: detail || line,
-        refs: ["proposal 92"]
+        refs: ["proposal 92", "proposal 103"]
       });
       fs.appendFileSync(opts.messagesFile || MESSAGES, P.toJsonl(message), "utf8");
     } catch (e) {
