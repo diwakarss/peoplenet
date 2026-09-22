@@ -324,10 +324,84 @@ function firedMessage(proposal, trigger, result) {
 
 // Has this proposal's trigger already been reported? One message per proposal,
 // because a watcher that shouts every five minutes gets turned off.
+//
+// An unclaimed notice is excluded by name: it also comes from "watch" and also
+// names its proposal, and counting it would silence that proposal's trigger for
+// good.
 function alreadyFired(messages, proposalId) {
   return (messages || []).some(function (m) {
-    return m && m.from === "watch" && Number(m.proposal) === Number(proposalId);
+    return m && m.from === "watch" && !m.unclaimed &&
+      Number(m.proposal) === Number(proposalId);
   });
+}
+
+// --- passed, and nobody picked it up (proposal 91) ----------------------
+//
+// The three columns on /swarm are built from agents' decision messages, so a
+// proposal no agent ever mentioned appears in none of them. Proposal 54 passed
+// on 2026-09-19 and sat undelivered for two days; the Director found it
+// himself. swarm.js decides which proposals those are -- one rule, tested
+// without a browser -- and this tells their architect, once each.
+
+// Who to tell, as a message key: the architect named by the organisation's rule
+// set, or everyone when it names none.
+function architectKeyFor(aao) {
+  const R = require("./read.js");
+  const rules = R.rulesFor(aao);
+  return rules && rules.architect ? R.labelFor(rules.architect).toLowerCase() : "all";
+}
+
+function unclaimedMessage(row, to) {
+  const hours = Math.floor(row.waitedMs / 3600000);
+  return P.normalise({
+    from: "watch",
+    to: to,
+    type: "status",
+    subject: `Proposal ${row.proposalId} passed ${hours} hours ago and nobody has picked it up`,
+    summary:
+      `"${row.title}" passed on ${row.organisation || "its organisation"} and was ` +
+      `executed ${hours} hours ago. No agent has posted a decision on it, so it is ` +
+      `in no column on the dashboard and in nobody's queue. It is listed as ` +
+      `unclaimed on /swarm until an agent says something about it.`,
+    details: `executed at ${row.executedAt}\narchitect: ${row.architect}`,
+    refs: ["proposal " + row.proposalId, "proposal 91"],
+    proposal: row.proposalId,
+    aaoId: row.aaoId,
+    // What tells this apart from every other message the watcher writes about a
+    // proposal, for both the once-only check and `alreadyFired`.
+    unclaimed: true
+  });
+}
+
+// Said once per proposal, for the same reason a trigger is: a line repeated
+// every five minutes is a line the architect stops reading.
+function alreadyToldUnclaimed(messages, proposalId) {
+  return (messages || []).some(function (m) {
+    return m && m.from === "watch" && m.unclaimed === true &&
+      Number(m.proposal) === Number(proposalId);
+  });
+}
+
+// One pass over the unclaimed list. Appends one message per proposal that has
+// crossed the four-hour line and has not been reported yet.
+function reportUnclaimed(proposals, aaos, options) {
+  const opts = Object.assign({}, DEFAULTS, options || {});
+  const S = require("./swarm.js");
+  const messagesFile = opts.messagesFile || MESSAGES;
+  const existing = readJsonl(messagesFile);
+  const rows = S.unclaimed(existing, proposals, aaos, opts.nowMs);
+  const told = [];
+
+  for (const row of rows) {
+    if (alreadyToldUnclaimed(existing, row.proposalId)) continue;
+    const aao = (aaos || []).filter((a) => a.id === row.aaoId)[0];
+    const message = unclaimedMessage(row, aao ? architectKeyFor(aao) : "all");
+    fs.appendFileSync(messagesFile, P.toJsonl(message), "utf8");
+    existing.push(message);
+    told.push({ proposal: row.proposalId, to: message.to, waitedMs: row.waitedMs });
+  }
+
+  return { listed: rows, told: told };
 }
 
 // --- executing what the rules say is decided --------------------------
@@ -467,6 +541,23 @@ function start(readProposals, options) {
         console.log(`watch: ${watched} trigger(s) checked, none fired`);
       }
 
+      // Then the proposals that passed and that nobody picked up (proposal 91).
+      // It needs the organisations, to name each one's architect.
+      if (opts.readAaos) {
+        try {
+          const aaosForUnclaimed = await opts.readAaos();
+          const { listed, told } = reportUnclaimed(proposals, aaosForUnclaimed, opts);
+          told.forEach((t) => console.log(
+            `watch: proposal ${t.proposal} passed and is unclaimed -- told ${t.to}`
+          ));
+          if (listed.length && !told.length) {
+            console.log(`watch: ${listed.length} proposal(s) unclaimed, all already reported`);
+          }
+        } catch (e) {
+          console.warn("watch: could not check for unclaimed proposals -- " + (e.message || e));
+        }
+      }
+
       // Then close whatever the rules say is decided. On the widget-builder
       // nobody presses a button, so if the watcher does not do this, nothing
       // does -- which is how three proposals sat there with no way out.
@@ -585,6 +676,10 @@ module.exports = {
   chainNow,
   firedMessage,
   alreadyFired,
+  reportUnclaimed,
+  unclaimedMessage,
+  alreadyToldUnclaimed,
+  architectKeyFor,
   start,
   compareVersions
 };

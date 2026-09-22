@@ -44,6 +44,30 @@ h1 {
   padding-bottom: 14px;
 }
 
+/* Proposal 91. Above everything, in the blocked red, because a passed proposal
+   nobody picked up is the one failure the three columns cannot show. */
+.unclaimed {
+  margin-bottom: 34px;
+  border: 1px solid var(--blocked);
+  border-left-width: 4px;
+  padding: 14px 16px 6px;
+  background: #fdf4f3;
+}
+
+.unclaimed h2 {
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 400;
+  margin: 0 0 3px;
+  color: var(--blocked);
+}
+
+.unclaimed .count { color: var(--blocked); }
+
+.row.is-unclaimed .row-title { color: var(--blocked); }
+.row.is-unclaimed .row-waited { font-weight: 600; color: var(--blocked); }
+.row-waited::before, .row-architect::before { content: " · "; }
+
 .columns {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

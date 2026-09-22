@@ -540,8 +540,13 @@
     // When each vote was cast, not only in which block. The automatic-execution
     // window runs from the first vote, so the clock has to be readable.
     // Timestamps are fetched once per block rather than once per vote.
+    //
+    // The execution blocks are fetched in the same pass, because the Unclaimed
+    // list (proposal 91) measures how long a passed proposal has gone unclaimed
+    // from the moment it was executed, and block numbers are not time on this
+    // chain: it mints a block per transaction.
     var blockTimes = {};
-    var wantedBlocks = voteLogs
+    var wantedBlocks = voteLogs.concat(executedLogs)
       .map(function (log) { return log.blockNumber; })
       .filter(function (v, i, a) { return a.indexOf(v) === i; });
     for (var b = 0; b < wantedBlocks.length; b++) {
@@ -567,8 +572,10 @@
     });
 
     var outcomeByProposal = {};
+    var executedBlockByProposal = {};
     executedLogs.forEach(function (log) {
       outcomeByProposal[num(log.args.proposalId)] = Boolean(log.args.passed);
+      executedBlockByProposal[num(log.args.proposalId)] = log.blockNumber;
     });
 
     var ids = submitted
@@ -596,7 +603,9 @@
         statusLabel: STATUS[status] || "Unknown",
         createdAt: num(p.createdAt),
         votes: votes,
-        outcome: ids[i] in outcomeByProposal ? outcomeByProposal[ids[i]] : null
+        outcome: ids[i] in outcomeByProposal ? outcomeByProposal[ids[i]] : null,
+        executedBlock: ids[i] in executedBlockByProposal ? executedBlockByProposal[ids[i]] : null,
+        executedAt: blockTimes[executedBlockByProposal[ids[i]]] || null
       });
     }
     return out;

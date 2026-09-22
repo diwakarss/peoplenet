@@ -44,6 +44,15 @@
     return Math.round(hours / 24) + "d ago";
   }
 
+  // How long something has been waiting, as a duration rather than a moment.
+  // "4h ago" reads as when it happened; this list is about how long it has gone
+  // on.
+  function waited(ms) {
+    var hours = Math.floor((ms || 0) / 3600000);
+    if (hours < 48) return hours + "h";
+    return Math.floor(hours / 24) + "d";
+  }
+
   function rowNode(row) {
     var item = el("li", "row" + (row.directors ? " is-directors" : ""));
     var link = el("a", "row-link");
@@ -72,6 +81,35 @@
     }
     item.appendChild(foot);
     return item;
+  }
+
+  // Proposal 91. One line per unclaimed proposal: the organisation, the
+  // proposal, its title, how long it has waited, and who was told.
+  function unclaimedNode(row) {
+    var item = el("li", "row is-unclaimed");
+    var link = el("a", "row-link");
+    link.href = proposalHref(row);
+    link.appendChild(el("span", "row-id", "#" + row.proposalId));
+    link.appendChild(el("span", "row-title", row.title));
+    item.appendChild(link);
+
+    var foot = el("p", "row-foot");
+    foot.appendChild(el("span", "row-org", row.organisation || "—"));
+    foot.appendChild(el("span", "row-waited", "waiting " + waited(row.waitedMs)));
+    foot.appendChild(el("span", "row-architect", row.architect + " was told"));
+    item.appendChild(foot);
+    return item;
+  }
+
+  // Hidden when it is empty: an empty red band at the top of the page every day
+  // is a band nobody reads on the day it matters.
+  function renderUnclaimed(rows) {
+    var section = byId("unclaimed");
+    var host = byId("rows-unclaimed");
+    host.textContent = "";
+    byId("count-unclaimed").textContent = rows.length;
+    section.hidden = rows.length === 0;
+    rows.forEach(function (row) { host.appendChild(unclaimedNode(row)); });
   }
 
   function renderColumn(name, rows) {
@@ -148,6 +186,7 @@
     }
 
     var data = S.dashboard(messages, proposals, aaos, Date.now());
+    renderUnclaimed(data.unclaimed);
     renderColumn("blocked", data.blocked);
     renderColumn("building", data.building);
     renderColumn("done", data.done);

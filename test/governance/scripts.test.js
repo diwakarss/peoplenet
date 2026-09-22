@@ -1152,6 +1152,161 @@ describe("the write scripts refuse before they send", function () {
     });
   });
 
+  // Proposal 91. Proposal 54 passed on 2026-09-19 and nothing noticed for two
+  // days, because every column on the dashboard is built from agents' decision
+  // messages and no agent had written one. These pin the list that finds them.
+  describe("passed, and nobody picked it up", function () {
+    const S = require("../../governance/swarm.js");
+    const W = require("../../governance/watch.js");
+    const os = require("os");
+
+    const NOW = Date.parse("2026-09-21T12:00:00Z");
+    const HOUR = 3600 * 1000;
+    const AAOS = [
+      { id: 0, topic: "trilogy widget" }, { id: 2, topic: "JD" }, { id: 3, topic: "JD-build" }
+    ];
+
+    // A proposal executed `hoursAgo` hours before NOW. executedAt is in seconds,
+    // as the chain reports it.
+    const passed = (id, aaoId, title, hoursAgo) => ({
+      id, aaoId, status: 1, createdAt: Math.floor((NOW - 48 * HOUR) / 1000),
+      executedBlock: 200 + id,
+      executedAt: Math.floor((NOW - hoursAgo * HOUR) / 1000),
+      text: JSON.stringify({ title })
+    });
+
+    const list = (messages, proposals) =>
+      S.unclaimed(messages || [], proposals, AAOS, NOW).map((r) => r.proposalId);
+
+    it("lists a passed proposal no agent has spoken about for over four hours", function () {
+      const rows = S.unclaimed([], [passed(54, 0, "Paste a screenshot", 50)], AAOS, NOW);
+      expect(rows.map((r) => r.proposalId)).to.deep.equal([54]);
+      const row = rows[0];
+      expect(row.organisation).to.equal("trilogy widget");
+      expect(row.title).to.equal("Paste a screenshot");
+      expect(row.architect, "who is told, from the rule set").to.equal("Wren");
+      expect(Math.round(row.waitedMs / HOUR)).to.equal(50);
+    });
+
+    it("draws the four-hour line where the Director set it", function () {
+      const early = passed(70, 2, "Three hours and fifty-nine minutes", 3.983);
+      const late = passed(71, 2, "Four hours and one minute", 4.017);
+      expect(list([], [early]), "not yet four hours").to.deep.equal([]);
+      expect(list([], [late]), "past four hours").to.deep.equal([71]);
+    });
+
+    it("drops a proposal any agent has posted a decision on", function () {
+      const proposals = [passed(54, 0, "Paste a screenshot", 50), passed(58, 2, "The watcher executes", 50)];
+      const claimed = [
+        { from: "kalam", type: "decision", ts: "2026-09-19T03:00:00Z",
+          refs: ["proposal 58"], subject: "s", summary: "Built in commit 1ee02d5." }
+      ];
+      expect(list(claimed, proposals)).to.deep.equal([54]);
+    });
+
+    it("counts a claim whatever the decision says, even a block or a wait", function () {
+      const proposals = [passed(60, 2, "Chain to the cloud", 50)];
+      const blocked = [
+        { from: "kural", type: "decision", ts: "2026-09-19T01:00:00Z", refs: ["proposal 60"],
+          subject: "s", summary: "blocked: waiting on the Director for the Hetzner token" }
+      ];
+      expect(list(blocked, proposals), "somebody is holding it").to.deep.equal([]);
+    });
+
+    it("does not let the watcher's own decision claim a proposal", function () {
+      const proposals = [passed(95, 3, "Three lists", 50)];
+      const watchers = [
+        { from: "watch", type: "decision", ts: "2026-09-20T01:00:00Z", refs: ["proposal 95"],
+          subject: "s", summary: "Built into the record: it passed 1 to 0." }
+      ];
+      expect(list(watchers, proposals), "the watcher executes; it does not build")
+        .to.deep.equal([95]);
+    });
+
+    it("lists only what passed: not an open proposal, not a rejected one", function () {
+      const open = Object.assign(passed(80, 2, "Still being voted on", 50), { status: 0 });
+      const rejected = Object.assign(passed(81, 2, "Voted down", 50), { status: 2 });
+      expect(list([], [open, rejected, passed(82, 2, "Passed", 50)])).to.deep.equal([82]);
+    });
+
+    it("puts the longest wait first", function () {
+      const rows = list([], [passed(1, 2, "a", 5), passed(2, 2, "b", 40), passed(3, 2, "c", 9)]);
+      expect(rows).to.deep.equal([2, 3, 1]);
+    });
+
+    it("leads the dashboard, above Blocked", function () {
+      const d = S.dashboard([], [passed(54, 0, "Paste a screenshot", 50)], AAOS, NOW);
+      expect(Object.keys(d)[0], "first key, first section").to.equal("unclaimed");
+      expect(d.unclaimed.map((r) => r.proposalId)).to.deep.equal([54]);
+    });
+
+    describe("the watcher tells the architect, once", function () {
+      let messagesFile;
+
+      const read = () => (fs.existsSync(messagesFile)
+        ? fs.readFileSync(messagesFile, "utf8").split(/\r?\n/).filter(Boolean).map(JSON.parse)
+        : []);
+
+      beforeEach(function () {
+        messagesFile = path.join(os.tmpdir(), "governance-unclaimed-" + Date.now() + "-" + Math.random().toString(16).slice(2) + ".jsonl");
+      });
+
+      afterEach(function () {
+        if (messagesFile && fs.existsSync(messagesFile)) fs.unlinkSync(messagesFile);
+      });
+
+      const run = (proposals) =>
+        W.reportUnclaimed(proposals, AAOS, { messagesFile, nowMs: NOW });
+
+      it("posts one message to the organisation's architect", function () {
+        const result = run([passed(54, 0, "Paste a screenshot", 50)]);
+        expect(result.told.map((t) => t.proposal)).to.deep.equal([54]);
+        const posted = read();
+        expect(posted.length).to.equal(1);
+        expect(posted[0].from).to.equal("watch");
+        expect(posted[0].to, "Wren is the architect on the trilogy widget").to.equal("wren");
+        expect(posted[0].subject).to.contain("54");
+        expect(posted[0].unclaimed).to.equal(true);
+      });
+
+      it("tells Kural about a proposal on JD, and Wren about one on the widget", function () {
+        run([passed(54, 0, "Paste a screenshot", 50), passed(91, 2, "Deliver 54", 50)]);
+        const to = {};
+        read().forEach((m) => { to[m.proposal] = m.to; });
+        expect(to).to.deep.equal({ 54: "wren", 91: "kural" });
+      });
+
+      it("says it once, however many times the watcher runs", function () {
+        const proposals = [passed(54, 0, "Paste a screenshot", 50)];
+        run(proposals);
+        const second = run(proposals);
+        expect(second.told, "already reported").to.deep.equal([]);
+        expect(second.listed.map((r) => r.proposalId), "still listed on the page")
+          .to.deep.equal([54]);
+        expect(read().length).to.equal(1);
+      });
+
+      it("says nothing about a proposal an agent has claimed", function () {
+        fs.writeFileSync(messagesFile, JSON.stringify({
+          id: "decision-1", from: "kalam", to: "all", type: "decision",
+          ts: "2026-09-20T01:00:00Z", subject: "Proposal 54", refs: ["proposal 54"],
+          summary: "building: the screenshot paste"
+        }) + "\n", "utf8");
+        const result = run([passed(54, 0, "Paste a screenshot", 50)]);
+        expect(result.listed).to.deep.equal([]);
+        expect(result.told).to.deep.equal([]);
+        expect(read().length, "nothing appended").to.equal(1);
+      });
+
+      it("leaves a proposal's trigger free to fire after an unclaimed notice", function () {
+        run([passed(54, 0, "Paste a screenshot", 50)]);
+        expect(W.alreadyFired(read(), 54),
+          "an unclaimed notice is not a fired trigger").to.equal(false);
+        expect(W.alreadyToldUnclaimed(read(), 54)).to.equal(true);
+      });
+    });
+  });
+
   // The kolam is not wired into the page: the Director sees the samples first.
   // These pin the rules a pulli kolam has to obey, because a drawing that
   // quietly breaks them is worse than no drawing.

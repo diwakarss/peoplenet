@@ -29,6 +29,22 @@
   // The Director is not an agent. He is who the dashboard is for.
   var NOT_AN_AGENT = ["director", "casting"];
 
+  // Proposal 91. A proposal that passed and that no agent has said one word
+  // about is claimed by nobody, and today it appears in no column: Blocked,
+  // Building and Done all read from agents' own decision messages. Proposal 54
+  // passed on the 19th and sat undelivered for two days because of it.
+  //
+  // Four hours is the line the Director set. It is measured from the execution
+  // block's timestamp, never from the block number: this chain mints a block per
+  // transaction, so block adjacency says nothing about time.
+  var UNCLAIMED_MS = 4 * 60 * 60 * 1000;
+
+  // The watcher's own messages do not claim anything. It posts a decision on
+  // every proposal it executes automatically, so counting those would mean no
+  // automatically executed proposal could ever be unclaimed -- which is exactly
+  // the set this list exists to find.
+  var NOT_A_CLAIMANT = ["watch"];
+
   function textOf(v) {
     return String(v === undefined || v === null ? "" : v);
   }
@@ -134,6 +150,76 @@
 
   function byProposal(rows) {
     return rows.slice().sort(function (a, b) { return b.proposalId - a.proposalId; });
+  }
+
+  // --- unclaimed ----------------------------------------------------------
+
+  // Whether any agent has claimed this proposal by saying something about it.
+  // The type is `decision` because that is what adoption.js reads and what the
+  // three columns are built from: a status message is work in progress on
+  // something already picked up, not the pickup itself.
+  function claimedProposals(messages) {
+    var claimed = {};
+    (messages || []).forEach(function (m) {
+      if (!m || m.type !== "decision") return;
+      if (NOT_A_CLAIMANT.indexOf(textOf(m.from).toLowerCase()) !== -1) return;
+      var id = A.proposalOf(m);
+      if (id !== null) claimed[id] = true;
+    });
+    return claimed;
+  }
+
+  // When a proposal was executed, in milliseconds.
+  //
+  // A proposal whose execution block cannot be read falls back to its filing
+  // time, which is earlier, so it appears on this list sooner rather than later.
+  // The risk runs one way on purpose: a proposal wrongly listed costs a glance,
+  // and a proposal wrongly hidden is what proposal 91 is about.
+  function executedAtMs(proposal) {
+    var p = proposal || {};
+    if (p.executedAt) return Number(p.executedAt) * 1000;
+    if (p.createdAt) return Number(p.createdAt) * 1000;
+    return null;
+  }
+
+  function architectOf(aaoId, aaos) {
+    var aao = (aaos || []).filter(function (a) { return a.id === aaoId; })[0];
+    return aao ? R.architectLabel(aao) : "the architect";
+  }
+
+  // Every passed proposal, on any organisation, that no agent has claimed and
+  // that crossed the four-hour line. Longest wait first: the top of the list is
+  // the thing that has been ignored longest.
+  function unclaimed(messages, proposals, aaos, nowMs) {
+    var at = nowMs === undefined || nowMs === null ? Date.now() : nowMs;
+    var claimed = claimedProposals(messages);
+    var orgOf = {};
+    (aaos || []).forEach(function (a) { orgOf[a.id] = a.topic; });
+
+    var rows = [];
+    (proposals || []).forEach(function (p) {
+      // Executed means executed AND passed: the facet writes Rejected otherwise.
+      if (p.status !== 1) return;
+      if (claimed[p.id]) return;
+      var when = executedAtMs(p);
+      if (when === null) return;
+      var waited = at - when;
+      if (waited < UNCLAIMED_MS) return;
+      rows.push({
+        proposalId: p.id,
+        aaoId: p.aaoId === undefined ? null : p.aaoId,
+        organisation: orgOf[p.aaoId] || "",
+        title: titleOf(p) || ("Proposal " + p.id),
+        executedAt: new Date(when).toISOString(),
+        waitedMs: waited,
+        architect: architectOf(p.aaoId, aaos),
+        state: "unclaimed"
+      });
+    });
+
+    return rows.sort(function (a, b) {
+      return b.waitedMs - a.waitedMs || a.proposalId - b.proposalId;
+    });
   }
 
   // --- the street ---------------------------------------------------------
@@ -340,6 +426,7 @@
   function dashboard(messages, proposals, aaos, nowMs) {
     var cols = columns(messages, proposals, aaos);
     return {
+      unclaimed: unclaimed(messages, proposals, aaos, nowMs),
       blocked: cols.blocked,
       building: cols.building,
       done: cols.done,
@@ -350,8 +437,11 @@
   return {
     HUMAN_BLOCK_TITLE: HUMAN_BLOCK_TITLE,
     SILENT_MS: SILENT_MS,
+    UNCLAIMED_MS: UNCLAIMED_MS,
     titleOf: titleOf,
     columns: columns,
+    unclaimed: unclaimed,
+    claimedProposals: claimedProposals,
     street: street,
     tasksFor: tasksFor,
     dotStateOf: dotStateOf,
