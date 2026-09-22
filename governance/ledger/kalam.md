@@ -303,3 +303,33 @@ sending without `--send` — is still open. None of it moved.
 
 *Kalam, second generation, account 6. Handed over with 91 and 95 built, and 99
 untouched.*
+
+## 2026-09-22 — proposals 99 and 96, reminders and the context system (generation 3)
+
+**Decided, and why.**
+
+- A reminder on a closed proposal does not fire, EXCEPT when the proposal was closed by that very reminder. 94 and 98 are reminders wearing a proposal's clothes and landing 99 closes them; if closed alone were the test, the only two reminders the migration exists to preserve would be the only two that could never fire, and nobody would find out until the phone stayed quiet on the 28th.
+- A delivered reminder beats a waiting decision in viewFor; a fired trigger deliberately does not. A waiting note and a reminder are two halves of one sentence: the Director wrote "wait a week", the architect set the reminder, and the week being up is the second half. A trigger only says a condition was met, and he may have parked the proposal for a reason of his own.
+- "watch" now writes three kinds of message about a proposal. read.js has triggerHasFired for the view, triggerReported for the watcher's once-only check, and reminderHasFired for the reminder itself. Three questions, three functions.
+- The ntfy topic is read from PEOPLENET_NTFY_URL and nowhere else, and every line push.js reports goes through redact() first: a failed fetch names the host it could not reach, and that error would otherwise land in an incident on the record. A test asserts no file in the repository carries a topic name, because a rule that is only remembered is a rule that will be forgotten once.
+- The two migration records say set_by kural and carry a `because` field saying Kalam wrote the line under proposal 99. Who a record is from and who typed it are not always the same, and the record should say so itself rather than only a commit message.
+- 94 and 98 are closed and their reminders point at 61 and 62, which is what 94 and 98 were wrappers for. So the push and the page line deliver, and it is 61 and 62 that return to the vote list.
+- Every rule in the context pack names a file to read it in. A rule with no source is not a rule, it is an opinion, and a test asserts each one has one.
+
+**Tried, and did not work.**
+
+- Asking triggerHasFired from the watcher's alreadyFired. A reminder delivered on Monday would have silenced that proposal's real trigger for good. Caught by writing the test before the wiring.
+- Adding roleFor(key) beside ROLES in read.js. read.js already had roleFor(address) 700 lines further down; the later declaration wins, so everything that asked by address started getting null -- labelFor, the vote scripts, the page. Renamed roleByKey. Before adding a function to read.js, grep read.js for the name.
+- Writing a commit message with PowerShell's Out-File -Encoding utf8. It puts a byte order mark on the first line, so commit b1a6fc5's subject begins with an invisible character. The second generation's note about here-strings is the same lesson in another shape: write the message with a file-writing tool, then git commit -F.
+- Checking for the string "ctx-arc" in a kolam's SVG to prove the ring was absent. The stylesheet always carries the selector and only the circle is conditional, so the test failed on correct code. Assert on the class attribute, not on the word.
+
+**Open.**
+
+- npm run phone has never been run on this laptop. The Director runs it once: install ntfy on the iPhone, subscribe to the topic it prints, set PEOPLENET_NTFY_URL with the line it gives, restart the server. Until then a due reminder posts its page line and brings the proposal back, and only the phone stays quiet.
+- The two live reminders fall due on 2026-09-28 (proposal 61, the Mac and the four chat exports) and 2026-10-05 (proposal 62, the Tamil name, founder pay and the other architects' accounts). Neither has fired. The 28th is the first real proof of the push.
+- gbrain's code index is not built for this repository, so scripts/context-pack.js greps and says so. gbrain sync --strategy code would build it; nobody has asked for that yet.
+- No browser here, so the new ring on /swarm was verified by rendering the street and one kolam against the live message log, not in a browser. A real browser pass has been owed since the first generation.
+- protocol.py does not mirror ctx. It is optional, so the two implementations still agree on everything they are required to agree on.
+- Everything the first two generations left open is still open: proposal 50's cloud move waiting on the Hetzner token, the red on 27, 29 and 30, and wren-answer.js sending without --send.
+
+Stands on commit `887dc09`, `ee3bdd1`, `b1a6fc5`, `ed8679f`.
