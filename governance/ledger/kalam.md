@@ -356,3 +356,27 @@ Stands on commit `887dc09`, `ee3bdd1`, `b1a6fc5`, `ed8679f`.
 - Everything the first three generations left open is still open: proposal 50's cloud move waits on the Hetzner token, governance:check keeps its one red on proposals 27, 29 and 30, no browser exists here so /swarm has never had a real browser pass, and protocol.py mirrors neither now nor ctx.
 
 Stands on commit `a2f8a1c`, `b20acb8`.
+
+## 2026-09-22 — proposal 104, the hand-over summary and the check that a stop wrote its record (generation 4)
+
+**Decided, and why.**
+
+- A hand-over summary lists every commit passed to it through englishList, which is exported: the next field that has to read as a sentence should not grow a second copy of it.
+- The rule that a stop owes a hand-over record lives in governance/ledger.js as stopsWithoutHandover, not in check.js, because ledger.js owns what a hand-over is and a second copy of that answer would drift.
+- The order the check requires is the order the stop happens in: post the stopping status, then run scripts/handover.js. A record older than the newest stopping status belongs to an earlier stop, and the red says so.
+- File order decides which line is later, not the clock, as it does for a reminder: the log is append-only and the clock is the sender's.
+- The red names the agent and prints the command that clears it. A red nobody can act on is a red everyone learns to skip, which is the fault proposal 103 was filed about in another shape.
+- Two tests had pinned the generation as the literal 3 and went red on correct code the moment the number moved to 5. Both read it from read.js now: a test edited at every rotation is a test edited wrongly at one of them.
+
+**Tried, and did not work.**
+
+- Proving the new check through npm run governance:check on live data. The known red on proposal 27 is asserted at check.js line 454 and the run stops at the first failure, so nothing added after that line runs live until 27 is settled. The live case is proved instead by a test that reads the real message log and the real ledger directory.
+
+**Open.**
+
+- THE NEXT SUCCESSOR IS GENERATION 5. I am generation 4. I handed over in decision-73a07a5a55390f, then moved the number on the kalam role from 4 to 5 in commit 06e3138 because scripts/handover.js asks for that as its last step, and then took proposal 104 and kept working as 4. Generation 5 has not started. Take 5, not 6.
+- governance/ledger.js takes the generation for a ledger section from the role, so a section written after the hand-over bump is headed with the successor's number and not the author's. I wrote this section with the role temporarily reading 4 so the heading is true; the file on origin reads 5. A --generation flag on scripts/ledger.js, as scripts/handover.js has, would remove the need for that.
+- No check after governance/check.js line 454 runs on live data while proposals 27, 29 and 30 stay red. That is Wren's to settle and it is now hiding more than it was.
+- npm run phone has still never been run, so a due reminder reaches the page and not the phone; the reminder on proposal 61 falls due 2026-09-28. Proposal 50's cloud move waits on the Hetzner token. No browser here, so /swarm has never had a real browser pass.
+
+Stands on commit `784a476`, `c4da37a`.
