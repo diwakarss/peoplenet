@@ -222,6 +222,70 @@
   // What the successor has to say, printed for a person to paste into the
   // induction. Naming the record by id is the whole mechanism: it cannot be
   // said by an agent that never read it.
+  // --- the stop that owes a record ----------------------------------------
+  //
+  // Proposal 104. The third Kalam wrote its ledger, posted a status saying it
+  // was stopping, and never ran scripts/handover.js. Its successor had nothing
+  // to acknowledge by id, which is the one thing proposal 96 added the tool for.
+  // A tool that exists is not a tool that runs, so the check asks.
+  //
+  // The order this requires is the order the stop happens in: say you are
+  // stopping, then write the record. A hand-over posted before the last
+  // stopping status is a hand-over from an earlier stop.
+
+  var STOPPING = /\bstopping\b|\bstops here\b|\bhand(?:s|ing) over\b/;
+
+  // A status that says the agent is stopping, in its three words or its
+  // subject. Only a status: a decision that says "hands over" is the record
+  // itself, not the announcement of one.
+  function saysStopping(message) {
+    if (!message || message.type !== "status") return false;
+    return STOPPING.test((textOf(message.now) + " " + textOf(message.subject)).toLowerCase());
+  }
+
+  function isHandover(message) {
+    return !!(message && message.handover === true && textOf(message.from));
+  }
+
+  // Every agent whose last stopping status has no hand-over record after it.
+  // `agents` narrows it to the names that have a ledger; empty means all.
+  //
+  // File order decides, not the clock, as it does for a reminder: the log is
+  // append-only, so the line that came later is the later fact, and a clock
+  // written by the sender is the sender's.
+  function stopsWithoutHandover(messages, agents) {
+    var list = Array.isArray(messages) ? messages : [];
+    var only = linesOf(agents).map(function (a) { return a.toLowerCase(); });
+    var stopped = {};
+    var handed = {};
+
+    list.forEach(function (m, at) {
+      var from = textOf(m && m.from).toLowerCase();
+      if (!from) return;
+      if (only.length && only.indexOf(from) === -1) return;
+      if (saysStopping(m)) stopped[from] = { at: at, message: m };
+      else if (isHandover(m)) handed[from] = { at: at, message: m };
+    });
+
+    return Object.keys(stopped).sort().filter(function (from) {
+      return !handed[from] || handed[from].at < stopped[from].at;
+    }).map(function (from) {
+      var last = handed[from];
+      return {
+        agent: from,
+        status: stopped[from].message,
+        handover: last ? last.message : null,
+        why: label(from) + " posted " + (stopped[from].message.id || "a status") +
+          " saying it was stopping, and " +
+          (last
+            ? "its newest hand-over record, " + last.message.id + ", was written before that."
+            : "has never written a hand-over record.") +
+          " Its successor has no id to acknowledge. Run: node scripts/handover.js --agent " +
+          from + " --item \"...\" --open \"...\" --commit <sha> --send"
+      };
+    });
+  }
+
   function acknowledgementFor(message, agent, generation) {
     var next = Number(generation) + 1;
     return [
@@ -249,6 +313,9 @@
     englishList: englishList,
     handoverSubject: handoverSubject,
     handoverMessage: handoverMessage,
+    saysStopping: saysStopping,
+    isHandover: isHandover,
+    stopsWithoutHandover: stopsWithoutHandover,
     acknowledgementFor: acknowledgementFor,
     validate: validate,
     assertValid: assertValid,

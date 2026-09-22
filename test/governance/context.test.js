@@ -309,6 +309,78 @@ describe("builders manage their context", function () {
       expect(said).to.contain("governance/ledger/kalam.md");
     });
 
+    // Proposal 104. The third Kalam wrote its ledger, posted a status saying it
+    // was stopping, and never ran the hand-over tool. Nothing said so, and its
+    // successor had no id to acknowledge.
+    describe("a stop with no hand-over record", function () {
+      const stopping = {
+        id: "status-1", from: "kalam", type: "status", now: "stopping",
+        subject: "Kalam, third generation: both items done, stopping",
+        summary: "Both items are built and the ledger is written."
+      };
+      const handover = {
+        id: "decision-1", from: "kalam", type: "decision", handover: true,
+        subject: "Kalam hands over at generation 3",
+        summary: "Kalam generation 3 stops here."
+      };
+
+      it("finds the agent that said it was stopping and wrote no record", function () {
+        const owing = L.stopsWithoutHandover([stopping], ["kalam"]);
+        expect(owing).to.have.length(1);
+        expect(owing[0].agent).to.equal("kalam");
+        expect(owing[0].handover).to.equal(null);
+        expect(owing[0].why).to.contain("has never written a hand-over record");
+        expect(owing[0].why, "a red nobody can act on is not a red")
+          .to.contain("scripts/handover.js --agent kalam");
+      });
+
+      it("is quiet once the record is written after the stop", function () {
+        expect(L.stopsWithoutHandover([stopping, handover], ["kalam"])).to.deep.equal([]);
+      });
+
+      it("still asks when the newest record came before the newest stop", function () {
+        // A hand-over from an earlier stop does not answer for this one.
+        const owing = L.stopsWithoutHandover([handover, stopping], ["kalam"]);
+        expect(owing).to.have.length(1);
+        expect(owing[0].handover.id).to.equal("decision-1");
+        expect(owing[0].why).to.contain("was written before that");
+      });
+
+      it("says nothing about an agent that never said it was stopping", function () {
+        const working = Object.assign({}, stopping, {
+          id: "status-2", now: "building 104", subject: "Proposal 104 in hand"
+        });
+        expect(L.stopsWithoutHandover([working], ["kalam"])).to.deep.equal([]);
+      });
+
+      it("asks only the agents with a ledger", function () {
+        const other = Object.assign({}, stopping, { id: "status-3", from: "wren" });
+        expect(L.stopsWithoutHandover([other], ["kalam"])).to.deep.equal([]);
+        expect(L.stopsWithoutHandover([other], []), "no list means every agent")
+          .to.have.length(1);
+      });
+
+      // The record itself says "hands over"; reading it as an announcement of a
+      // stop would make every hand-over its own unanswered question.
+      it("does not read the hand-over record as a status saying stopping", function () {
+        expect(L.saysStopping(handover)).to.equal(false);
+        expect(L.saysStopping(stopping)).to.equal(true);
+        expect(L.isHandover(handover)).to.equal(true);
+        expect(L.isHandover(stopping)).to.equal(false);
+      });
+
+      it("is green on the live message log, because generation 4 wrote its record",
+        function () {
+          const file = path.join(REPO, "governance", "messages.jsonl");
+          if (!fs.existsSync(file)) return this.skip();
+          const records = P.parseJsonl(fs.readFileSync(file, "utf8")).records;
+          const agents = fs.readdirSync(path.join(REPO, "governance", "ledger"))
+            .filter((f) => f.endsWith(".md")).map((f) => f.slice(0, -3));
+          expect(L.stopsWithoutHandover(records, agents).map((o) => o.agent))
+            .to.deep.equal([]);
+        });
+    });
+
     it("refuses to hand over before the ledger is written", function () {
       const dir = scratch();
       let failed = false;

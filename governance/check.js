@@ -16,6 +16,7 @@ const R = require("./read.js");
 const P = require("./protocol.js");
 const A = require("./adoption.js");
 const W = require("./watch.js");
+const L = require("./ledger.js");
 const CTRL = require("../scripts/check-control-characters.js");
 const path = require("path");
 const fs = require("fs");
@@ -727,6 +728,22 @@ async function main() {
         `the latest decision on proposal ${id}, ${m.id}, does not say where it has got to: "${String(m.summary).slice(0, 70)}"`
       );
     });
+  });
+
+  // Proposal 104. A builder that says it is stopping owes its successor one
+  // record to acknowledge by id. The third Kalam wrote its ledger and never ran
+  // scripts/handover.js, and nothing anywhere said so: the tool existed, the
+  // ledger existed, and the step between them was skipped in silence.
+  //
+  // Only agents with a ledger are asked, because a ledger is what a hand-over
+  // record points at. The red names the agent and the command that clears it.
+  check("an agent that said it was stopping wrote its hand-over record", () => {
+    const dir = path.join(__dirname, "ledger");
+    const agents = fs.existsSync(dir)
+      ? fs.readdirSync(dir).filter((f) => f.endsWith(".md")).map((f) => f.slice(0, -3))
+      : [];
+    const owing = L.stopsWithoutHandover(channel["/messages.json"].records || [], agents);
+    assert.strictEqual(owing.length, 0, owing.map((o) => o.why).join("\n  "));
   });
 
   check("every decision names a proposal that exists", () => {
