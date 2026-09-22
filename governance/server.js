@@ -80,7 +80,11 @@ const MAX_BODY = 64 * 1024; // a question is a sentence, not a payload
 // architect who completes the draft, and wren-file-draft.js deletes it the
 // moment the proposal is filed. Whoever writes that proposal's text must not
 // transcribe names, emails or secrets out of the image.
-const INBOX_DIR = path.join(LOG_DIR, "inbox");
+// Proposal 91 adds the rule 54 left implicit: this directory is outside the
+// repository, and one inside it is refused. inbox-dir.js decides, so the
+// filing script deletes from the same place the server wrote to.
+const INBOX_ROOT = require("./inbox-dir.js").inboxRoot();
+const INBOX_DIR = path.join(INBOX_ROOT.root, "inbox");
 const INBOX_SEGMENT = "inbox";
 
 // 5 MB of picture, the same number read.js gives the page, so the two cannot
@@ -142,14 +146,14 @@ function readImageField(field) {
   return { buffer: buffer, kind: kind };
 }
 
-// Write it under the log directory, named after the id the SERVER made. The
+// Write it under the image directory, named after the id the SERVER made. The
 // client's own file name is dropped on the floor and never stored: it is
 // attacker-controlled text, and nothing here needs it.
 function storeImage(draftId, image, done) {
   const relative = INBOX_SEGMENT + "/" + draftId + "." + image.kind.ext;
   fs.mkdir(INBOX_DIR, { recursive: true }, (mkErr) => {
     if (mkErr) return done(mkErr);
-    fs.writeFile(path.join(LOG_DIR, relative), image.buffer, (writeErr) => {
+    fs.writeFile(path.join(INBOX_ROOT.root, relative), image.buffer, (writeErr) => {
       if (writeErr) return done(writeErr);
       done(null, {
         path: relative,
@@ -576,6 +580,8 @@ server.listen(PORT, HOST, () => {
   console.log(`  GET  ${base}${TRANSLATIONS_ROUTE}`.padEnd(48) + "translations.json  read-only");
   console.log("");
   if (LOG_DIR !== ROOT) console.log(`logs            ${LOG_DIR}  (GOVERNANCE_LOG_DIR)`);
+  console.log(`draft images    ${INBOX_DIR}  (${INBOX_ROOT.from}, outside the repository)`);
+  if (INBOX_ROOT.refused) console.warn(INBOX_ROOT.refused);
 
   // --- BEGIN proposal 54: sweep the inbox ------------------------------
   // Once now, then hourly. unref'd so this timer is never the reason the

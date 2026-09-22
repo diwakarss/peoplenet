@@ -1152,6 +1152,66 @@ describe("the write scripts refuse before they send", function () {
     });
   });
 
+  // Proposal 91's one addition to proposal 54: a pasted screenshot may carry a
+  // customer's name or a credential, and .gitignore is a line anyone can
+  // delete. The directory is outside the repository, and one inside it is
+  // refused rather than obeyed.
+  describe("where a pasted screenshot may be written", function () {
+    const D = require("../../governance/inbox-dir.js");
+    const os = require("os");
+
+    it("defaults outside the repository", function () {
+      const chosen = D.inboxRoot({});
+      expect(D.isInside(D.REPO, chosen.root), "inside the repository").to.equal(false);
+      expect(chosen.root).to.equal(D.DEFAULT_ROOT);
+      expect(chosen.refused).to.equal(null);
+    });
+
+    it("honours a directory outside the repository, named either way", function () {
+      const outside = path.join(os.tmpdir(), "peoplenet-image-check");
+      expect(D.inboxRoot({ GOVERNANCE_INBOX_DIR: outside }).root).to.equal(path.resolve(outside));
+      expect(D.inboxRoot({ GOVERNANCE_LOG_DIR: outside }).root,
+        "the checks move the images with the logs").to.equal(path.resolve(outside));
+      expect(D.inboxRoot({ GOVERNANCE_INBOX_DIR: outside }).from).to.equal("GOVERNANCE_INBOX_DIR");
+    });
+
+    it("refuses a directory inside the repository, and says why in one sentence", function () {
+      const inside = path.join(D.REPO, "governance");
+      const chosen = D.inboxRoot({ GOVERNANCE_INBOX_DIR: inside });
+      expect(chosen.root, "falls back to the safe default").to.equal(D.DEFAULT_ROOT);
+      expect(chosen.refused).to.be.a("string");
+      expect(chosen.refused).to.contain("inside the repository");
+      expect(chosen.refused).to.contain(D.DEFAULT_ROOT);
+    });
+
+    it("refuses a path that climbs back into the repository", function () {
+      const climbed = path.join(D.REPO, "..", path.basename(D.REPO), "governance", "inbox");
+      expect(D.inboxRoot({ GOVERNANCE_LOG_DIR: climbed }).root).to.equal(D.DEFAULT_ROOT);
+    });
+
+    it("deletes the file the server wrote, not one beside the log", function () {
+      const os2 = require("os");
+      const filing = require("../../scripts/wren-file-draft.js");
+      const dir = fs.mkdtempSync(path.join(os2.tmpdir(), "peoplenet-discard-"));
+      fs.mkdirSync(path.join(dir, "inbox"));
+      const file = path.join(dir, "inbox", "draft-x.png");
+      fs.writeFileSync(file, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      const draft = {
+        id: "draft-x",
+        image: { path: "inbox/draft-x.png", bytes: 4, type: "image/png", sha256: "c".repeat(64) }
+      };
+
+      const asked = [];
+      filing.discardDraftImage(draft, { dir: dir, unlink: (f) => asked.push(f) });
+      expect(asked).to.deep.equal([file]);
+
+      // With no directory given it asks the same function the server asks, so
+      // the file it would delete is the file the server wrote.
+      const fallback = filing.discardDraftImage(draft, { rehearsal: true });
+      expect(fallback.file).to.equal(path.join(D.inboxRoot().root, "inbox", "draft-x.png"));
+    });
+  });
+
   // Proposal 91. Proposal 54 passed on 2026-09-19 and nothing noticed for two
   // days, because every column on the dashboard is built from agents' decision
   // messages and no agent had written one. These pin the list that finds them.

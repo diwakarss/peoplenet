@@ -37,6 +37,11 @@ const GOV = process.env.GOVERNANCE_LOG_DIR
   : path.join(__dirname, "..", "governance");
 const DRAFTS = path.join(GOV, "drafts.jsonl");
 
+// The images are not beside the log by default: proposal 91 keeps them outside
+// the repository. Asking the same function the server asks is what makes this
+// script delete the file the server actually wrote.
+const IMAGE_ROOT = require("../governance/inbox-dir.js").inboxRoot().root;
+
 function readLog(file) {
   if (!fs.existsSync(file)) return [];
   const { records, skipped } = P.parseJsonl(fs.readFileSync(file, "utf8"));
@@ -134,7 +139,7 @@ function listDrafts(records) {
     const image = R.draftImage(d);
     if (image) {
       console.log(
-        `                   image: ${image.path}  ` +
+        `                   image: ${path.join(IMAGE_ROOT, image.path)}  ` +
         `${R.describeBytes(image.bytes)}  ${String(image.sha256 || "").slice(0, 16)}…`
       );
     }
@@ -161,7 +166,7 @@ function discardDraftImage(draft, options) {
   const image = R.draftImage(draft);
   if (!image) return null;
 
-  const file = path.join(o.dir || GOV, image.path);
+  const file = path.join(o.dir || IMAGE_ROOT, image.path);
   if (o.rehearsal) {
     return { image: image, file: file, deleted: false, note: "rehearsal: left in place" };
   }
