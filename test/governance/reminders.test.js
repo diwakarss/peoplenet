@@ -156,6 +156,41 @@ describe("a reminder is not a proposal", function () {
       expect(waiting).to.equal("waiting");
       expect(back).to.equal("vote");
     });
+
+    // The half of proposal 99 that a waiting note would otherwise swallow.
+    // 61 and 62 carry the Director's own "waiting: wait a week" decisions, and
+    // the whole reminder exists to end that week. A fired trigger deliberately
+    // does not do this: a trigger says a condition was met, and he may have
+    // parked the proposal for a reason of his own.
+    describe("a reminder against the Director's own waiting note", function () {
+      const parked = { from: "director", type: "decision", proposal: 61, aaoId: 2,
+        subject: "Proposal 61: waiting", summary: "waiting: wait a week on this." };
+
+      it("brings it back, where a fired trigger would leave it parked", function () {
+        const p = proposal({ id: 61 });
+        expect(R.viewFor(p, parked, {}, { has: true, fired: true }, { fired: false })).to.equal("waiting");
+        expect(R.viewFor(p, parked, {}, { has: false, fired: false }, { fired: true })).to.equal("vote");
+      });
+
+      it("does not bring back a proposal that is closed", function () {
+        const closed = { from: "kural", type: "decision", proposal: 61, aaoId: 2,
+          subject: "Proposal 61: closed", summary: "closed: solved by the build." };
+        expect(R.viewFor(proposal({ id: 61 }), closed, {}, {}, { fired: true })).to.equal("closed");
+      });
+
+      it("reads the whole thing out of the message log, as the page does", function () {
+        const p = proposal({ id: 61 });
+        const fired61 = Object.assign({}, fired, { proposal: 61 });
+        expect(R.viewsFor([p], [parked])[61]).to.equal("waiting");
+        expect(R.viewsFor([p], [parked, fired61])[61]).to.equal("vote");
+      });
+
+      it("tells a fired reminder apart from every other message watch writes", function () {
+        expect(R.reminderHasFired([fired], 61)).to.not.equal(null);
+        expect(R.reminderHasFired([trigger], 61)).to.equal(null);
+        expect(R.reminderHasFired([unclaimed], 61)).to.equal(null);
+      });
+    });
   });
 
   describe("a reminder on a closed proposal", function () {

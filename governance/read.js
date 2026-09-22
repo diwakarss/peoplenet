@@ -345,6 +345,24 @@
     return found;
   }
 
+  // A reminder that has fallen due and been delivered, specifically.
+  //
+  // It is its own question because a waiting note and a reminder are two halves
+  // of one sentence: "wait a week" is only half an instruction, and the other
+  // half is "then bring it back". A due reminder is the week being up. So this
+  // beats a waiting decision in viewFor, where a fired trigger deliberately
+  // does not -- a trigger says a condition was met, and the Director may still
+  // have parked the proposal for a reason of his own.
+  function reminderHasFired(messages, proposalId) {
+    var found = null;
+    (messages || []).forEach(function (m) {
+      if (!m || m.from !== "watch" || !m.reminder) return;
+      if (Number(m.proposal) !== Number(proposalId)) return;
+      found = m;
+    });
+    return found;
+  }
+
   // Whether this agent may set, move or cancel a reminder here, in one plain
   // line, or null (proposal 99).
   //
@@ -408,14 +426,26 @@
   //                   is tied to and where that one went; a tied proposal takes
   //                   its parent's view and returns with it
   //   triggers        { has: <boolean>, fired: <boolean> } for this proposal
-  function viewFor(proposal, latestDecision, ties, triggers) {
+  //   reminders       { fired: <boolean> } -- a reminder on this proposal has
+  //                   fallen due and been delivered
+  function viewFor(proposal, latestDecision, ties, triggers, reminders) {
     var tie = ties || {};
     var trigger = triggers || {};
+    var reminder = reminders || {};
     var state = latestDecision ? decisionState(latestDecision) : null;
 
     // Closed first: "closed: superseded by proposal 98" is not waiting, and a
     // proposal read as waiting would come back when nothing should bring it.
     if (state === "closed") return "closed";
+
+    // Then a delivered reminder, which is the only thing that beats a waiting
+    // note, because it is the other half of that note (proposal 99). The
+    // Director wrote "wait a week"; the architect set the reminder; the week is
+    // up. If the waiting decision won here, the reminder would ring his phone
+    // and the proposal would stay hidden in the fold -- which is the one
+    // outcome worse than no reminder at all.
+    if (reminder.fired) return "vote";
+
     if (state === "waiting" || state === "blocked") return "waiting";
 
     // A trigger is a promise that something will change. Until it does, the
@@ -494,7 +524,8 @@
         proposal,
         latest[id] || null,
         { parent: parent, parentView: parentView },
-        { has: has, fired: Boolean(triggerHasFired(messages || [], id)) }
+        { has: has, fired: Boolean(triggerHasFired(messages || [], id)) },
+        { fired: Boolean(reminderHasFired(messages || [], id)) }
       );
 
       resolving[id] = false;
@@ -1492,6 +1523,7 @@
     architectLabel: architectLabel,
     triggerHasFired: triggerHasFired,
     triggerReported: triggerReported,
+    reminderHasFired: reminderHasFired,
     reminderProblem: reminderProblem,
     tieTargetOf: tieTargetOf,
     tieIn: tieIn,

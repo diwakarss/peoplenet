@@ -13,6 +13,8 @@
 //   node scripts/remind.js cancel <id>
 //
 //   --from <who>    who is setting it; default "kural"
+//   --because "<x>" kept on the record: why this line exists, when it was not
+//                   typed by the party it is set by
 //   --aao <id>      the organisation; default 2 (JD)
 //   --topic "<t>"   the organisation's topic, when the chain cannot be reached
 //   --send          do it for real. Without it this rehearses, like every other
@@ -67,7 +69,7 @@ function usage(message) {
 function parseArgs(argv) {
   const out = {
     positional: [], due: "", text: "", from: "kural", aaoId: JD_AAO_ID, topic: null,
-    proposal: null, history: false, dryRun: !R.wantsSend(process.argv)
+    proposal: null, history: false, because: "", dryRun: !R.wantsSend(process.argv)
   };
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i++) {
@@ -79,6 +81,7 @@ function parseArgs(argv) {
     else if (arg === "--due") out.due = String(rest[++i] || "");
     else if (arg === "--text") out.text = String(rest[++i] || "");
     else if (arg === "--from") out.from = String(rest[++i] || "kural");
+    else if (arg === "--because") out.because = String(rest[++i] || "");
     else if (arg === "--topic") out.topic = String(rest[++i] || "");
     else if (arg === "--aao") out.aaoId = Number(rest[++i]);
     else if (arg === "--proposal") out.proposal = Number(rest[++i]);
@@ -195,6 +198,11 @@ async function main() {
       state: "set",
       at: new Date().toISOString()
     };
+    // Who set it and who typed it are not always the same person. The two
+    // reminders the proposal 99 migration carries are Kural's -- he is JD's
+    // architect and they are his -- and Kalam wrote the lines. `because` says
+    // so in the record itself rather than only in a commit message.
+    if (args.because) record.because = args.because;
     RM.assertValid(record, "remind");
 
     if (args.dryRun) return rehearse(args, "set", record, null);
