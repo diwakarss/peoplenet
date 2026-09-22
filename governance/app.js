@@ -76,7 +76,9 @@
   // What the Director has typed into a question box but not yet sent, per proposal.
   var questionDrafts = {};
   var asking = {};
-  var newProposal = { busy: false, error: null, filed: null, open: false };
+  // `image` is proposal 54: at most one pasted or dropped picture beside the
+  // words, held here until the draft is sent and then let go of.
+  var newProposal = { busy: false, error: null, filed: null, open: false, image: null, imageError: null };
 
   var view = remember("governance.view", "governance");
   var selectedAaoId = Number(remember("governance.aao", "0"));
@@ -509,6 +511,201 @@
     return body;
   }
 
+  // --- BEGIN proposal 54: a screenshot beside the words -------------------
+  //
+  // Rule 27.12 says nothing stands between the Director having a thought and
+  // writing it down, and that is still one field. This adds nothing to fill
+  // in: paste a screenshot, or drop one, and it rides along.
+  //
+  // PRIVACY. What gets pasted here is usually a ticket, which means it may
+  // carry a customer's name, an email address or a credential. It is sent to
+  // the local server and nowhere else, it is never served back, never
+  // committed and never put on the chain, and the architect who completes the
+  // draft deletes it as they file. Nothing from inside the picture belongs in
+  // the proposal's text.
+  var foldImageBound = false;
+
+  // One image at a time. A second paste replaces the first rather than
+  // stacking: the fold holds one thought and one picture of it.
+  //
+  // What may be attached is R.draftImageProblem's to say, not this file's, so
+  // the line the Director reads here is the line the server would have sent
+  // back anyway.
+  function takeImage(file) {
+    if (!file) return;
+    var problem = R.draftImageProblem(file);
+    if (problem) {
+      newProposal.imageError = problem;
+      render(lastData);
+      return;
+    }
+    dropImage();
+    newProposal.imageError = null;
+    newProposal.image = {
+      file: file,
+      bytes: file.size,
+      type: file.type,
+      url: window.URL && window.URL.createObjectURL ? window.URL.createObjectURL(file) : null
+    };
+    render(lastData);
+  }
+
+  // Let go of the picture AND of the object URL behind it. A thumbnail whose
+  // URL is never revoked keeps the whole file alive in the tab for as long as
+  // the page is open, which for a screenshot of a ticket is exactly the wrong
+  // thing to leave lying around.
+  function dropImage() {
+    var held = newProposal.image;
+    newProposal.image = null;
+    if (held && held.url && window.URL && window.URL.revokeObjectURL) {
+      try { window.URL.revokeObjectURL(held.url); } catch (e) { /* already gone */ }
+    }
+  }
+
+  function removeImage() {
+    dropImage();
+    newProposal.imageError = null;
+    render(lastData);
+  }
+
+  // The first image among whatever was pasted or dragged. A plain-text paste
+  // finds nothing here and is left to the textarea, untouched.
+  function firstImageIn(transfer) {
+    if (!transfer) return null;
+    var items = transfer.items;
+    if (items) {
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].kind === "file" && /^image\//.test(items[i].type || "")) {
+          var asFile = items[i].getAsFile();
+          if (asFile) return asFile;
+        }
+      }
+    }
+    var files = transfer.files;
+    if (files) {
+      for (var j = 0; j < files.length; j++) {
+        if (/^image\//.test(files[j].type || "")) return files[j];
+      }
+    }
+    return null;
+  }
+
+  // Bound once, to the fold itself, which index.html holds still across every
+  // re-render -- so these never stack up the way a listener added in the
+  // render loop would.
+  function bindFoldImage() {
+    if (foldImageBound) return;
+    var fold = byId("file-fold");
+    if (!fold) return;
+    foldImageBound = true;
+
+    // Ctrl-V anywhere in the fold. Listened for on the document because a
+    // paste lands on whatever has focus, and the Director may have clicked the
+    // fold's own whitespace rather than the box. If the focus is somewhere
+    // else on the page -- the search box, the ask box -- that paste is theirs
+    // and this leaves it alone.
+    document.addEventListener("paste", function (event) {
+      if (!fold.open || newProposal.busy) return;
+      var active = document.activeElement;
+      if (active && active !== document.body && !fold.contains(active)) return;
+      var file = firstImageIn(event.clipboardData);
+      if (!file) return;
+      event.preventDefault();
+      takeImage(file);
+    });
+
+    fold.addEventListener("dragover", function (event) {
+      if (newProposal.busy) return;
+      event.preventDefault();
+      fold.classList.add("np-dropping");
+    });
+    fold.addEventListener("dragleave", function (event) {
+      if (event.target === fold || !fold.contains(event.relatedTarget)) {
+        fold.classList.remove("np-dropping");
+      }
+    });
+    fold.addEventListener("drop", function (event) {
+      event.preventDefault();
+      fold.classList.remove("np-dropping");
+      if (newProposal.busy) return;
+      var file = firstImageIn(event.dataTransfer);
+      if (file) return takeImage(file);
+      // Nothing dropped was an image at all. The wording comes from the same
+      // place as every other refusal rather than being written out again here.
+      newProposal.imageError = R.draftImageProblem({ type: "none", size: 1 });
+      render(lastData);
+    });
+  }
+
+  // The attach control and, once there is one, the thumbnail. Everything here
+  // is a real button and a real file input, so the whole thing works from the
+  // keyboard for anyone who cannot paste.
+  function renderImageRow() {
+    var row = el("div", "np-image");
+
+    var picker = document.createElement("input");
+    picker.type = "file";
+    picker.accept = R.IMAGE_TYPES.join(",");
+    picker.className = "np-file";
+    picker.tabIndex = -1;           // the button below is the focusable thing
+    picker.setAttribute("aria-hidden", "true");
+    picker.addEventListener("change", function () {
+      if (picker.files && picker.files[0]) takeImage(picker.files[0]);
+      picker.value = "";
+    });
+    row.appendChild(picker);
+
+    if (!newProposal.image) {
+      var attach = el("button", "np-attach", "Paste, drop or choose an image");
+      attach.type = "button";
+      attach.disabled = newProposal.busy;
+      attach.addEventListener("click", function () { picker.click(); });
+      row.appendChild(attach);
+      row.appendChild(el("span", "np-note", "Optional. PNG or JPEG, up to 5 MB."));
+    } else {
+      var thumb = el("figure", "np-thumb");
+      if (newProposal.image.url) {
+        var img = document.createElement("img");
+        img.src = newProposal.image.url;
+        img.alt = "The image attached to this draft";
+        thumb.appendChild(img);
+      }
+      var caption = el("figcaption", "np-thumb-caption",
+        (newProposal.image.type === "image/jpeg" ? "JPEG" : "PNG") +
+        ", " + R.describeBytes(newProposal.image.bytes));
+      thumb.appendChild(caption);
+
+      var remove = el("button", "np-remove", "×");
+      remove.type = "button";
+      remove.disabled = newProposal.busy;
+      remove.title = "Remove this image";
+      remove.setAttribute("aria-label", "Remove the attached image");
+      remove.addEventListener("click", removeImage);
+      thumb.appendChild(remove);
+
+      row.appendChild(thumb);
+      row.appendChild(el("span", "np-note",
+        "Goes to the architect completing this draft, and is deleted when it is filed. " +
+        "It is never published and never goes on the chain."));
+    }
+
+    if (newProposal.imageError) row.appendChild(el("p", "err np-image-err", newProposal.imageError));
+    return row;
+  }
+
+  // The browser hands a data: URL; the server strips the prefix and reads the
+  // bytes. Nothing about the file's own name is sent -- it is not needed, and
+  // a file name is one more thing that can carry a customer's details.
+  function imagePayload(image) {
+    return new Promise(function (resolve, reject) {
+      var reader = new window.FileReader();
+      reader.onload = function () { resolve({ type: image.type, base64: String(reader.result) }); };
+      reader.onerror = function () { reject(new Error("the image could not be read")); };
+      reader.readAsDataURL(image.file);
+    });
+  }
+  // --- END proposal 54 ----------------------------------------------------
+
   // --- one field to file (27.12) -----------------------------------------
 
   // One field and one button. No title, no why, no format -- the page must not
@@ -535,6 +732,11 @@
     box.addEventListener("input", function () { newProposal.text = box.value; });
     row.appendChild(box);
     form.appendChild(row);
+
+    // --- BEGIN proposal 54 ---
+    bindFoldImage();
+    form.appendChild(renderImageRow());
+    // --- END proposal 54 ---
 
     var actions = el("div", "np-actions");
     var submit = el("button", "np-send", newProposal.busy ? "sending…" : "Send to " + architect);
@@ -566,18 +768,35 @@
     newProposal.busy = true;
     newProposal.error = null;
     newProposal.filed = null;
+    newProposal.imageError = null;
     render(lastData);
     try {
+      // --- BEGIN proposal 54 ---
+      // A draft with no image sends exactly the body it always sent.
+      var payload = { text: text, aaoId: selectedAaoId };
+      if (newProposal.image) payload.image = await imagePayload(newProposal.image);
+      // --- END proposal 54 ---
       var response = await window.fetch("/drafts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text, aaoId: selectedAaoId })
+        body: JSON.stringify(payload)
       });
-      var result = await response.json().catch(function () { return {}; });
+      // Read the body once. A refusal over the size is answered in plain text,
+      // not JSON, so the raw line is what the Director should be shown rather
+      // than a bare status number (proposal 54).
+      var raw = await response.text().catch(function () { return ""; });
+      var result = {};
+      try { result = JSON.parse(raw) || {}; } catch (e) { result = {}; }
       if (!response.ok || result.ok === false) {
-        throw new Error((result.errors || ["HTTP " + response.status]).join("; "));
+        throw new Error(
+          (result.errors && result.errors.length ? result.errors.join("; ") : "") ||
+          raw.trim() || ("HTTP " + response.status)
+        );
       }
       newProposal.text = "";
+      // The fold goes back to empty, picture and all, and the object URL
+      // behind the thumbnail is let go of here (proposal 54).
+      dropImage();
       newProposal.filed = "Sent. It shows as “draft, awaiting " + architectFor(selectedAaoId) + "” until it is filed.";
     } catch (e) {
       newProposal.error = "Could not send the draft: " + (e.message || e);

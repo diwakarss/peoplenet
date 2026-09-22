@@ -130,6 +130,49 @@ node scripts/submit-widget-proposals.js --dry-run             # a whole batch
 and the **File a new proposal** fold on the page, which signs with account 0.
 See "The proposal format" below.
 
+## Images on a draft
+
+The fold takes one picture beside the words (proposal 54). Paste a screenshot
+with Ctrl-V anywhere in the open fold, drop a file on it, or tab to
+**Paste, drop or choose an image** and pick one. PNG or JPEG, up to 5 MB, one
+at a time — a second paste replaces the first. A draft sent without one works
+exactly as it always did; the image is optional and there is still only one
+field to fill in.
+
+**What is kept, and where.** The image is written to `governance/inbox/`,
+named after the id the server generated for the draft. The file name the
+browser sent is dropped and never stored. The draft's line in `drafts.jsonl`
+gains a pointer, not a picture:
+
+```json
+"image": { "path": "inbox/draft-abc123.png", "sha256": "…", "bytes": 48213, "type": "image/png" }
+```
+
+What kind of file it is, is decided by its first bytes, not by what the browser
+called it. The 5 MB limit is enforced again on the server, on the decoded
+length.
+
+**For how long.** Two things end it. `scripts/wren-file-draft.js` deletes the
+file as it files the proposal, and writes `image_deleted` with the hash into
+the filed record — the hash is the only part of a screenshot that should
+outlive the proposal it explained. And the server sweeps the inbox at start and
+then hourly, removing anything over 24 hours old, with one line in the log
+saying how many. A rehearsal (`--dry-run`) deletes nothing; it says what the
+real run would take.
+
+`governance/inbox/` is in `.gitignore`.
+
+**What it is for.** The image is a note to the one architect who has to turn
+the Director's sentence into a title, a why and the technical detail. It is not
+part of the record. The record is the words.
+
+**The rule that matters.** A screenshot is usually a ticket, so it may carry a
+customer's name, an email address or a credential. It stays on this machine: no
+route serves it, nothing commits it, and it never goes on the chain. And the
+architect completing the draft **must not transcribe names, emails or secrets
+out of the image into the proposal's text** — the proposal is public, permanent
+and unamendable, and the picture exists so that it does not have to be.
+
 ## The two organisations
 
 | AAO | Topic | Members | What happens there |
@@ -392,6 +435,8 @@ not a prediction, the event. Once executed a proposal is closed for good.
 | `questions.jsonl` | The Director's questions, appended by `POST /questions`. |
 | `answers.jsonl` | Wren's answers, appended by `scripts/wren-answer.js`. |
 | `messages.jsonl` | Agent traffic, appended by `POST /messages`. |
+| `drafts.jsonl` | The Director's one-field drafts, appended by `POST /drafts`, and the record of what each became. A draft that carried an image holds a pointer to it and its hash, never the picture. |
+| `inbox/` | Images pasted onto a draft. Untracked, never served, swept after 24 hours, deleted as the draft is filed. See "Images on a draft". |
 | `check.js` | Runs `read.js` against the live node **and** the served endpoint, prints what the page would show, asserts the AAO, the three members, the proposal floor, and Wren's twelve records. |
 | `vote.js` | One vote script, told which account it is. `wren-vote.js`, `builder-vote.js` and `widget-vote.js` are wrappers on it. |
 | `wren-votes.jsonl` | Wren's votes with their stated reasons and what each was cast against, one JSON object per line. |

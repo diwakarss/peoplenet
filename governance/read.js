@@ -284,6 +284,58 @@
     return null;
   }
 
+  // --- BEGIN proposal 54: what a draft may carry beside its words ---------
+  //
+  // One place, for the same reason draftFilingProblem is one place: the page
+  // asks before it sends, and the server asks again once it has the bytes, and
+  // the two must refuse the same thing in the same words. The page's answer is
+  // only a courtesy to the Director -- `type` and `size` here are the client's
+  // word for it, and the server believes neither. It reads the magic bytes and
+  // counts the decoded length itself.
+  //
+  // PRIVACY. The image is a screenshot, which usually means a ticket, which
+  // may carry a customer's name, an email address or a credential. It goes to
+  // the local server and nowhere else: never served back, never committed,
+  // never on the chain, deleted as the draft is filed.
+  var IMAGE_LIMIT_BYTES = 5 * 1024 * 1024;
+  var IMAGE_TYPES = ["image/png", "image/jpeg"];
+
+  function describeBytes(bytes) {
+    var n = Number(bytes) || 0;
+    if (n < 1024) return n + " bytes";
+    if (n < 1024 * 1024) return Math.round(n / 1024) + " KB";
+    return (n / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  // One plain line saying why this cannot be attached, or null if it can.
+  // Takes anything with a `type` and a `size`: a browser File, or a plain
+  // object in a test.
+  function draftImageProblem(file) {
+    if (!file) return "There is no image to attach.";
+    var type = String(file.type || "").toLowerCase();
+    if (IMAGE_TYPES.indexOf(type) === -1) {
+      return "That is not a PNG or a JPEG, so it was not attached.";
+    }
+    var size = Number(file.size);
+    if (!(size > 0)) return "That image is empty, so it was not attached.";
+    if (size > IMAGE_LIMIT_BYTES) {
+      return "That image is " + describeBytes(size) + ". The limit is " +
+        describeBytes(IMAGE_LIMIT_BYTES) + ", so it was not attached.";
+    }
+    return null;
+  }
+
+  // The image a draft carries, or null. Read in one place so --list and the
+  // filing path cannot disagree about what "has an image" means -- a record
+  // written before this proposal simply has none.
+  function draftImage(record) {
+    var image = record && record.image;
+    if (!image || typeof image !== "object") return null;
+    if (typeof image.path !== "string" || !image.path) return null;
+    return image;
+  }
+  // --- END proposal 54 ----------------------------------------------------
+
   // The architect's name for an organisation, for every prompt the page
   // prints. "Ask Wren" on JD was wrong: Kural is the architect there.
   function architectLabel(aao) {
@@ -1216,6 +1268,11 @@
     KALAM_VOTES_PATH: KALAM_VOTES_PATH,
     fetchKalamVotes: fetchKalamVotes,
     architectLabel: architectLabel,
+    IMAGE_LIMIT_BYTES: IMAGE_LIMIT_BYTES,
+    IMAGE_TYPES: IMAGE_TYPES,
+    describeBytes: describeBytes,
+    draftImageProblem: draftImageProblem,
+    draftImage: draftImage,
     parseWrenVotesJsonl: parseWrenVotesJsonl,
     indexWrenVotes: indexWrenVotes,
     fetchVoteLog: fetchVoteLog,

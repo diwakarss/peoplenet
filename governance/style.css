@@ -1082,6 +1082,83 @@ button.casting:not(:disabled), button.close-tie:not(:disabled) {
 .np-note { font-size: 11.5px; color: var(--ink-faint); }
 .np-filed { margin: 0; font-size: 12.5px; color: var(--accent); }
 
+/* --- BEGIN proposal 54: the pasted image ------------------------------- */
+/* Plain and square, like the rest of the form: a bordered stamp with the
+   file's own facts under it. Nothing here is allowed to grow the fold past
+   the frame, because the page does not scroll (27.11) -- hence the hard cap
+   on the thumbnail's height, which holds whether the image is a 40 KB error
+   dialog or a 5 MB full-screen capture. */
+.np-image { display: flex; align-items: flex-start; gap: 13px; flex-wrap: wrap; }
+
+.np-file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+.np-attach {
+  font: inherit;
+  font-size: 11.5px;
+  letter-spacing: .02em;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border: 1px dashed var(--rule);
+  border-radius: 0;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.np-attach:hover:not(:disabled) { border-style: solid; color: var(--accent); border-color: var(--accent); }
+.np-attach:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.np-attach:disabled { opacity: .5; cursor: default; }
+
+.np-thumb {
+  position: relative;
+  margin: 0;
+  padding: 5px 5px 3px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  max-width: 190px;
+}
+
+.np-thumb img {
+  display: block;
+  max-width: 100%;
+  max-height: 84px;      /* the fold must not grow the frame */
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.np-thumb-caption {
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.np-remove {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  width: 19px;
+  height: 19px;
+  line-height: 1;
+  font: inherit;
+  font-size: 13px;
+  color: var(--paper);
+  background: var(--ink-soft);
+  border: 1px solid var(--paper);
+  border-radius: 0;
+  cursor: pointer;
+  padding: 0;
+}
+.np-remove:hover:not(:disabled) { background: var(--negative); }
+.np-remove:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.np-remove:disabled { opacity: .5; cursor: default; }
+
+.np-image-err { margin: 0; flex-basis: 100%; font-size: 12px; }
+
+/* While something is being dragged over the fold. */
+.np-dropping { outline: 2px dashed var(--accent); outline-offset: -3px; }
+/* --- END proposal 54 ---------------------------------------------------- */
+
 /* --- the structure tree ------------------------------------------------- */
 
 .tree {
