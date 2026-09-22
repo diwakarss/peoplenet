@@ -175,3 +175,131 @@ live. Nothing else on this machine should be stopped by anyone but its owner.
 ---
 
 *Kalam, account 6. Handed over at proposal 92, with 91 and 95 open.*
+
+---
+
+# Kalam, second generation — 2026-09-22
+
+Same name, same account, same model: Claude Opus 5, 1M context
+(`claude-opus-5[1m]`). I read everything above and worked under it. Nothing in
+it needed correcting.
+
+## The interruption, and what it taught
+
+I was stopped mid-item by the account's weekly usage limit, not by anything I
+did. Seven files held uncommitted work on proposal 91 part A. I resumed from
+`git diff` on those seven paths and finished; nothing was lost and nothing was
+restarted.
+
+**An interrupted builder's work lives in the working tree.** Before you start
+over, `git diff` the paths the handover names. A tree is a ledger too.
+
+## What I built
+
+| Proposal | What | Commits |
+|---|---|---|
+| 91 part A | The Unclaimed list, and the watcher telling each architect once | `90d1a5e` |
+| 54 / 91 part B | Merged Wren's builder's branch `proposal-54-image-paste` | `bd253c7` |
+| 91 | Draft images live outside the repository; a directory inside it is refused | `513b730` |
+| 95 | The three views, the tie rule, the closed-trigger skip | `e8beec4` |
+| 95 | The vote list, the Waiting fold, the note routing | `a93d948` |
+
+277 tests pass across `scripts.test.js`, `watch.test.js` and `tiebreak.test.js`.
+`npm run governance:check` stops at the same known red, proposal 27.
+
+I did **not** build part B of 91. Wren's builder had already built it. I deleted
+the one untracked file I had started, `governance/inbox.js`, merged Wren's five
+commits, and added only the rule 91 states that 54 did not.
+
+## Things written nowhere else
+
+**A message from "watch" is not one thing.** `alreadyFired` and the page's
+`firedTrigger` both meant "a message from watch naming this proposal". The
+moment the Unclaimed list started posting from `watch`, that one sentence meant
+two different things: 31 untouched proposals would have been pinned to the front
+of the Director's flow as fired triggers, and every real trigger on them would
+have been silenced for good. The rule now lives in `read.js` as
+`triggerHasFired`, once, and `watch.js` and the page both ask it. **When you add
+a second kind of message from an existing sender, go and read everything that
+matches on the sender.**
+
+**The Unclaimed list found 31 proposals on its first run** — 30 on the trilogy
+widget, 1 on JD-build — going back 67 hours. Proposal 54 was not an accident; it
+was the one the Director happened to notice. That is one message to each
+architect, once, and it will not repeat. The 30 on the trilogy widget are Wren's
+to answer.
+
+**Proposal 54 itself was never on the list**, because Wren had posted a decision
+on it. The hole 91 describes is narrower than it looks: the decision existed,
+the *build* did not. A decision message claims a proposal; it does not deliver
+it.
+
+**`git commit -m` with a PowerShell here-string breaks on inner double quotes.**
+A message containing a quoted word was mangled and git was handed a stray
+argument. Write the message to a file in the OS temp directory and use
+`git commit -F`. Every commit above after the first was made that way.
+
+**A detached test run can exit with an empty log.** `Start-Process` returned a
+pid, the process ended, and the log was zero bytes with no error anywhere. It
+was not a code fault — the same command re-run passed. Check the log's *length*
+before you believe a silent run, and re-run before you go hunting.
+
+**The JD expectation in the section above is now out of date, and the difference
+is the record working.** Expected: vote = 87 and 91; waiting = 60, 61, 62, 86,
+93, 94; closed = 88. Actual, 2026-09-22: vote = 87; waiting = 60, 61, 62, 86,
+94, 98; closed = 88, 93. 91 executed, so it left the vote list. 93 moved to
+closed when Kural superseded it with 98. 98 did not exist when that line was
+written and waits on its own date trigger.
+
+## Open
+
+**Proposal 99, reminders** — not started. Not one line of it is written. The
+work order came to me as a third item and is reproduced here so the next builder
+needs nothing else:
+
+1. `governance/reminders.jsonl`, append-only: `id`, `proposal`, `aaoId`, `due`
+   (ISO), `text`, `set_by`, `state` (`set`, `fired`, `cancelled`, `moved`); a
+   later line for the same id supersedes an earlier one. Served read-only by the
+   server like the other logs.
+2. `scripts/remind.js`: set, move, cancel, list. Rehearses by default, `--send`
+   to write, like every write script. Only the organisation's architect may set
+   one on that organisation — reuse the rule from 89 and 90 in `read.js`.
+3. `governance/watch.js` fires a due reminder once: a push; a status message
+   from `watch` naming the proposal; and it counts as fired for 95's `viewFor`,
+   so the proposal returns to the Director's vote list. A reminder on a closed
+   proposal does not fire.
+4. The push is a POST to an ntfy topic URL. **The topic name is a secret**: read
+   from `PEOPLENET_NTFY_URL`, never the repo, never a message, never a log line,
+   never a report. Unset means the push is skipped and said so once, while the
+   other two still happen. The body carries a short title and the proposal
+   number only — no proposal text, because a public ntfy topic can be read by
+   anyone who knows its name. A failed push is retried with backoff and reported
+   once as an incident from `watch`. Tests use a local stub HTTP server on a port
+   started and stopped by pid; never the real ntfy.
+5. `scripts/phone.js` (`npm run phone`): generates a long random topic name if
+   none exists, stores the full URL in a file outside the repo under the user
+   profile with a note on setting the environment variable, and shows the
+   Director, on this laptop's screen only, the subscribe link and the three steps
+   for the ntfy iPhone app. `--test` sends one push.
+6. Migration: re-set proposals 94 (due `2026-10-05T03:30:00Z`, about 62) and 98
+   (due `2026-09-28T03:30:00Z`, about 61) as reminder records `set_by: kural`,
+   and post `closed: superseded by reminder <id>` decisions on 94 and 98 from
+   kalam. 93 is already closed.
+7. Tests for each path. One commit per unit, push, restart the server by its pid.
+   Then a decision on 99 with "built", saying the Director must once run
+   `npm run phone` and follow the three steps.
+
+Read 99 on chain before starting: it executed at block 376 and its text is the
+authority, not this summary.
+
+**The 31 unclaimed proposals** are now each architect's to answer. They will not
+be reported again.
+
+**Everything still open from the first generation** — proposal 50's cloud move
+waiting on the Hetzner token, the red on 27, 29 and 30, and `wren-answer.js`
+sending without `--send` — is still open. None of it moved.
+
+---
+
+*Kalam, second generation, account 6. Handed over with 91 and 95 built, and 99
+untouched.*
