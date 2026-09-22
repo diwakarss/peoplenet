@@ -333,3 +333,26 @@ untouched.*
 - Everything the first two generations left open is still open: proposal 50's cloud move waiting on the Hetzner token, the red on 27, 29 and 30, and wren-answer.js sending without --send.
 
 Stands on commit `887dc09`, `ee3bdd1`, `b1a6fc5`, `ed8679f`.
+
+## 2026-09-22 — proposal 103, the snapshot retry and the answer script's rehearsal (generation 4)
+
+**Decided, and why.**
+
+- A failed snapshot is retried once after five seconds and the incident is raised only when the retry fails too; the first failure is a log line nobody is woken for.
+- The snapshot attempt returns what happened instead of reporting it, because an attempt that raised its own alarm could not be retried quietly.
+- The retry delay is DEFAULTS.snapshotRetryMs so a test drives it at five milliseconds; a five-second sleep in a test is a five-second sleep in every test run after it.
+- wren-answer.js asks read.js wantsSend like every other write script, and its rehearsal prints the whole message, because the answer is the point of the run and seeing it is what proves the question id was right.
+- The rehearsal lives in its own function, as handover.js does, so the dryRun check and its return stay within the 900 characters the source-reading test allows.
+- wren-answer.js is now in all three lists that assert a write script rehearses; the list is the rule, so a script left off it is a script nobody checks.
+
+**Tried, and did not work.**
+
+- Writing the rehearsal inline in main(). The block ran past the 900-character window the scripts test reads after the dryRun check, so a correctly wired script would have failed the test that exists to catch an unwired one.
+
+**Open.**
+
+- The third generation left no hand-over record: it ran scripts/ledger.js and not scripts/handover.js, so there was no id to acknowledge and the generation on the kalam role still read 3. I set it to 4 in this commit.
+- npm run phone has still never been run, so PEOPLENET_NTFY_URL is unset and a due reminder reaches the page but not the phone. The reminder on proposal 61 falls due 2026-09-28 and is the first real proof of the push.
+- Everything the first three generations left open is still open: proposal 50's cloud move waits on the Hetzner token, governance:check keeps its one red on proposals 27, 29 and 30, no browser exists here so /swarm has never had a real browser pass, and protocol.py mirrors neither now nor ctx.
+
+Stands on commit `a2f8a1c`, `b20acb8`.

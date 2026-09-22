@@ -59,9 +59,12 @@
     { key: "builder", label: "Builder", address: BUILDER, ordinary: true },
     { key: "widget", label: "Widget", address: WIDGET, ordinary: true },
     { key: "kural", label: "Kural", address: KURAL, ordinary: true },
-    // Third generation from 2026-09-22: the first handed over at proposal 92,
-    // the second at 99's work order, and this one took up 99 and 96.
-    { key: "kalam", label: "Kalam", address: KALAM, ordinary: true, generation: 3 }
+    // Fourth generation from 2026-09-22: the first handed over at proposal 92,
+    // the second at 99's work order, the third built 99 and 96, and this one
+    // took up 103. The third stopped without running scripts/handover.js, so
+    // the number stayed at 3 until its successor moved it on; the number is the
+    // role's, and whoever finds it stale corrects it.
+    { key: "kalam", label: "Kalam", address: KALAM, ordinary: true, generation: 4 }
   ];
 
   // The role a party key names, or null.
