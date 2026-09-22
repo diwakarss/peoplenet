@@ -172,6 +172,20 @@
     return label(agent) + " hands over at generation " + generation;
   }
 
+  // "a", "a and b", "a, b and c" (proposal 104).
+  //
+  // The summary used to name linesOf(r.commit)[0] alone. The fourth Kalam's
+  // hand-over passed three commits and the line a person reads named one of
+  // them, as though the stop stood on a third of the work it stood on. The
+  // details field and the refs carried all three, which is why nobody would
+  // have noticed: the record was complete and the sentence was not.
+  function englishList(items) {
+    var list = linesOf(items);
+    if (!list.length) return "";
+    if (list.length === 1) return list[0];
+    return list.slice(0, -1).join(", ") + " and " + list[list.length - 1];
+  }
+
   // The message, as a partial: the caller runs it through protocol.normalise so
   // this file stays loadable in a browser with no protocol.js beside it.
   function handoverMessage(report) {
@@ -190,7 +204,8 @@
           ? "Open: " + open.join(" ") + " "
           : "Nothing is left open. ") +
         "The ledger is governance/ledger/" + textOf(r.agent).toLowerCase() +
-        ".md and it stands on commit " + (linesOf(r.commit)[0] || "an unrecorded commit") + ".",
+        ".md and it stands on commit" + (linesOf(r.commit).length > 1 ? "s " : " ") +
+        (englishList(r.commit) || "an unrecorded commit") + ".",
       details: [
         "ledger: governance/ledger/" + textOf(r.agent).toLowerCase() + ".md",
         "commit: " + (linesOf(r.commit).join(", ") || "none recorded"),
@@ -231,6 +246,7 @@
   return {
     PARTS: PARTS,
     linesOf: linesOf,
+    englishList: englishList,
     handoverSubject: handoverSubject,
     handoverMessage: handoverMessage,
     acknowledgementFor: acknowledgementFor,

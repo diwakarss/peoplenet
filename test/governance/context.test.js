@@ -221,9 +221,15 @@ describe("builders manage their context", function () {
   });
 
   describe("the generation, recorded beside the role", function () {
+    // What is pinned is that the number is read off the role, not what the
+    // number is today: it moves at every hand-over, and a literal here would be
+    // a test edited at every rotation. Proposal 104.
     it("is on the role and not in a message that scrolls away", function () {
-      expect(R.generationOf("kalam")).to.equal(3);
-      expect(R.roleByKey("kalam").address).to.equal(R.KALAM);
+      const role = R.roleByKey("kalam");
+      expect(role.address).to.equal(R.KALAM);
+      expect(Number.isInteger(role.generation), "the number lives on the role").to.equal(true);
+      expect(role.generation).to.be.at.least(1);
+      expect(R.generationOf("kalam")).to.equal(role.generation);
     });
 
     it("is 1 for a role that has never rotated, and null for a name nobody knows", function () {
@@ -265,6 +271,36 @@ describe("builders manage their context", function () {
       expect(message.summary).to.contain("b1a6fc5");
     });
 
+    // Proposal 104. The fourth Kalam handed over on three commits and the
+    // summary named the first as though the stop stood on it alone. The details
+    // and the refs carried all three, so the record was complete and the one
+    // sentence a person reads was not.
+    it("names every commit the stop stands on, not the first", function () {
+      const message = P.normalise(L.handoverMessage(Object.assign({}, report, {
+        commit: ["a2f8a1c", "b20acb8", "c171382"]
+      })));
+      expect(message.summary).to.contain("stands on commits a2f8a1c, b20acb8 and c171382.");
+      ["a2f8a1c", "b20acb8", "c171382"].forEach((sha) => {
+        expect(message.refs, `refs lost ${sha}`).to.contain("commit " + sha);
+      });
+    });
+
+    it("still reads as English with one commit, and with none", function () {
+      const one = P.normalise(L.handoverMessage(report));
+      expect(one.summary).to.contain("stands on commit b1a6fc5.");
+      expect(one.summary).to.not.contain("commits");
+
+      const none = P.normalise(L.handoverMessage(Object.assign({}, report, { commit: [] })));
+      expect(none.summary).to.contain("stands on commit an unrecorded commit.");
+    });
+
+    it("lists two commits with no comma, and any number after that with one", function () {
+      expect(L.englishList([])).to.equal("");
+      expect(L.englishList("one")).to.equal("one");
+      expect(L.englishList(["one", "two"])).to.equal("one and two");
+      expect(L.englishList(["one", "two", "three"])).to.equal("one, two and three");
+    });
+
     it("prints one id for the successor to acknowledge", function () {
       const message = P.normalise(L.handoverMessage(report));
       const said = L.acknowledgementFor(message, "kalam", 3);
@@ -304,11 +340,16 @@ describe("builders manage their context", function () {
       run("ledger.js", ["--agent", "kalam", "--item", "an item", "--decided", "a reason",
         "--open", "nothing", "--commit", "abc1234", "--dir", dir, "--send"]);
 
+      // The number comes off the role, which moves at every hand-over, so the
+      // test asks read.js what it is rather than pinning a number that was true
+      // the day it was written. A test that has to be edited at every rotation
+      // is a test that will be edited wrongly at one of them.
+      const now = R.generationOf("kalam");
       const args = ["--agent", "kalam", "--item", "an item", "--open", "nothing",
         "--commit", "abc1234", "--dir", dir];
       const out = run("handover.js", args, { GOVERNANCE_LOG_DIR: logs });
       expect(out).to.contain("Rehearsal only: nothing was sent.");
-      expect(out).to.contain("Kalam hands over at generation 3");
+      expect(out).to.contain(`Kalam hands over at generation ${now}`);
       expect(fs.existsSync(path.join(logs, "messages.jsonl")),
         "the rehearsal wrote to the stream").to.equal(false);
 
@@ -316,9 +357,9 @@ describe("builders manage their context", function () {
       const written = P.parseJsonl(fs.readFileSync(path.join(logs, "messages.jsonl"), "utf8")).records;
       expect(written).to.have.length(1);
       expect(written[0].handover).to.equal(true);
-      expect(written[0].generation).to.equal(3);
+      expect(written[0].generation).to.equal(now);
       expect(sent).to.contain(written[0].id);
-      expect(sent).to.contain("set generation to 4");
+      expect(sent).to.contain(`set generation to ${now + 1}`);
 
       fs.rmSync(dir, { recursive: true, force: true });
       fs.rmSync(logs, { recursive: true, force: true });
