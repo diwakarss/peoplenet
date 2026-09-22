@@ -92,8 +92,14 @@ answers:
 node scripts/wren-answer.js --list       # the open questions
 node scripts/wren-answer.js q-abc123 "Internal only; nothing the operator sees moves." \
      --details "citations.py builds the key from mtime; the helper builds it from (path, size, mtime_ns)." \
-     --ref "spec 27.1"
+     --ref "spec 27.1" --send
 ```
+
+It rehearses without `--send`, like every other write script here, and the
+rehearsal prints the answer it would file. Until proposal 103 this one sent the
+moment it was run: Kural nearly answered the Director on the live record
+reaching for a `--dry-run` it did not have, and `answers.jsonl` is append-only,
+so a line written by mistake stays written.
 
 The page polls every two seconds, so the only latency the Director feels is
 Wren's own reading time. The answer appears under the question, with `--details`

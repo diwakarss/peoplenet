@@ -696,6 +696,11 @@ describe("the write scripts refuse before they send", function () {
       // module: one place to get this right, and one place to get it wrong.
       { dir: "governance", file: "vote.js", send: "connect(signer).vote(" },
       { dir: "scripts", file: "wren-decide.js", send: "appendFileSync(MESSAGES" },
+      // Proposal 103. It sent the moment it was run, alone among these, and
+      // Kural nearly answered the Director on the live record reaching for a
+      // --dry-run it did not have. answers.jsonl is append-only: a line written
+      // by mistake stays written.
+      { dir: "scripts", file: "wren-answer.js", send: "appendFileSync(ANSWERS" },
       { dir: "scripts", file: "wren-file-draft.js", send: "connect(signer).submitProposal(" },
       { dir: "scripts", file: "propose.js", send: "connect(signer).submitProposal(" },
       // Proposal 99. It writes a file rather than a transaction, exactly as
@@ -747,7 +752,10 @@ describe("the write scripts refuse before they send", function () {
       "../governance/vote.js", "wren-decide.js", "wren-file-draft.js",
       "propose.js", "submit-widget-proposals.js", "builder-propose.js",
       "execute-decided.js", "cut-aao-facet.js", "remind.js",
-      "ledger.js", "handover.js"
+      "ledger.js", "handover.js",
+      // Proposal 103. The list is the rule, so a script left off it is a script
+      // nobody is checking: this one sent by default for as long as it was off.
+      "wren-answer.js"
     ];
 
     it("wantsSend says no unless --send is there, and --dry-run always wins", function () {
@@ -861,6 +869,36 @@ describe("the write scripts refuse before they send", function () {
       expect(out).to.contain("Rehearsal only: nothing was sent.");
       expect(out).to.contain("Add --send to do it for real");
       expect(after, "wren-decide wrote to the log while rehearsing").to.equal(before);
+    });
+
+    // Proposal 103. The question is a real one out of the log, because the
+    // script looks its id up there; the run is a rehearsal, so it reads that
+    // file and writes nothing to any of them.
+    it("wren-answer.js rehearses an answer and writes nothing", function () {
+      const questions = path.join(REPO, "governance", "questions.jsonl");
+      const log = path.join(REPO, "governance", "answers.jsonl");
+      if (!fs.existsSync(questions)) return this.skip();
+
+      // One that carries its topic, so the script needs no chain to route it.
+      const asked = fs.readFileSync(questions, "utf8")
+        .split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+        .map((l) => JSON.parse(l)).filter((q) => q.topic);
+      if (!asked.length) return this.skip();
+
+      const question = asked[asked.length - 1];
+      const architect = R.roleFor(R.rulesFor({ topic: question.topic }).architect);
+
+      const before = fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "";
+      const out = run("wren-answer.js", [
+        question.id, "A rehearsed answer that is never written.",
+        "--from", architect.key
+      ]);
+      const after = fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "";
+
+      expect(out).to.contain("Rehearsal only: nothing was sent.");
+      expect(out, "the rehearsal must show the answer it would file")
+        .to.contain("A rehearsed answer that is never written.");
+      expect(after, "wren-answer wrote to the log while rehearsing").to.equal(before);
     });
 
     // Proposal 99. --topic keeps it off the chain, so this proves the refusal

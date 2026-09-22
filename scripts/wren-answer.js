@@ -14,9 +14,17 @@
 //   --from <who>              default "wren"
 //   --second-opinion          add a view beside the answer, not as the answer
 //   --list                    print the open questions and exit
+//   --send                    do it for real
+//
+// It rehearses by default and writes only on --send (proposal 103). It used to
+// send the moment it was run, alone among the write scripts here, and Kural
+// nearly answered the Director on the live record reaching for a --dry-run this
+// script did not have. The rehearsal prints the answer it would file, so what
+// --send adds is the writing and nothing else.
 //
 // No chain, no gas: this writes a file. The files are the record until the
-// contract can carry a comment cheaply.
+// contract can carry a comment cheaply. answers.jsonl is append-only, so a line
+// written by mistake stays written and is corrected only by a later one.
 const fs = require("fs");
 const path = require("path");
 const P = require("../governance/protocol.js");
@@ -35,18 +43,23 @@ function readLog(file) {
 
 function usage(message) {
   if (message) console.error(message + "\n");
-  console.error('  node scripts/wren-answer.js <question-id> "<answer>" [--details "<technical>"] [--ref <r>]...');
+  console.error('  node scripts/wren-answer.js <question-id> "<answer>" [--details "<technical>"] [--ref <r>]... [--send]');
   console.error("  node scripts/wren-answer.js --list");
+  console.error("");
+  console.error("It rehearses by default and prints the answer it would file.");
+  console.error("Add --send to write it to governance/answers.jsonl.");
   process.exit(message ? 1 : 0);
 }
 
 function parseArgs(argv) {
   const out = { positional: [], details: "", refs: [], from: "wren", list: false,
-    secondOpinion: false };
+    secondOpinion: false, dryRun: !R.wantsSend(process.argv) };
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (arg === "--list") out.list = true;
+    else if (arg === "--dry-run") out.dryRun = true;
+    else if (arg === "--send") { /* decided by wantsSend */ }
     else if (arg === "--details") out.details = String(rest[++i] || "");
     else if (arg === "--from") out.from = String(rest[++i] || "wren");
     else if (arg === "--second-opinion") out.secondOpinion = true;
@@ -103,6 +116,38 @@ async function topicOf(question) {
       ` going by the question's own "to".`);
     return "";
   }
+}
+
+// What --send would write, printed in full. The answer is the point of the
+// run, so the rehearsal shows the answer and not only a promise about it.
+function rehearse(args, question, message, text, already, topic) {
+  const on = question.proposal === null || question.proposal === undefined
+    ? "no proposal" : `proposal ${question.proposal}`;
+  console.log("");
+  console.log(R.describePlan({
+    standing: [
+      `${question.id} was asked by ${question.from || "director"} on ${on}` +
+        `${topic ? ` (${topic})` : ""}.`,
+      already
+        ? `${already} answer(s) already on it; this would be the next one.`
+        : "Nothing has answered it yet.",
+      "This writes a file, not a transaction: no chain state changes."
+    ],
+    to: "(no transaction)",
+    from: "(no account)",
+    call: args.secondOpinion
+      ? `append a second opinion from "${args.from}" on ${question.id}`
+      : `append an answer from "${args.from}" to ${question.id}`,
+    effect: args.secondOpinion
+      ? "a view beside the answer; the question stays open"
+      : "the card shows the answer under the question within two seconds",
+    logFile: path.relative(process.cwd(), ANSWERS)
+  }));
+  console.log("");
+  console.log(`  asked:  ${firstLine(question.text || question.summary, 88)}`);
+  console.log(`  answer: ${firstLine(text, 88)}`);
+  console.log("");
+  console.log(JSON.stringify(message, null, 1));
 }
 
 async function main() {
@@ -167,10 +212,13 @@ async function main() {
 
   P.assertValid(message, "wren-answer");
 
+  const already = answers.filter((a) => a.question === question.id && !R.isSecondOpinion(a)).length;
+
+  if (args.dryRun) return rehearse(args, question, message, text, already, topic);
+
   fs.mkdirSync(GOV, { recursive: true });
   fs.appendFileSync(ANSWERS, P.toJsonl(message), "utf8");
 
-  const already = answers.filter((a) => a.question === question.id && !R.isSecondOpinion(a)).length;
   console.log(args.secondOpinion
     ? `second opinion recorded on ${question.id}; it does not answer it`
     : `answered ${question.id}${already ? ` (answer ${already + 1} on this question)` : ""}`);
