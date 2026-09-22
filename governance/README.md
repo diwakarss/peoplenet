@@ -173,6 +173,63 @@ architect completing the draft **must not transcribe names, emails or secrets
 out of the image into the proposal's text** — the proposal is public, permanent
 and unamendable, and the picture exists so that it does not have to be.
 
+## A builder and its context
+
+Proposal 96. A builder is one long session with a fixed memory. When it fills,
+the builder stalls or starts forgetting mid-item with work uncommitted. Four
+parts, and none of them is a reminder to be careful.
+
+**The budget.** Every status a builder posts carries `ctx`, how full it is, a
+whole number 0 to 100. `/swarm` shows it beside the three words and as a ring
+on the kolam: amber from 60, red from 75. At amber the builder finishes the
+item in hand and hands over; it never starts an item above 70.
+
+**The ledger.** One file per agent, `governance/ledger/<agent>.md`, appended at
+every stop and never edited — a correction is a later section.
+
+```bash
+node scripts/ledger.js --agent kalam \
+  --item "proposal 99, reminders" \
+  --decided "A reminder fires on a proposal that reminder itself closed." \
+  --tried "Asking triggerHasFired from the watcher; it silences real triggers." \
+  --open "94 and 98 now point at 61 and 62, which are still waiting." \
+  --commit b1a6fc5 --send
+```
+
+Item, decided, open and commit are required. Tried is not: a stop where nothing
+was abandoned is an ordinary stop. Open is required because a hand-over loses
+what was never written down, and a builder that cannot state what is open has
+not stopped cleanly.
+
+**The hand-over.** Rotation is ordinary, so it has a command.
+
+```bash
+node scripts/handover.js --agent kalam --item "proposals 99 and 96" \
+     --open "the reminders on 61 and 62 have not fired" --commit b1a6fc5 --send
+```
+
+It refuses until the ledger exists and carries a section, writes one decision
+to the stream — *"Kalam hands over at generation 3"* — and prints the id the
+successor must acknowledge in its first message. *"I read the ledger"* is a
+claim; *"I acknowledge decision-abc123"* is a claim about a record that either
+exists or does not. The generation number lives on the role in `read.js`, not
+in a message that scrolls away.
+
+**The context pack.** What one item needs, and no more.
+
+```bash
+node scripts/context-pack.js 99
+```
+
+The proposal, everything said on it, the files it names, who else touches the
+symbols it names, and the rules attached to the capabilities it will use. The
+callers come from gbrain's code index when that index is built for this
+repository and from a grep of the repository when it is not, and the pack says
+which — a pack that quietly changed its source would be a pack whose gaps
+nobody could see.
+
+Every rule in the pack is an incident, and every one names where to read it.
+
 ## Reminders
 
 Proposal 99. A reminder is not a proposal: the Director never files one and
@@ -498,6 +555,9 @@ not a prediction, the event. Once executed a proposal is closed for good.
 | `reminders.js` | What a reminder is: the shape, the four states, the rule that a later line supersedes an earlier one, and when one falls due. |
 | `reminders.jsonl` | The reminders, appended by `scripts/remind.js` and by the watcher when one fires. Served read-only at `/reminders.json`; nothing a browser can click writes one. |
 | `push.js` | The only way a message reaches the Director's phone, and the reason the topic can stay a secret. Reads `PEOPLENET_NTFY_URL` and nothing else. |
+| `ledger.js` | What a builder's ledger section holds, and what a hand-over record says. |
+| `ledger/` | One markdown file per agent, appended at every stop. The memory that outlives the session. |
+| `context-pack.js` | What goes in a context pack: the files a proposal names, the symbols it names, and the rules attached to each capability it will use. |
 | `reports/` | Where a `count:` trigger reads from, and the only place it may read from. Tracked, with a README, because git cannot carry an empty directory and a `count:` rule cannot fire without it. |
 
 `read.js` is the join: the page, `check.js`, and the Hardhat test all read through

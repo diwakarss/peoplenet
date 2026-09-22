@@ -9,11 +9,11 @@
 // Nothing here writes: it takes the messages and the proposals it is handed.
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
-    module.exports = factory(require("./adoption.js"), require("./read.js"));
+    module.exports = factory(require("./adoption.js"), require("./read.js"), require("./protocol.js"));
   } else {
-    root.GovernanceSwarm = factory(root.GovernanceAdoption, root.GovernanceRead);
+    root.GovernanceSwarm = factory(root.GovernanceAdoption, root.GovernanceRead, root.GovernanceProtocol);
   }
-})(typeof globalThis !== "undefined" ? globalThis : this, function (A, R) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (A, R, P) {
   "use strict";
 
   // A human block is filed as its own proposal on JD, titled like this, and it
@@ -247,11 +247,24 @@
   function street(messages, nowMs, proposals, aaos) {
     var at = nowMs === undefined || nowMs === null ? Date.now() : nowMs;
     var latest = {};
+    // How full each agent's context is (proposal 96). Tracked apart from `now`
+    // because the two fields are optional separately: a status may carry a
+    // number and no three words, and the number is the one that says whether
+    // the agent is about to stop.
+    var context = {};
     (messages || []).forEach(function (m) {
       if (!m || m.type !== "status") return;
-      if (!textOf(m.now).trim()) return;
       var key = textOf(m.from).toLowerCase();
       var when = timeOf(m.ts);
+
+      if (typeof m.ctx === "number" && isFinite(m.ctx)) {
+        var hadCtx = context[key];
+        if (!hadCtx || when === null || hadCtx.when === null || when > hadCtx.when) {
+          context[key] = { ctx: m.ctx, when: when };
+        }
+      }
+
+      if (!textOf(m.now).trim()) return;
       var held = latest[key];
       if (!held || (when !== null && held.when !== null && when > held.when)) {
         latest[key] = { now: textOf(m.now).trim(), when: when, ts: m.ts || null };
@@ -267,12 +280,18 @@
         // rest of the line so the page reads one object per agent, and so the
         // dashboard can tell whether a kolam needs redrawing at all.
         var tasks = tasksFor(role.key, messages, proposals, aaos);
+        var full = context[role.key] || null;
         return {
           key: role.key,
           label: role.label,
           address: role.address,
           organisation: organisationOf(role.address),
           now: said ? said.now : "",
+          // null, not 0: an agent that has never said how full it is has not
+          // said it is empty. The dashboard shows nothing rather than a green
+          // ring it has no evidence for.
+          ctx: full ? full.ctx : null,
+          ctxBand: full ? P.ctxBand(full.ctx) : null,
           at: said ? said.ts : null,
           ageMs: age,
           // Greyed: silent over an hour, or never heard from at all.

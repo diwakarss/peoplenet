@@ -165,6 +165,22 @@ h1 {
 .agent-name { margin: 0; font-family: var(--serif); font-size: 14.5px; }
 .agent-org { margin: 1px 0 0; font-size: 11px; color: var(--ink-faint); }
 .agent-now { margin: 5px 0 0; font-size: 13px; }
+
+/* How full the agent's context is (proposal 96), beside the three words. Amber
+   from 60: finish the item in hand. Red from 75: it should already have handed
+   over. */
+.agent-ctx {
+  margin-left: 7px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 5px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+}
+.agent-ctx.is-quiet { color: var(--ink-faint); }
+.agent-ctx.is-amber { color: #b6802a; font-weight: 600; }
+.agent-ctx.is-red { color: var(--blocked); font-weight: 600; }
+
 .agent-age { margin: 1px 0 0; font-size: 11px; color: var(--ink-faint); }
 .agent-queue { margin: 4px 0 0; font-size: 11px; color: var(--ink-faint); }
 

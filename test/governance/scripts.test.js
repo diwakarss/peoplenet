@@ -701,7 +701,12 @@ describe("the write scripts refuse before they send", function () {
       // Proposal 99. It writes a file rather than a transaction, exactly as
       // wren-decide.js does, and rehearses for the same reason: the reminders
       // log is append-only, so a line written by mistake stays written.
-      { dir: "scripts", file: "remind.js", send: "appendFileSync(file" }
+      { dir: "scripts", file: "remind.js", send: "appendFileSync(file" },
+      // Proposal 96. Both write a file the record depends on: a ledger section
+      // a successor will read as fact, and a hand-over record a successor will
+      // acknowledge by id.
+      { dir: "scripts", file: "ledger.js", send: "appendFileSync(file, section" },
+      { dir: "scripts", file: "handover.js", send: "appendFileSync(file, P.toJsonl" }
     ];
 
     scripts.forEach(({ dir, file, send }) => {
@@ -741,7 +746,8 @@ describe("the write scripts refuse before they send", function () {
     const WRITERS = [
       "../governance/vote.js", "wren-decide.js", "wren-file-draft.js",
       "propose.js", "submit-widget-proposals.js", "builder-propose.js",
-      "execute-decided.js", "cut-aao-facet.js", "remind.js"
+      "execute-decided.js", "cut-aao-facet.js", "remind.js",
+      "ledger.js", "handover.js"
     ];
 
     it("wantsSend says no unless --send is there, and --dry-run always wins", function () {
@@ -831,6 +837,11 @@ describe("the write scripts refuse before they send", function () {
         file: "remind.js",
         args: ["list"],
         expect: /reminder|No reminders/i
+      },
+      {
+        file: "ledger.js",
+        args: ["--agent", "kalam", "--list"],
+        expect: /section|No ledger/i
       }
     ];
 
@@ -953,7 +964,8 @@ describe("the write scripts refuse before they send", function () {
       "builder-propose.js", "execute-decided.js", "cut-aao-facet.js",
       "snapshot-chain-state.js", "verify-after-cut.js",
       "check-control-characters.js", "setup-governance-members.js",
-      "create-widget-builder-aao.js", "remind.js", "phone.js"
+      "create-widget-builder-aao.js", "remind.js", "phone.js",
+      "ledger.js", "handover.js", "context-pack.js"
     ];
 
     // phone.js writes the file that holds the Director's topic, so this run is

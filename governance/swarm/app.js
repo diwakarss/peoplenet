@@ -16,7 +16,7 @@
 
   function signatureOf(agent) {
     return agent.tasks.map(function (t) { return t.proposalId + ":" + t.state; }).join("|") +
-      "#" + agent.now;
+      "#" + agent.now + "#" + (agent.ctx === null ? "" : agent.ctx);
   }
 
   function byId(id) { return document.getElementById(id); }
@@ -148,6 +148,7 @@
         agent: agent.key,
         label: agent.label,
         now: agent.now,
+        ctx: agent.ctx,
         id: "kolam-" + agent.key,
         width: 96,
         height: 96
@@ -157,7 +158,16 @@
       var body = el("div", "agent-body");
       body.appendChild(el("p", "agent-name", agent.label));
       body.appendChild(el("p", "agent-org", agent.organisation || "—"));
-      body.appendChild(el("p", "agent-now", agent.now || "silent"));
+
+      // The three words, and beside them how full the agent is (proposal 96).
+      // Beside, not below: what it is doing and whether it is about to stop are
+      // one fact, and reading them apart is what let a builder stall mid-item.
+      var doing = el("p", "agent-now", agent.now || "silent");
+      if (agent.ctx !== null && agent.ctx !== undefined) {
+        doing.appendChild(el("span", "agent-ctx is-" + (agent.ctxBand || "quiet"),
+          agent.ctx + "%"));
+      }
+      body.appendChild(doing);
       body.appendChild(el("p", "agent-age", age(agent.ageMs)));
       body.appendChild(el("p", "agent-queue", agent.tasks.length
         ? agent.done + " of " + agent.tasks.length + " done"

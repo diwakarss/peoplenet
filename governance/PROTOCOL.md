@@ -37,6 +37,7 @@ a person is who reads this.
 | `details` | no | The technical part. Free form, kept whole, rendered behind one fold. |
 | `refs` | no, array | Tickets, commits, incidents, spec entries. URLs render as links. |
 | `now` | no | What the agent is doing right now, **three words or fewer**. See [What an agent is doing now](#what-an-agent-is-doing-now). |
+| `ctx` | no | How full the agent's context is, a whole number 0 to 100. See [How full an agent is](#how-full-an-agent-is). |
 
 `from` and `to` are not restricted to the four known names — a new agent should
 not need a code change to speak — but the known ones get proper labels.
@@ -168,6 +169,42 @@ rule that bites on one type only is a rule that is silently off everywhere else.
 > against a change, and `protocol.py` is Wren's. The field is optional, so the
 > two implementations still agree on everything they are required to agree on:
 > the seven type names, the four required fields, and how a message is numbered.
+
+## How full an agent is
+
+Proposal 96. A status may carry `ctx`: how full the agent's context is, as a
+whole number of percent.
+
+```json
+{ "from": "kalam", "type": "status", "subject": "...", "summary": "...", "now": "building 96", "ctx": 62 }
+```
+
+A builder is one long session with a fixed memory. When it fills, the builder
+stalls or starts forgetting mid-item with work uncommitted — Wren lost builders
+that way at about 800,000 tokens. The cost is hidden until it lands: an item
+half done, a diff nobody can explain, and an hour of a fresh builder rereading
+everything.
+
+So the number is on the record, and the dashboard shows it beside the three
+words and as a ring on the kolam.
+
+| From | Colour | What the builder does |
+|---|---|---|
+| 0 | quiet | carries on |
+| 60 | amber | finishes the item in hand, writes its ledger, hands over |
+| 75 | red | it should already have handed over; it never starts an item above 70 |
+
+A whole number and nothing else. `62.4`, `"62%"` and `"about 62"` are all
+refused, because a field that accepts three spellings is a field two readers
+will parse differently. `validate()` says which of the three it hit.
+
+It is **not** part of the message id, for the same reason `now` is not: a retry
+must keep its number. The field is optional, so every message written before
+this stays valid, and `protocol.js` checks it wherever it appears rather than
+on `status` alone.
+
+`protocol.py` does not mirror it yet; it is optional, so the two
+implementations still agree on everything they are required to agree on.
 
 ## The seven types
 

@@ -66,6 +66,39 @@
   // six fields alone, and status is one of those. A retry must keep its id.
   var NOW_MAX_WORDS = 3;
 
+  // How full the agent's context is, in percent (proposal 96).
+  //
+  // A builder is one long session with a fixed memory, and when it fills the
+  // builder stalls or starts forgetting mid-item with work uncommitted. Wren
+  // lost builders that way at about 800,000 tokens. The cost is hidden until it
+  // lands, so every status a builder posts carries the number and the dashboard
+  // shows it: at sixty the builder finishes the item in hand and hands over,
+  // and it never starts an item above seventy.
+  //
+  // A whole number from 0 to 100 and nothing else. "about 62", 62.4 and "62%"
+  // are all refused, because a field that accepts three spellings is a field
+  // two readers will parse differently. Optional, so every message written
+  // before this stays valid, and not part of the id for the same reason `now`
+  // is not: a retry must keep its number.
+  var CTX_MIN = 0;
+  var CTX_MAX = 100;
+
+  // The two lines the Director set. Amber is "finish the item in hand"; red is
+  // "you should have handed over".
+  var CTX_AMBER = 60;
+  var CTX_RED = 75;
+
+  // Which band a percentage is in: "quiet", "amber" or "red". One function, so
+  // the dashboard's text and the kolam's ring cannot disagree about where
+  // amber starts.
+  function ctxBand(value) {
+    var n = Number(value);
+    if (!isFinite(n)) return null;
+    if (n >= CTX_RED) return "red";
+    if (n >= CTX_AMBER) return "amber";
+    return "quiet";
+  }
+
   function nowWords(value) {
     return String(value === undefined || value === null ? "" : value)
       .trim().split(/\s+/).filter(function (w) { return w.length > 0; });
@@ -124,6 +157,21 @@
             "the summary is where the sentence goes."
           );
         }
+      }
+    }
+
+    // Checked wherever it appears, for the same reason `now` is: a rule that
+    // only bites on one type is a rule that is silently off everywhere else.
+    if (message.ctx !== undefined && message.ctx !== null) {
+      if (typeof message.ctx !== "number" || !isFinite(message.ctx)) {
+        errors.push(
+          "ctx must be a whole number of percent, 0 to 100, and \"" + message.ctx +
+          "\" is not a number. Write 62, not \"62%\" and not \"about 62\"."
+        );
+      } else if (!Number.isInteger(message.ctx)) {
+        errors.push("ctx must be a whole number, and " + message.ctx + " is not.");
+      } else if (message.ctx < CTX_MIN || message.ctx > CTX_MAX) {
+        errors.push("ctx is a percentage: " + message.ctx + " is outside 0 to 100.");
       }
     }
 
@@ -399,6 +447,11 @@
     ID_FIELDS: ID_FIELDS,
     NOW_MAX_WORDS: NOW_MAX_WORDS,
     nowWords: nowWords,
+    CTX_MIN: CTX_MIN,
+    CTX_MAX: CTX_MAX,
+    CTX_AMBER: CTX_AMBER,
+    CTX_RED: CTX_RED,
+    ctxBand: ctxBand,
     sha256Hex: sha256Hex,
     newId: newId,
     label: label,

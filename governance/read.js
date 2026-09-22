@@ -43,6 +43,15 @@
   // sub-organisation JD-build, which the Director's vote creates.
   var KALAM = "0x976EA74026E726554dB657fA54763abd0C3a0aa9";   // account 6, builder
 
+  // `generation` (proposal 96): which generation of that name is running now.
+  //
+  // An agent is one long session with a fixed memory, and when it fills the
+  // agent hands over to a successor of the same name and the same account. The
+  // name and the account are the role; the session is not. Rotation is
+  // ordinary, so the number is recorded beside the role rather than mentioned
+  // in a message and then lost, and scripts/handover.js is what moves it on.
+  //
+  // A role with no generation has never rotated.
   var ROLES = [
     { key: "director", label: "Director", address: DIRECTOR, ordinary: true },
     { key: "wren", label: "Wren", address: WREN, ordinary: true },
@@ -50,8 +59,29 @@
     { key: "builder", label: "Builder", address: BUILDER, ordinary: true },
     { key: "widget", label: "Widget", address: WIDGET, ordinary: true },
     { key: "kural", label: "Kural", address: KURAL, ordinary: true },
-    { key: "kalam", label: "Kalam", address: KALAM, ordinary: true }
+    // Third generation from 2026-09-22: the first handed over at proposal 92,
+    // the second at 99's work order, and this one took up 99 and 96.
+    { key: "kalam", label: "Kalam", address: KALAM, ordinary: true, generation: 3 }
   ];
+
+  // The role a party key names, or null.
+  //
+  // Named by key, not `roleFor`: there is already a roleFor further down that
+  // takes an ADDRESS, and a second function of that name silently replaced it.
+  // Two functions, two questions, two names.
+  function roleByKey(key) {
+    var wanted = String(key === undefined || key === null ? "" : key).toLowerCase();
+    return ROLES.filter(function (r) { return r.key === wanted; })[0] || null;
+  }
+
+  // Which generation of that name is running. 1 for a role that has never
+  // rotated, because the first session of a name is its first generation and
+  // saying so costs nothing; null for a name nobody has heard of.
+  function generationOf(key) {
+    var role = roleByKey(key);
+    if (!role) return null;
+    return role.generation === undefined ? 1 : role.generation;
+  }
 
   // What each AAO is for, in one line, for the tree and the AAO list.
   var AAO_NOTES = {
@@ -1524,6 +1554,8 @@
     triggerHasFired: triggerHasFired,
     triggerReported: triggerReported,
     reminderHasFired: reminderHasFired,
+    roleByKey: roleByKey,
+    generationOf: generationOf,
     reminderProblem: reminderProblem,
     tieTargetOf: tieTargetOf,
     tieIn: tieIn,

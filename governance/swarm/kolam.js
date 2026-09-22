@@ -512,6 +512,9 @@
   var DOT = "#8b877f";
   var LIT = "#a8322a";
   var FAINT = "#d8d4cc";
+  // Proposal 96's middle warning. Between the ink of ordinary work and the red
+  // of a line that has broken.
+  var AMBER = "#b6802a";
 
   // Emits the whole figure, tasks and all. The same markup serves a standalone
   // file and the dashboard, so the samples the Director accepted and the page
@@ -569,9 +572,38 @@
 
     parts.push('    <path class="line' + (state === "blocked" ? " is-broken" : "") +
       '" d="' + d + '" ' + dash + '/>');
+    ctxRing(parts, k, o.ctx, stroke);
     parts.push('  </g>');
     parts.push('</svg>');
     return parts.join(NEWLINE) + NEWLINE;
+  }
+
+  // How full the agent's context is, as a ring around the whole figure
+  // (proposal 96). Quiet below sixty, amber from sixty, red from seventy-five.
+  //
+  // It is drawn last and outside the dots on purpose: the dots are the tasks,
+  // which is what the kolam is for, and a warning that obscured them would cost
+  // more than it saved. Nothing is drawn at all when the agent has never said a
+  // number -- an empty ring would be a claim, and silence is not one.
+  function ctxRing(parts, k, ctx, stroke) {
+    var value = Number(ctx);
+    if (ctx === undefined || ctx === null || !isFinite(value)) return;
+    var shown = Math.max(0, Math.min(100, value)) / 100;
+    var centre = k.size / 2;
+    var radius = centre - stroke * 1.2;
+    if (radius <= 0) return;
+    var circumference = 2 * Math.PI * radius;
+    var band = P.ctxBand(value) || "quiet";
+
+    parts.push('    <circle class="ctx-track" cx="' + round(centre) + '" cy="' + round(centre) +
+      '" r="' + round(radius) + '"/>');
+    // Rotated so the arc starts at the top, where a person looks first.
+    parts.push('    <circle class="ctx-arc is-' + band + '" cx="' + round(centre) +
+      '" cy="' + round(centre) + '" r="' + round(radius) +
+      '" stroke-dasharray="' + round(circumference * shown) + " " +
+      round(circumference * (1 - shown)) + '"' +
+      ' transform="rotate(-90 ' + round(centre) + " " + round(centre) + ')">' +
+      "<title>Context " + Math.round(value) + "% full.</title></circle>");
   }
 
   // The unfinished part of the line is hidden, not removed.
@@ -625,6 +657,14 @@
       "#" + id + " .pulli[tabindex]{cursor:pointer}",
       "#" + id + " .pulli[tabindex]:hover,#" + id + " .pulli[tabindex]:focus{stroke:" + LIT +
         ";stroke-width:" + (stroke * 1.4) + ";outline:none}",
+      // The context ring (proposal 96): how full the agent's memory is, drawn
+      // around the whole figure so it reads at a glance and never competes with
+      // the dots, which are the tasks.
+      "#" + id + " .ctx-track{fill:none;stroke:" + FAINT + ";stroke-width:" + (stroke * 0.9) + "}",
+      "#" + id + " .ctx-arc{fill:none;stroke-width:" + (stroke * 0.9) + ";stroke-linecap:round}",
+      "#" + id + " .ctx-arc.is-quiet{stroke:" + DOT + "}",
+      "#" + id + " .ctx-arc.is-amber{stroke:" + AMBER + "}",
+      "#" + id + " .ctx-arc.is-red{stroke:" + LIT + "}",
       "@keyframes kolam-pulse{0%,100%{opacity:.35}50%{opacity:1}}",
       "@media (prefers-reduced-motion:reduce){#" + id +
         " .is-building{animation:none;opacity:.7}}"
