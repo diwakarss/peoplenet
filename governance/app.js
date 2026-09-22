@@ -1223,7 +1223,12 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           from: "director",
-          to: "wren",
+          // The architect of the organisation this proposal is on, as proposal
+          // 90 settled for questions. His notes on 61 and 62 went to Wren
+          // though both are on JD, where Kural is the architect: addressing
+          // every note to "wren" sends half of them to somebody who does not
+          // act on that organisation.
+          to: R.questionRouting(rulesForProposal(p)).to,
           type: "decision",
           subject: "Proposal " + p.id + ": " + (/^waiting/i.test(summary) ? "waiting" : "back in the queue"),
           summary: summary,
@@ -1872,19 +1877,21 @@
   // the counts on the chips and the list under the pager come from one place.
   var FILTERS = [
     {
-      key: "mine", label: "Open for my vote",
-      // Waiting proposals are out of this queue and out of its count: the
-      // Director parked them, and a parked proposal is not work in front of them.
-      // A fired trigger overrides that -- something changed, so it is back.
+      key: "mine", label: "Open for your vote",
+      // Proposal 95. Only what needs his vote now. Everything he parked, every
+      // proposal whose trigger has not fired and every proposal tied to one of
+      // those is in the Waiting fold instead, and anything closed by another
+      // item is out of both. A fired trigger overrides all of it -- something
+      // changed, so it is back in front of him.
       test: function (p) {
-        if (p.status !== 0 || closedByBuild(p)) return false;
-        if (isWaiting(p) && !pinnedFirst(p)) return false;
+        if (p.status !== 0) return false;
+        if (viewOf(p) !== "vote" && !pinnedFirst(p)) return false;
         return !R.hasVoted(p, R.DIRECTOR);
       }
     },
     {
       key: "waiting", label: "Waiting",
-      test: function (p) { return isWaiting(p); }
+      test: function (p) { return viewOf(p) === "waiting"; }
     },
     {
       key: "tied", label: "Tied",
@@ -1990,14 +1997,98 @@
     return A.isWaiting(adoptionFor(p));
   }
 
+  // --- the Director's two lists (proposal 95) -----------------------------
+  //
+  // Which of the three views each proposal is in. read.js decides; this holds
+  // the answer for one render so the chips, the flow and the fold all read the
+  // same number. /swarm calls the same function.
+  var views = {};
+
+  function triggerDoc(p) {
+    var doc = p && p.format && p.format.doc;
+    var trigger = doc && doc.trigger;
+    return trigger && typeof trigger === "object" && trigger.rule ? trigger : null;
+  }
+
+  function recomputeViews(data) {
+    var list = (data && data.proposals) || [];
+    views = R.viewsFor(list, messages, { triggerOf: triggerDoc });
+  }
+
+  function viewOf(p) {
+    if (!p) return "vote";
+    var view = views[p.id];
+    // Never seen is never hidden.
+    return view === undefined ? "vote" : view;
+  }
+
+  // What a waiting proposal waits on, and when it comes back. Both halves,
+  // because a line that says only "waiting" tells him nothing he can act on.
+  function waitingLine(p) {
+    var adoption = adoptionFor(p);
+    var trigger = triggerDoc(p);
+    var tie = R.tieTargetOf(p, A.historyFor(messages, p.id));
+    var waits = "";
+    var returns = "";
+
+    if (A.isBlocked(adoption)) {
+      var on = A.blockedOn(adoption) || {};
+      waits = "blocked on " + (on.who || "someone") + (on.what ? " for " + on.what : "");
+    } else if (A.isWaiting(adoption)) {
+      waits = A.waitingReason(adoption) || "parked by the Director";
+    }
+
+    if (trigger) {
+      var when = /^\s*date\s*:\s*(.+)$/i.exec(trigger.rule);
+      if (when) returns = when[1].trim().slice(0, 10);
+      if (!waits) waits = trigger.text || trigger.rule;
+    }
+
+    if (!waits && tie !== null) waits = "part of proposal " + tie;
+    if (tie !== null) returns = returns || "with proposal " + tie;
+
+    return { waits: waits || "parked", returns: returns };
+  }
+
+  function renderWaitingFold(data) {
+    var fold = byId("waiting-fold");
+    var host = byId("waiting-rows");
+    if (!fold || !host) return;
+
+    var rows = ((data && data.proposals) || []).filter(function (p) {
+      return p.status === 0 && viewOf(p) === "waiting";
+    });
+
+    // The count is visible whether or not the fold is open: nothing is hidden
+    // for good, and a fold with no number on it is a fold nobody opens.
+    byId("waiting-count").textContent = rows.length;
+    fold.hidden = rows.length === 0;
+
+    host.textContent = "";
+    rows.forEach(function (p) {
+      var line = waitingLine(p);
+      var item = el("li", "waiting-row");
+      var open = el("button", "waiting-open");
+      open.type = "button";
+      open.appendChild(el("span", "waiting-id", "#" + p.id));
+      open.appendChild(el("span", "waiting-title", R.proposalHeadline(p) || ("Proposal " + p.id)));
+      // One click: the fold is the one click, and the line opens the card.
+      open.addEventListener("click", function () { goToProposal(p.aaoId, p.id); });
+      item.appendChild(open);
+      var foot = el("p", "waiting-foot");
+      foot.appendChild(el("span", "waiting-on", line.waits));
+      if (line.returns) foot.appendChild(el("span", "waiting-back", "back " + line.returns));
+      item.appendChild(foot);
+      host.appendChild(item);
+    });
+  }
+
   // 27.12(2): a trigger that fired posts a status message from "watch". Until
   // the Director opens that card it sits at the front of the flow -- the whole
   // point of a trigger is that the thing you were waiting for happened.
   function firedTrigger(p) {
     if (!p) return null;
-    return messages.filter(function (m) {
-      return m && m.from === "watch" && Number(m.proposal) === Number(p.id);
-    }).slice(-1)[0] || null;
+    return R.triggerHasFired(messages, p.id);
   }
 
   function pinnedFirst(p) {
@@ -2133,6 +2224,10 @@
     var scrolled = byId("stage").scrollTop;
     lastData = data;
 
+    // Before anything that asks which view a proposal is in: the chips, the
+    // flow and the fold must all read one answer, computed once per render.
+    recomputeViews(data);
+
     renderHeader(data);
     renderAaoTabs(data);
     renderOrganisation(data);
@@ -2144,6 +2239,7 @@
     filing.appendChild(renderNewProposalForm(data));
 
     renderStage(data);
+    renderWaitingFold(data);
 
     if (view === "structure") renderTree(data);
     if (view === "search") renderSearch(data);

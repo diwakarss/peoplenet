@@ -84,6 +84,17 @@
       </div>
 
       <div class="stage" id="stage"></div>
+
+      <!-- Proposal 95: what is parked, and when it comes back. The count is
+           always visible, so nothing is hidden for good, and one click opens
+           it. -->
+      <details class="waiting-fold" id="waiting-fold" hidden>
+        <summary>
+          Waiting <span class="count" id="waiting-count">0</span>
+          <span class="waiting-note">out of your vote list until something changes</span>
+        </summary>
+        <ol class="waiting-rows" id="waiting-rows"></ol>
+      </details>
     </section>
 
     <!-- 2. Messages --------------------------------------------------- -->

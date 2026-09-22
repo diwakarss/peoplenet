@@ -1308,3 +1308,48 @@ button.casting:not(:disabled), button.close-tie:not(:disabled) {
 }
 
 .qa-reply.is-second-opinion .qa-who { font-style: italic; }
+
+/* The Waiting fold (proposal 95). Parked, not hidden: the count is on the
+   summary whether or not the fold is open, and one click shows every line. */
+.waiting-fold {
+  margin: 18px 0 0;
+  border-top: 1px solid var(--rule);
+  padding-top: 10px;
+}
+
+.waiting-fold > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.waiting-fold > summary .count {
+  display: inline-block;
+  min-width: 18px;
+  margin-left: 4px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.waiting-note { margin-left: 8px; font-size: 11.5px; color: var(--ink-faint); }
+
+.waiting-rows { list-style: none; margin: 10px 0 0; padding: 0; }
+
+.waiting-row { padding: 7px 0; border-bottom: 1px solid var(--rule); }
+
+.waiting-open {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.waiting-open:hover .waiting-title { text-decoration: underline; }
+.waiting-id { font-size: 11px; color: var(--ink-faint); margin-right: 7px; }
+.waiting-foot { margin: 3px 0 0; font-size: 11.5px; color: var(--ink-faint); }
+.waiting-back::before { content: " · "; }
