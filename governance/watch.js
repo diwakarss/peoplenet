@@ -328,11 +328,30 @@ function firedMessage(proposal, trigger, result) {
 // An unclaimed notice is excluded by name: it also comes from "watch" and also
 // names its proposal, and counting it would silence that proposal's trigger for
 // good.
+// The rule itself lives in read.js, once: the page decides what to pin with it
+// and the watcher decides what to post with it, and two copies would disagree
+// on exactly the proposals that matter.
 function alreadyFired(messages, proposalId) {
-  return (messages || []).some(function (m) {
-    return m && m.from === "watch" && !m.unclaimed &&
-      Number(m.proposal) === Number(proposalId);
-  });
+  return Boolean(require("./read.js").triggerHasFired(messages, proposalId));
+}
+
+// --- a closed proposal's trigger does not fire (proposal 95) -------------
+//
+// runOnce fired a trigger whatever state its proposal was in. Proposal 93
+// carries "closed: superseded by proposal 98", and its date trigger would have
+// fired on Thursday all the same -- telling the Director that the thing he was
+// waiting for had happened, on a proposal nobody is waiting on any more.
+//
+// Two ways a proposal is finished and both count: the chain has stopped it
+// being Active, or its latest decision is a closed state. The decision is read
+// through adoption.js, the same index the card reads, so the watcher and the
+// page cannot disagree about what closed means.
+function skipBecause(proposal, messages) {
+  const A = require("./adoption.js");
+  const status = proposal && proposal.status;
+  if (status !== undefined && status !== null && Number(status) !== 0) return "closed";
+  const adoption = A.adoptionOf(A.indexDecisions(messages || []), proposal.id);
+  return A.isClosedByBuild(adoption) ? "closed" : null;
 }
 
 // --- passed, and nobody picked it up (proposal 91) ----------------------
@@ -502,6 +521,11 @@ async function runOnce(proposals, options) {
   for (const proposal of proposals || []) {
     const trigger = triggerOf(proposal);
     if (!trigger) continue;
+    const finished = skipBecause(proposal, existing);
+    if (finished) {
+      looked.push({ id: proposal.id, fired: false, because: finished });
+      continue;
+    }
     if (alreadyFired(existing, proposal.id)) {
       looked.push({ id: proposal.id, fired: false, because: "already reported" });
       continue;
@@ -676,6 +700,7 @@ module.exports = {
   chainNow,
   firedMessage,
   alreadyFired,
+  skipBecause,
   reportUnclaimed,
   unclaimedMessage,
   alreadyToldUnclaimed,

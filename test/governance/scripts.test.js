@@ -1152,6 +1152,158 @@ describe("the write scripts refuse before they send", function () {
     });
   });
 
+  // Proposal 95. The Director is the only human and his attention is the
+  // scarce thing. A vote view padded with what he has already deferred teaches
+  // him to skim it, and a skimmed list is how proposal 54 went unnoticed for
+  // two days. The risk runs one way: anything unreadable stays in the vote
+  // view, because a proposal wrongly hidden is hidden from the one person who
+  // must see it.
+  describe("the Director's three views", function () {
+    const W = require("../../governance/watch.js");
+
+    const doc = (fields) => JSON.stringify(fields);
+    const active = (id, fields) => ({
+      id, aaoId: 2, status: 0, createdAt: 1789000000,
+      text: doc(fields || { title: "Proposal " + id }),
+      format: { doc: Object.assign({ title: "Proposal " + id }, fields || {}) }
+    });
+    const said = (id, summary, from) => ({
+      from: from || "kural", to: "director", type: "decision",
+      ts: "2026-09-21T0" + (id % 9) + ":00:00Z",
+      subject: "Proposal " + id, summary: summary, refs: ["proposal " + id]
+    });
+    const view = (proposals, messages) =>
+      R.viewsFor(proposals, messages || [], { triggerOf: (p) => p.format.doc.trigger });
+
+    it("puts a proposal nobody has parked in the vote view", function () {
+      expect(view([active(87)])[87]).to.equal("vote");
+    });
+
+    it("reads waiting and blocked, from anyone, as waiting", function () {
+      const ps = [active(60), active(61)];
+      const ms = [
+        said(60, "waiting: kept open on the Director's request until Friday"),
+        said(61, "blocked: waiting on the Director for the Mac", "kalam")
+      ];
+      const v = view(ps, ms);
+      expect(v[60]).to.equal("waiting");
+      expect(v[61], "a block is a wait on somebody").to.equal("waiting");
+    });
+
+    it("reads a decision that starts closed as closed", function () {
+      const v = view([active(88)], [said(88, "closed: superseded by proposal 95")]);
+      expect(v[88]).to.equal("closed");
+    });
+
+    it("keeps a proposal with an unfired trigger out of the vote view", function () {
+      const p = active(93, { trigger: { text: "in a week", rule: "date:2026-09-28" } });
+      expect(view([p])[93]).to.equal("waiting");
+    });
+
+    it("brings it back the moment the trigger fires", function () {
+      const p = active(93, { trigger: { text: "in a week", rule: "date:2026-09-28" } });
+      const fired = [{ from: "watch", to: "director", type: "status", proposal: 93,
+        ts: "2026-09-28T00:00:00Z", subject: "Proposal 93", summary: "It has: the date passed." }];
+      expect(view([p], fired)).to.deep.equal({ 93: "vote" });
+    });
+
+    it("does not read an unclaimed notice as a fired trigger", function () {
+      const p = active(93, { trigger: { text: "in a week", rule: "date:2026-09-28" } });
+      const notice = [{ from: "watch", to: "kural", type: "status", proposal: 93, unclaimed: true,
+        ts: "2026-09-22T00:00:00Z", subject: "Proposal 93", summary: "nobody picked it up" }];
+      expect(view([p], notice)[93], "still waiting on its own trigger").to.equal("waiting");
+      expect(R.triggerHasFired(notice, 93)).to.equal(null);
+    });
+
+    it("finds a tie in the document and in a decision, either phrasing", function () {
+      expect(R.tieIn("This is part of proposal 87.")).to.equal(87);
+      expect(R.tieIn("Tied to Proposal #87")).to.equal(87);
+      expect(R.tieIn("proposal 87 says otherwise"), "a mention is not a tie").to.equal(null);
+      const p = active(86, { why: "Tied to proposal 87." });
+      expect(R.tieTargetOf(p, [])).to.equal(87);
+      expect(R.tieTargetOf(active(86), [said(86, "queued: part of proposal 87")])).to.equal(87);
+    });
+
+    it("moves a tied proposal with the one it is part of, and back with it", function () {
+      const ps = [active(86, { why: "Tied to proposal 87." }), active(87)];
+      expect(view(ps)[86], "87 needs a vote, so 86 does too").to.equal("vote");
+
+      const parked = [said(87, "waiting: the Director asked to hold this until Friday")];
+      const v = view(ps, parked);
+      expect(v[87]).to.equal("waiting");
+      expect(v[86], "it goes with its parent").to.equal("waiting");
+    });
+
+    it("does not close a tied proposal because its parent closed", function () {
+      const ps = [active(86, { why: "Tied to proposal 87." }), active(87)];
+      const v = view(ps, [said(87, "closed: superseded by proposal 95")]);
+      expect(v[87]).to.equal("closed");
+      expect(v[86], "only its own decision closes it").to.equal("vote");
+    });
+
+    it("survives two proposals each saying they are part of the other", function () {
+      const ps = [active(1, { why: "part of proposal 2" }), active(2, { why: "part of proposal 1" })];
+      const v = view(ps);
+      expect(v).to.deep.equal({ 1: "vote", 2: "vote" });
+    });
+
+    it("leaves anything it cannot read in the vote view", function () {
+      const v = view([active(70)], [said(70, "I had a look at this one.")]);
+      expect(v[70]).to.equal("vote");
+    });
+
+    it("gives /swarm the same answer as the page", function () {
+      const S = require("../../governance/swarm.js");
+      const ps = [active(60), active(87)];
+      const ms = [said(60, "waiting: until Friday")];
+      const d = S.dashboard(ms, ps, [{ id: 2, topic: "JD" }], Date.now());
+      expect(d.views).to.deep.equal(view(ps, ms));
+    });
+
+    describe("the watcher leaves a closed proposal's trigger alone", function () {
+      const os = require("os");
+      let messagesFile;
+
+      const withTrigger = (id, status) => Object.assign(
+        active(id, { trigger: { text: "in a week", rule: "date:2020-01-01" } }), { status: status });
+
+      beforeEach(function () {
+        messagesFile = path.join(os.tmpdir(),
+          "governance-closed-trigger-" + Date.now() + "-" + Math.random().toString(16).slice(2) + ".jsonl");
+      });
+      afterEach(function () {
+        if (messagesFile && fs.existsSync(messagesFile)) fs.unlinkSync(messagesFile);
+      });
+
+      it("fires a trigger on an Active proposal nobody has closed", async function () {
+        const out = await W.runOnce([withTrigger(93, 0)], { messagesFile });
+        expect(out.fired.map((f) => f.proposal)).to.deep.equal([93]);
+      });
+
+      it("skips one whose latest decision is closed, and says why", async function () {
+        fs.writeFileSync(messagesFile, JSON.stringify({
+          id: "d-1", from: "kural", to: "director", type: "decision", ts: "2026-09-21T05:26:00Z",
+          subject: "Proposal 93", summary: "closed: superseded by proposal 98", refs: ["proposal 93"]
+        }) + "\n", "utf8");
+        const out = await W.runOnce([withTrigger(93, 0)], { messagesFile });
+        expect(out.fired).to.deep.equal([]);
+        expect(out.looked).to.deep.equal([{ id: 93, fired: false, because: "closed" }]);
+      });
+
+      it("skips one whose chain status is not Active", async function () {
+        const out = await W.runOnce([withTrigger(94, 1)], { messagesFile });
+        expect(out.fired).to.deep.equal([]);
+        expect(out.looked[0].because).to.equal("closed");
+        expect(fs.existsSync(messagesFile), "nothing was written").to.equal(false);
+      });
+
+      it("reads closed the same way the card does", function () {
+        expect(W.skipBecause(withTrigger(93, 0), []), "nothing said").to.equal(null);
+        expect(W.skipBecause(withTrigger(93, 2), []), "rejected on chain").to.equal("closed");
+      });
+    });
+  });
+
   // Proposal 91's one addition to proposal 54: a pasted screenshot may carry a
   // customer's name or a credential, and .gitignore is a line anyone can
   // delete. The directory is outside the repository, and one inside it is
@@ -1296,7 +1448,8 @@ describe("the write scripts refuse before they send", function () {
 
     it("leads the dashboard, above Blocked", function () {
       const d = S.dashboard([], [passed(54, 0, "Paste a screenshot", 50)], AAOS, NOW);
-      expect(Object.keys(d)[0], "first key, first section").to.equal("unclaimed");
+      var keys = Object.keys(d);
+      expect(keys.indexOf("unclaimed"), "before Blocked").to.be.lessThan(keys.indexOf("blocked"));
       expect(d.unclaimed.map((r) => r.proposalId)).to.deep.equal([54]);
     });
 

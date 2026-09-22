@@ -423,9 +423,20 @@
     };
   }
 
+  // Whether a proposal carries a trigger, read off its own document. The same
+  // question watch.js asks; asked here so viewsFor needs nothing from Node.
+  function hasTrigger(proposal) {
+    var doc = proposal && proposal.format && proposal.format.doc;
+    var trigger = doc && doc.trigger;
+    return Boolean(trigger && typeof trigger === "object" && trigger.rule);
+  }
+
   function dashboard(messages, proposals, aaos, nowMs) {
     var cols = columns(messages, proposals, aaos);
     return {
+      // Proposal 95: the same function the chain page asks, so the two pages
+      // cannot disagree about which proposals are waiting on the Director.
+      views: R.viewsFor(proposals || [], messages || [], { triggerOf: hasTrigger }),
       unclaimed: unclaimed(messages, proposals, aaos, nowMs),
       blocked: cols.blocked,
       building: cols.building,
@@ -442,6 +453,7 @@
     columns: columns,
     unclaimed: unclaimed,
     claimedProposals: claimedProposals,
+    hasTrigger: hasTrigger,
     street: street,
     tasksFor: tasksFor,
     dotStateOf: dotStateOf,

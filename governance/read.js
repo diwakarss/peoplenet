@@ -284,6 +284,179 @@
     return null;
   }
 
+  // --- the Director's two lists (proposal 95) -----------------------------
+  //
+  // His attention is the scarce thing and he is the only human. A vote view
+  // padded with what he has already decided to defer teaches him to skim it,
+  // and a skimmed list is how proposal 54 went unnoticed for two days.
+  //
+  // So every Active proposal is in exactly one of three views:
+  //
+  //   vote      it needs his vote now
+  //   waiting   parked, by him or by something that has not happened yet
+  //   closed    another item closed it
+  //
+  // The risk runs one way. A proposal wrongly hidden is hidden from the one
+  // person who must see it, so anything this cannot read stays in the vote
+  // view, and the Waiting fold always shows its count.
+
+  // Whether a proposal's trigger has been reported. One definition, here,
+  // because the page decides what to show with it and the watcher decides what
+  // to post with it, and two definitions would disagree on exactly the
+  // proposals that matter.
+  //
+  // A message from "watch" naming the proposal, EXCEPT an unclaimed notice
+  // (proposal 91): that also comes from the watcher and also names its
+  // proposal, and reading it as a fired trigger would pin an untouched
+  // proposal to the front of the flow and let a real trigger go unreported.
+  function triggerHasFired(messages, proposalId) {
+    var found = null;
+    (messages || []).forEach(function (m) {
+      if (!m || m.from !== "watch" || m.unclaimed) return;
+      if (Number(m.proposal) !== Number(proposalId)) return;
+      found = m;
+    });
+    return found;
+  }
+
+  // "tied to proposal 87", "part of proposal 87". Case-insensitive, and read
+  // from the proposal's own document as well as from any decision on it: 86 is
+  // tied to 87 by the Director's note, not by its text.
+  var TIE_PHRASE = /\b(?:tied to|part of)\s+proposal\s*[:#]?\s*(\d+)/i;
+
+  function tieIn(text) {
+    var m = TIE_PHRASE.exec(String(text === undefined || text === null ? "" : text));
+    return m ? Number(m[1]) : null;
+  }
+
+  // Which proposal this one is tied to, or null. The document first, then the
+  // decisions oldest to newest, so the latest word wins.
+  function tieTargetOf(proposal, decisions) {
+    var found = null;
+    var p = proposal || {};
+    var doc = p.format && p.format.doc;
+    if (doc) {
+      ["title", "summary", "why", "technical"].forEach(function (field) {
+        if (found === null) found = tieIn(doc[field]);
+      });
+    } else if (p.text) {
+      found = tieIn(p.text);
+    }
+    (decisions || []).forEach(function (m) {
+      var said = tieIn((m && (m.summary || m.text)) || "");
+      if (said === null) said = tieIn((m && m.subject) || "");
+      if (said !== null) found = said;
+    });
+    // A proposal tied to itself is a sentence about itself, not a tie.
+    return found === null || found === Number(p.id) ? null : found;
+  }
+
+  // Which of the three views one proposal is in.
+  //
+  //   proposal        the proposal, as readProposals returns it
+  //   latestDecision  the latest decision message on it, or null
+  //   ties            { parent: <id|null>, parentView: <view|null> } -- what it
+  //                   is tied to and where that one went; a tied proposal takes
+  //                   its parent's view and returns with it
+  //   triggers        { has: <boolean>, fired: <boolean> } for this proposal
+  function viewFor(proposal, latestDecision, ties, triggers) {
+    var tie = ties || {};
+    var trigger = triggers || {};
+    var state = latestDecision ? decisionState(latestDecision) : null;
+
+    // Closed first: "closed: superseded by proposal 98" is not waiting, and a
+    // proposal read as waiting would come back when nothing should bring it.
+    if (state === "closed") return "closed";
+    if (state === "waiting" || state === "blocked") return "waiting";
+
+    // A trigger is a promise that something will change. Until it does, the
+    // proposal is not work in front of him.
+    if (trigger.has && !trigger.fired) return "waiting";
+
+    // Tied: it moves with the proposal it is part of. A parent that is closed
+    // does not close the child -- only the child's own decision closes it --
+    // but a parent that waits takes the child with it.
+    if (tie.parent !== null && tie.parent !== undefined && tie.parentView === "waiting") {
+      return "waiting";
+    }
+
+    // Anything unreadable stays here on purpose.
+    return "vote";
+  }
+
+  // The state word a decision reports, using adoption.js when it is loaded and
+  // the same three anchored phrases when it is not. read.js is the data layer
+  // the scripts and the page share, and neither may depend on load order.
+  function decisionState(message) {
+    var A = (typeof module === "object" && module.exports)
+      ? require("./adoption.js")
+      : (typeof globalThis !== "undefined" ? globalThis.GovernanceAdoption : null);
+    if (A) return A.stateOf(message).key;
+    var text = String((message && (message.summary || message.text)) || "");
+    if (/^\s*closed\s*:/i.test(text)) return "closed";
+    if (/^\s*blocked\s*:/i.test(text)) return "blocked";
+    if (/^\s*waiting\s*:/i.test(text)) return "waiting";
+    return "unknown";
+  }
+
+  // Every proposal's view at once: the indexing, the tie resolution and the
+  // cycle guard, so the page and /swarm each call one function and get the
+  // same answer.
+  //
+  //   proposals  the proposals to judge
+  //   messages   the whole message log: the decisions and the watcher's reports
+  //   options    { triggerOf: fn(proposal) -> boolean, has this a trigger }
+  function viewsFor(proposals, messages, options) {
+    var opts = options || {};
+    var A = (typeof module === "object" && module.exports)
+      ? require("./adoption.js")
+      : (typeof globalThis !== "undefined" ? globalThis.GovernanceAdoption : null);
+    var list = proposals || [];
+    var latest = A ? A.indexDecisions(messages || []) : {};
+
+    var byId = {};
+    list.forEach(function (p) { byId[p.id] = p; });
+
+    var parentOfProposal = {};
+    list.forEach(function (p) {
+      var history = A ? A.historyFor(messages || [], p.id) : [];
+      parentOfProposal[p.id] = tieTargetOf(p, history);
+    });
+
+    var views = {};
+    var resolving = {};
+
+    function resolve(id) {
+      if (views[id] !== undefined) return views[id];
+      var proposal = byId[id];
+      if (!proposal) return null;
+
+      // A cycle is two proposals each saying they are part of the other.
+      // Neither can be resolved from the other, so the tie is dropped and each
+      // is judged on its own: the vote view is where an unreadable proposal
+      // belongs.
+      if (resolving[id]) return null;
+      resolving[id] = true;
+
+      var parent = parentOfProposal[id];
+      var parentView = parent === null || parent === undefined ? null : resolve(parent);
+      var has = opts.triggerOf ? Boolean(opts.triggerOf(proposal)) : false;
+      var view = viewFor(
+        proposal,
+        latest[id] || null,
+        { parent: parent, parentView: parentView },
+        { has: has, fired: Boolean(triggerHasFired(messages || [], id)) }
+      );
+
+      resolving[id] = false;
+      views[id] = view;
+      return view;
+    }
+
+    list.forEach(function (p) { resolve(p.id); });
+    return views;
+  }
+
   // --- BEGIN proposal 54: what a draft may carry beside its words ---------
   //
   // One place, for the same reason draftFilingProblem is one place: the page
@@ -1268,6 +1441,11 @@
     KALAM_VOTES_PATH: KALAM_VOTES_PATH,
     fetchKalamVotes: fetchKalamVotes,
     architectLabel: architectLabel,
+    triggerHasFired: triggerHasFired,
+    tieTargetOf: tieTargetOf,
+    tieIn: tieIn,
+    viewFor: viewFor,
+    viewsFor: viewsFor,
     IMAGE_LIMIT_BYTES: IMAGE_LIMIT_BYTES,
     IMAGE_TYPES: IMAGE_TYPES,
     describeBytes: describeBytes,
