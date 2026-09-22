@@ -46,7 +46,18 @@ const DEFAULTS = {
     "tools", "floating-assistant", "version.py"
   ),
   reportDir: path.join(GOV, "reports"),
-  intervalMs: 5 * 60 * 1000
+  intervalMs: 5 * 60 * 1000,
+  // How often the chain is written to disk (proposal 92). The record lives in
+  // one process's memory until the move to the cloud, so ten minutes is the
+  // most that can be lost to a sign-out.
+  snapshotMs: 10 * 60 * 1000,
+  // OFF unless the caller asks. Only the governance server takes snapshots;
+  // a test that stands up a watcher on the in-process network must not write
+  // the real snapshot directory, and the first run of these tests did exactly
+  // that -- a 42-event picture of a throwaway chain landed beside the real
+  // ones. Making it opt-in is the only version of this that does not depend on
+  // every future test remembering.
+  snapshot: false
 };
 
 // --- parsing -----------------------------------------------------------
@@ -468,6 +479,8 @@ function start(readProposals, options) {
           `watch: proposal ${e.id} executed -> ${e.passed ? "passed" : "rejected"} ` +
           `(block ${e.block}) -- ${e.reason}`
         ));
+        // A decision reaches the disk in seconds, not in up to ten minutes.
+        if (executed.length) await snapshot(`after executing ${executed.length}`);
         waiting.forEach((w) => console.log(
           w.holding
             ? `watch: proposal ${w.id} is holding -- ${w.reason}`
@@ -481,10 +494,68 @@ function start(readProposals, options) {
     }
   }
 
+  // --- snapshots (proposal 92) -------------------------------------------
+  //
+  // A snapshot is taken on a timer and again straight after anything is
+  // executed, so a decided proposal is on disk within seconds rather than up to
+  // ten minutes later. A failure is printed and posted once -- once, because a
+  // broken snapshot every ten minutes would bury the message stream it is
+  // trying to warn through -- and never stops the watcher: a watcher that
+  // stopped because it could not write a file would take the executions with it.
+  let snapshotWarned = false;
+
+  async function snapshot(why) {
+    if (!opts.snapshot) return null;
+    try {
+      const taker = opts.snapshotTaker || require("../scripts/snapshot.js");
+      const result = await taker.take(opts.snapshotOptions || {});
+      if (result.ok) {
+        snapshotWarned = false;
+        console.log(`watch: ${taker.describe(result)}${why ? ` (${why})` : ""}`);
+      } else {
+        warnOnce(`watch: ${taker.describe(result)}`, result.why);
+      }
+      return result;
+    } catch (e) {
+      warnOnce(`watch: could not snapshot the chain -- ${e.message || e}`, e.message || String(e));
+      return null;
+    }
+  }
+
+  function warnOnce(line, detail) {
+    console.warn(line);
+    if (snapshotWarned) return;
+    snapshotWarned = true;
+    try {
+      const message = P.normalise({
+        from: "watch",
+        to: "all",
+        type: "incident",
+        subject: "The chain is not being written to disk",
+        summary:
+          "A snapshot failed, so the record is only in the node's memory and a " +
+          "sign-out would destroy it. The watcher is still running and still " +
+          "executing; only the snapshot is failing. Said once, not every ten " +
+          "minutes.",
+        details: detail || line,
+        refs: ["proposal 92"]
+      });
+      fs.appendFileSync(opts.messagesFile || MESSAGES, P.toJsonl(message), "utf8");
+    } catch (e) {
+      console.warn(`watch: could not report the snapshot failure -- ${e.message || e}`);
+    }
+  }
+
   const timer = setInterval(tick, opts.intervalMs);
+  const snapshotTimer = setInterval(() => { snapshot("on the timer"); }, opts.snapshotMs);
+  if (snapshotTimer.unref) snapshotTimer.unref();
   if (timer.unref) timer.unref();
   setTimeout(tick, opts.firstDelayMs === undefined ? 4000 : opts.firstDelayMs).unref?.();
-  return { tick: tick, stop: function () { clearInterval(timer); } };
+  return {
+    tick: tick,
+    snapshot: snapshot,
+    stop: function () { clearInterval(timer); clearInterval(snapshotTimer); }
+  };
 }
 
 // Chain time, so the execution window is measured against the same clock that
