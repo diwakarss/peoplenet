@@ -173,6 +173,58 @@ architect completing the draft **must not transcribe names, emails or secrets
 out of the image into the proposal's text** — the proposal is public, permanent
 and unamendable, and the picture exists so that it does not have to be.
 
+## Reminders
+
+Proposal 99. A reminder is not a proposal: the Director never files one and
+never votes on one. He writes a waiting note with a time in it — *wait a week*,
+*remind me Thursday* — and the organisation's architect sets it:
+
+```bash
+node scripts/remind.js set 61 --due 2026-09-28T03:30:00Z \
+     --text "The Mac and the four chat exports." --send
+node scripts/remind.js list
+node scripts/remind.js move remind-mu... --due 2026-10-05T03:30:00Z --send
+node scripts/remind.js cancel remind-mu... --send
+```
+
+It rehearses without `--send`, like every other write script here, and only the
+architect named in the organisation's rule set may set, move or cancel one —
+the same rule that files a draft (89) and answers a question (90), read out of
+`read.js` so all three refuse the same thing for the same reason.
+
+`governance/reminders.jsonl` is append-only. Moving a reminder appends a line;
+cancelling one appends a line. The latest line for an id is the reminder, and
+the file order decides, not the clock.
+
+When one falls due the watcher does three things: it pushes to the Director's
+phone, it posts a line from `watch` under the card, and that line counts as a
+fired trigger, so a reminder set on a live proposal brings it back into his
+vote list. A reminder on a closed proposal does not fire — unless the proposal
+was closed *by that reminder*, which is how proposals 94 and 98 still ring.
+
+### The phone, and the one secret here
+
+```bash
+npm run phone            # sets it up and prints the three steps
+npm run phone -- --test  # one push, to prove it rings
+```
+
+The push goes to an [ntfy](https://ntfy.sh) topic. **The topic name is a
+secret**: an ntfy topic has no password, so anyone who knows the name can read
+everything posted to it. It is read from `PEOPLENET_NTFY_URL` and from nowhere
+else — not this repository, not a message, not a log line, not a test, not a
+report. `npm run phone` prints it on this laptop's screen and keeps it in one
+file under the user profile, outside the repository.
+
+That is why the push carries a title and a proposal number and nothing more:
+someone who guesses the topic learns that proposal 98 came due, not what it
+says. `governance/push.js` runs every line it reports through `redact()`,
+because a failed fetch names the host it could not reach and that error would
+otherwise be copied straight into an incident on the record.
+
+`PEOPLENET_NTFY_URL` unset is not a failure. The push is skipped, said once,
+and the other two things still happen.
+
 ## The two organisations
 
 | AAO | Topic | Members | What happens there |
@@ -442,7 +494,10 @@ not a prediction, the event. Once executed a proposal is closed for good.
 | `wren-votes.jsonl` | Wren's votes with their stated reasons and what each was cast against, one JSON object per line. |
 | `builder-votes.jsonl` | The builder's, in the same shape, served at `/builder-votes.json` and rendered by the same function. |
 | `widget-votes.jsonl` | The widget's. It does not exist until the widget's first vote; the endpoint answers `[]` until then. |
-| `watch.js` | The trigger watcher, and the automatic execution of what the rules say is decided. Runs with the server. |
+| `watch.js` | The trigger watcher, the due reminders, and the automatic execution of what the rules say is decided. Runs with the server. |
+| `reminders.js` | What a reminder is: the shape, the four states, the rule that a later line supersedes an earlier one, and when one falls due. |
+| `reminders.jsonl` | The reminders, appended by `scripts/remind.js` and by the watcher when one fires. Served read-only at `/reminders.json`; nothing a browser can click writes one. |
+| `push.js` | The only way a message reaches the Director's phone, and the reason the topic can stay a secret. Reads `PEOPLENET_NTFY_URL` and nothing else. |
 | `reports/` | Where a `count:` trigger reads from, and the only place it may read from. Tracked, with a README, because git cannot carry an empty directory and a `count:` rule cannot fire without it. |
 
 `read.js` is the join: the page, `check.js`, and the Hardhat test all read through

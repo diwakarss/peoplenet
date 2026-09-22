@@ -697,7 +697,11 @@ describe("the write scripts refuse before they send", function () {
       { dir: "governance", file: "vote.js", send: "connect(signer).vote(" },
       { dir: "scripts", file: "wren-decide.js", send: "appendFileSync(MESSAGES" },
       { dir: "scripts", file: "wren-file-draft.js", send: "connect(signer).submitProposal(" },
-      { dir: "scripts", file: "propose.js", send: "connect(signer).submitProposal(" }
+      { dir: "scripts", file: "propose.js", send: "connect(signer).submitProposal(" },
+      // Proposal 99. It writes a file rather than a transaction, exactly as
+      // wren-decide.js does, and rehearses for the same reason: the reminders
+      // log is append-only, so a line written by mistake stays written.
+      { dir: "scripts", file: "remind.js", send: "appendFileSync(file" }
     ];
 
     scripts.forEach(({ dir, file, send }) => {
@@ -737,7 +741,7 @@ describe("the write scripts refuse before they send", function () {
     const WRITERS = [
       "../governance/vote.js", "wren-decide.js", "wren-file-draft.js",
       "propose.js", "submit-widget-proposals.js", "builder-propose.js",
-      "execute-decided.js", "cut-aao-facet.js"
+      "execute-decided.js", "cut-aao-facet.js", "remind.js"
     ];
 
     it("wantsSend says no unless --send is there, and --dry-run always wins", function () {
@@ -822,6 +826,11 @@ describe("the write scripts refuse before they send", function () {
         file: "wren-answer.js",
         args: ["--list"],
         expect: /question|No questions/i
+      },
+      {
+        file: "remind.js",
+        args: ["list"],
+        expect: /reminder|No reminders/i
       }
     ];
 
@@ -841,6 +850,35 @@ describe("the write scripts refuse before they send", function () {
       expect(out).to.contain("Rehearsal only: nothing was sent.");
       expect(out).to.contain("Add --send to do it for real");
       expect(after, "wren-decide wrote to the log while rehearsing").to.equal(before);
+    });
+
+    // Proposal 99. --topic keeps it off the chain, so this proves the refusal
+    // and the rehearsal without needing a node at all.
+    it("remind.js rehearses a reminder and writes nothing", function () {
+      const log = path.join(REPO, "governance", "reminders.jsonl");
+      const before = fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "";
+      const out = run("remind.js", [
+        "set", "61", "--due", "2026-12-01T00:00:00Z",
+        "--text", "A rehearsed reminder that is never written.",
+        "--topic", "JD", "--from", "kural"
+      ]);
+      const after = fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "";
+      expect(out).to.contain("Rehearsal only: nothing was sent.");
+      expect(after, "remind.js wrote to the log while rehearsing").to.equal(before);
+    });
+
+    it("remind.js refuses anyone but the organisation's architect", function () {
+      let failed = false;
+      try {
+        run("remind.js", [
+          "set", "61", "--due", "2026-12-01T00:00:00Z", "--text", "Not mine to set.",
+          "--topic", "JD", "--from", "kalam", "--send"
+        ]);
+      } catch (e) {
+        failed = true;
+        expect(String(e.stderr || e.message)).to.contain("Kural");
+      }
+      expect(failed, "remind.js let a builder set a reminder on JD").to.equal(true);
     });
 
     it("wren-file-draft.js runs and lists without writing", function () {
@@ -915,8 +953,14 @@ describe("the write scripts refuse before they send", function () {
       "builder-propose.js", "execute-decided.js", "cut-aao-facet.js",
       "snapshot-chain-state.js", "verify-after-cut.js",
       "check-control-characters.js", "setup-governance-members.js",
-      "create-widget-builder-aao.js"
+      "create-widget-builder-aao.js", "remind.js", "phone.js"
     ];
+
+    // phone.js writes the file that holds the Director's topic, so this run is
+    // pointed at a throwaway path. A test that generated a topic into his home
+    // directory would be a test that changed his setup.
+    const phoneStore = path.join(
+      fs.mkdtempSync(path.join(require("os").tmpdir(), "peoplenet-phone-")), "url");
 
     ALL.forEach((file) => {
       it(`${file} gets past its own require and argument parsing`, function () {
@@ -926,7 +970,12 @@ describe("the write scripts refuse before they send", function () {
             cwd: REPO,
             encoding: "utf8",
             timeout: 60000,
-            env: Object.assign({}, process.env, { HARDHAT_NETWORK: "hardhat" })
+            env: Object.assign({}, process.env, {
+              HARDHAT_NETWORK: "hardhat",
+              PEOPLENET_PHONE_STORE: phoneStore,
+              // And it must not pick up a real topic from this machine either.
+              PEOPLENET_NTFY_URL: ""
+            })
           });
         } catch (e) {
           // Exiting non-zero is fine -- most of these want arguments. Dying

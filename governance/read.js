@@ -309,6 +309,9 @@
   // (proposal 91): that also comes from the watcher and also names its
   // proposal, and reading it as a fired trigger would pin an untouched
   // proposal to the front of the flow and let a real trigger go unreported.
+  // A due reminder counts here (proposal 99): the Director asked to be brought
+  // back to this proposal on that date, and the date arrived. That is the same
+  // sentence the view is asking.
   function triggerHasFired(messages, proposalId) {
     var found = null;
     (messages || []).forEach(function (m) {
@@ -317,6 +320,52 @@
       found = m;
     });
     return found;
+  }
+
+  // What the WATCHER means by "already reported", which is not the same
+  // sentence and must not be the same function.
+  //
+  // The watcher posts a trigger once per proposal, because a watcher that
+  // shouts every five minutes gets turned off. A fired reminder also comes from
+  // "watch" and also names its proposal -- so if the watcher asked
+  // triggerHasFired, a reminder delivered on Monday would silence that
+  // proposal's real trigger for good. This is the third kind of message from
+  // "watch", and the second generation's ledger says what to do when a sender
+  // gains one: go and read everything that matches on the sender.
+  //
+  // So: the view counts every kind, and the once-only check counts only the
+  // trigger reports.
+  function triggerReported(messages, proposalId) {
+    var found = null;
+    (messages || []).forEach(function (m) {
+      if (!m || m.from !== "watch" || m.unclaimed || m.reminder) return;
+      if (Number(m.proposal) !== Number(proposalId)) return;
+      found = m;
+    });
+    return found;
+  }
+
+  // Whether this agent may set, move or cancel a reminder here, in one plain
+  // line, or null (proposal 99).
+  //
+  // The same rule as filing a draft (89) and answering a question (90): the
+  // organisation's architect, and nobody else. The Director writes a waiting
+  // note with a time in it and the architect turns that into a reminder, which
+  // is the kind of thing an agent is for. He never files one himself, and a
+  // builder setting reminders on the Director's behalf is how a queue fills up
+  // with items nobody asked for.
+  //
+  // An organisation whose rule set names no architect keeps today's behaviour,
+  // exactly as draftFilingProblem does: naming one is a decision for the
+  // organisation, not a default this function invents.
+  function reminderProblem(rules, from, options) {
+    var r = rules || DEFAULT_RULES;
+    var o = options || {};
+    if (!r.architect) return null;
+    var label = labelFor(r.architect);
+    if (String(from || "").toLowerCase() === label.toLowerCase()) return null;
+    return "A reminder on " + (o.topic || "this organisation") + " is set by its " +
+      "architect, " + label + ". You are " + (from || "nobody") + ".";
   }
 
   // "tied to proposal 87", "part of proposal 87". Case-insensitive, and read
@@ -1442,6 +1491,8 @@
     fetchKalamVotes: fetchKalamVotes,
     architectLabel: architectLabel,
     triggerHasFired: triggerHasFired,
+    triggerReported: triggerReported,
+    reminderProblem: reminderProblem,
     tieTargetOf: tieTargetOf,
     tieIn: tieIn,
     viewFor: viewFor,

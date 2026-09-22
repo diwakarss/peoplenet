@@ -54,7 +54,11 @@ const LOGS = {
   "/questions.json": "questions.jsonl",
   "/answers.json": "answers.jsonl",
   "/messages.json": "messages.jsonl",
-  "/drafts.json": "drafts.jsonl"
+  "/drafts.json": "drafts.jsonl",
+  // Proposal 99. Read-only like every other log here: a reminder is set by the
+  // organisation's architect through scripts/remind.js and fired by the
+  // watcher, and nothing a browser can click writes one.
+  "/reminders.json": "reminders.jsonl"
 };
 
 // Wren's plain-English translations of the legacy proposals (27.10). Served

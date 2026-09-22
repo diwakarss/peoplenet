@@ -331,8 +331,12 @@ function firedMessage(proposal, trigger, result) {
 // The rule itself lives in read.js, once: the page decides what to pin with it
 // and the watcher decides what to post with it, and two copies would disagree
 // on exactly the proposals that matter.
+// A fired reminder also comes from "watch" and also names its proposal, so
+// this asks triggerReported, which counts trigger reports only. Asking
+// triggerHasFired here would let a reminder delivered on Monday silence that
+// proposal's real trigger for good.
 function alreadyFired(messages, proposalId) {
-  return Boolean(require("./read.js").triggerHasFired(messages, proposalId));
+  return Boolean(require("./read.js").triggerReported(messages, proposalId));
 }
 
 // --- a closed proposal's trigger does not fire (proposal 95) -------------
@@ -421,6 +425,174 @@ function reportUnclaimed(proposals, aaos, options) {
   }
 
   return { listed: rows, told: told };
+}
+
+// --- a due reminder (proposal 99) ---------------------------------------
+//
+// A reminder is not a proposal. Nobody votes on one, and when it falls due the
+// watcher does three things and stops:
+//
+//   1. a push to the Director's phone, carrying the proposal number and no
+//      proposal text (governance/push.js says why)
+//   2. a status message from "watch" under the card, which the page shows on
+//      its two-second poll
+//   3. a `fired` line in reminders.jsonl, which is both the record and the
+//      once-only guard: the file is append-only and the latest line wins
+//
+// (2) also counts as fired for proposal 95's viewFor, so a reminder set on a
+// live proposal brings that proposal back into the Director's vote list.
+
+const REMINDERS = path.join(GOV, "reminders.jsonl");
+
+// The message a fired reminder posts. `reminder` is the id, and it is what
+// tells this apart from a trigger report and from an unclaimed notice -- three
+// kinds of message from one sender now, each of which some other function has
+// to be able to exclude.
+function reminderMessage(reminder) {
+  const RM = require("./reminders.js");
+  return P.normalise({
+    from: "watch",
+    to: "director",
+    type: "status",
+    subject: `Reminder due on proposal ${reminder.proposal}`,
+    summary: reminder.text + " It was set for " + RM.describeDue(reminder) + ", and that day has come.",
+    details: `set by ${reminder.set_by}\nreminder ${reminder.id}`,
+    refs: ["proposal " + reminder.proposal, "proposal 99"],
+    proposal: reminder.proposal,
+    aaoId: reminder.aaoId,
+    reminder: reminder.id
+  });
+}
+
+// Why this reminder does not fire, or null.
+//
+// "A reminder on a closed proposal does not fire": a proposal that is finished
+// is not something to be brought back to.
+//
+// With one exception, and it is the exception the migration depends on.
+// Proposals 94 and 98 were reminders wearing a proposal's clothes, so landing
+// this closes them -- "closed: superseded by reminder <id>". If closed alone
+// were the test, the two reminders the migration exists to preserve would be
+// the only two that could never fire, and nobody would find out until the
+// Director's phone stayed quiet on the 28th. So a proposal closed BY this
+// reminder is not closed against it.
+function reminderSkipBecause(reminder, proposal, messages) {
+  if (!proposal) return null;
+  const A = require("./adoption.js");
+  const status = proposal.status;
+  const onChainClosed = status !== undefined && status !== null && Number(status) !== 0;
+  const decision = A.adoptionOf(A.indexDecisions(messages || []), proposal.id);
+  const decidedClosed = A.isClosedByBuild(decision);
+  if (!onChainClosed && !decidedClosed) return null;
+
+  const said = String((decision && (decision.summary || decision.text)) || "") +
+    " " + String((decision && decision.subject) || "");
+  if (reminder && reminder.id && said.indexOf(reminder.id) !== -1) return null;
+
+  return "closed";
+}
+
+// Said once, and never again, for the same reason every other line here is:
+// a watcher that repeats itself every five minutes is a watcher the operator
+// turns off. The marker is on the message, not in this process's memory, so a
+// restart does not start the repetition over.
+function alreadySaid(messages, field, value) {
+  return (messages || []).some(function (m) {
+    return m && m.from === "watch" && m[field] === value;
+  });
+}
+
+// One pass over the reminders. `proposals` is what the chain shows, so a
+// reminder can be measured against the state of the proposal it names.
+async function runReminders(proposals, options) {
+  const opts = Object.assign({}, DEFAULTS, options || {});
+  const RM = require("./reminders.js");
+  const PUSH = opts.push || require("./push.js");
+  const messagesFile = opts.messagesFile || MESSAGES;
+  const remindersFile = opts.remindersFile || REMINDERS;
+
+  const records = readJsonl(remindersFile);
+  const dueNow = RM.due(records, opts.now);
+  const fired = [];
+  const skipped = [];
+  if (!dueNow.length) return { fired, skipped };
+
+  const messages = readJsonl(messagesFile);
+  const byId = {};
+  (proposals || []).forEach((p) => { byId[p.id] = p; });
+
+  for (const reminder of dueNow) {
+    const why = reminderSkipBecause(reminder, byId[reminder.proposal], messages);
+    if (why) {
+      skipped.push({ id: reminder.id, proposal: reminder.proposal, because: why });
+      continue;
+    }
+
+    // The page line first: it is the fallback the proposal's own risk section
+    // names, and it must not depend on a push service outside our control.
+    const message = reminderMessage(reminder);
+    fs.appendFileSync(messagesFile, P.toJsonl(message), "utf8");
+    messages.push(message);
+
+    // Then the phone.
+    let push = { ok: false, skipped: true };
+    try {
+      push = await PUSH.send(PUSH.bodyFor(reminder), { env: opts.env, fetchImpl: opts.fetchImpl,
+        attempts: opts.pushAttempts, backoffMs: opts.pushBackoffMs, sleep: opts.sleep });
+    } catch (e) {
+      push = { ok: false, skipped: false, error: PUSH.redact(e.message || e, opts.env) };
+    }
+
+    if (push.skipped && !alreadySaid(messages, "pushUnconfigured", true)) {
+      const note = P.normalise({
+        from: "watch",
+        to: "director",
+        type: "status",
+        subject: "A reminder came due and there is no phone to reach",
+        summary: PUSH.notConfiguredLine(),
+        details: "",
+        refs: ["proposal 99"],
+        pushUnconfigured: true
+      });
+      fs.appendFileSync(messagesFile, P.toJsonl(note), "utf8");
+      messages.push(note);
+    }
+
+    // A failed push is one incident per reminder, never one per tick. The error
+    // has already been through redact(), so the topic is not in it.
+    if (!push.ok && !push.skipped && !alreadySaid(messages, "pushFailed", reminder.id)) {
+      const incident = P.normalise({
+        from: "watch",
+        to: "director",
+        type: "incident",
+        subject: `The push for proposal ${reminder.proposal} did not reach the phone`,
+        summary:
+          `A reminder on proposal ${reminder.proposal} came due and the push failed after ` +
+          `${push.attempts || 0} attempt(s). The line on the page is there, so nothing is lost; ` +
+          "only the phone was not reached. Said once for this reminder, not every five minutes.",
+        details: push.error || "no reason reported",
+        refs: ["proposal " + reminder.proposal, "proposal 99"],
+        pushFailed: reminder.id
+      });
+      fs.appendFileSync(messagesFile, P.toJsonl(incident), "utf8");
+      messages.push(incident);
+    }
+
+    // Last: the record that it happened. Written after the message, so a crash
+    // between the two leaves a reminder that fires again rather than one that
+    // silently never did.
+    const firedLine = RM.supersede(reminder, {
+      state: "fired",
+      fired_at: message.ts,
+      pushed: Boolean(push.ok)
+    }, message.ts);
+    fs.appendFileSync(remindersFile, P.toJsonl(firedLine), "utf8");
+
+    fired.push({ id: reminder.id, proposal: reminder.proposal, pushed: Boolean(push.ok),
+      pushSkipped: Boolean(push.skipped) });
+  }
+
+  return { fired, skipped };
 }
 
 // --- executing what the rules say is decided --------------------------
@@ -565,6 +737,22 @@ function start(readProposals, options) {
         console.log(`watch: ${watched} trigger(s) checked, none fired`);
       }
 
+      // Then the reminders that have fallen due (proposal 99). Before the
+      // unclaimed pass, because a reminder is a promise to a person with a date
+      // on it and everything else here is housekeeping.
+      try {
+        const reminders = await runReminders(proposals, opts);
+        reminders.fired.forEach((r) => console.log(
+          `watch: reminder on proposal ${r.proposal} is due -- ` +
+          (r.pushSkipped ? "no phone configured" : (r.pushed ? "pushed" : "the push failed"))
+        ));
+        reminders.skipped.forEach((r) => console.log(
+          `watch: reminder on proposal ${r.proposal} not fired -- ${r.because}`
+        ));
+      } catch (e) {
+        console.warn("watch: could not run the reminders -- " + (e.message || e));
+      }
+
       // Then the proposals that passed and that nobody picked up (proposal 91).
       // It needs the organisations, to name each one's architect.
       if (opts.readAaos) {
@@ -701,6 +889,11 @@ module.exports = {
   firedMessage,
   alreadyFired,
   skipBecause,
+  REMINDERS,
+  runReminders,
+  reminderMessage,
+  reminderSkipBecause,
+  alreadySaid,
   reportUnclaimed,
   unclaimedMessage,
   alreadyToldUnclaimed,

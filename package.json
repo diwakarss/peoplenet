@@ -15,7 +15,9 @@
     "governance:check": "node governance/check.js",
     "governance:members": "npx hardhat run scripts/setup-governance-members.js --network localhost",
     "up": "node scripts/up.js",
-    "snapshot": "node scripts/snapshot.js"
+    "snapshot": "node scripts/snapshot.js",
+    "phone": "node scripts/phone.js",
+    "remind": "node scripts/remind.js"
   },
   "keywords": [
     "blockchain",
